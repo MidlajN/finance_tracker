@@ -61,7 +61,8 @@ Current status:
 - `packages` exists as the shared package boundary.
 - `supabase` remains at the repository root.
 - Shared package extraction is complete.
-- The React Native mobile implementation is the next milestone.
+- The Expo React Native mobile foundation is complete.
+- Android notification collection is the next milestone.
 
 ---
 
@@ -123,7 +124,8 @@ The web application provides the complete desktop experience.
 
 Technology:
 
-- React Native
+- Expo SDK 57
+- React Native 0.86
 - TypeScript
 
 Responsibilities:
@@ -545,7 +547,7 @@ Completed:
 
 Next:
 
-1. Create the React Native mobile client.
+1. Implement Android notification collection.
 2. Keep application-specific UI inside each app.
 3. Continue routing shared business logic through packages.
 

@@ -25,3 +25,13 @@ dist-ssr
 
 .env
 .temp
+
+# Release credentials and external store assets
+*.jks
+*.keystore
+*.p12
+*.pem
+*.apk
+*.aab
+.release/
+play-store-assets/

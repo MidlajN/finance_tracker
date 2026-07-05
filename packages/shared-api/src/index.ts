@@ -50,6 +50,21 @@ export interface CreateFinancialEventRequest {
     idempotencyKey?: string;
 }
 
+export interface CreateFinancialEventSyncPayload
+    extends CreateFinancialEventRequest {
+    localEventId: string;
+    source: string;
+}
+
+export interface UpdateFinancialEventSyncPayload {
+    eventId: string;
+    updates: Partial<FinancialEventInput>;
+}
+
+export interface DeleteFinancialEventSyncPayload {
+    eventId: string;
+}
+
 export interface SubmitParsedFinancialEventRequest {
     parsedEvent: ParsedFinancialEvent;
     idempotencyKey?: string;
@@ -58,6 +73,7 @@ export interface SubmitParsedFinancialEventRequest {
 export type SyncOperation =
     | "create_financial_event"
     | "update_financial_event"
+    | "delete_financial_event"
     | "confirm_event"
     | "ignore_event"
     | "create_merchant"
@@ -65,12 +81,30 @@ export type SyncOperation =
     | "update_transaction"
     | "create_budget";
 
+export type SyncQueueStatus =
+    | "pending"
+    | "uploading"
+    | "synced"
+    | "failed"
+    | "retrying";
+
 export interface SyncRequest<TPayload = unknown> {
     operation: SyncOperation;
     payload: TPayload;
     timestamp: string;
     deviceId: string;
     requestId: string;
+}
+
+export interface SyncQueueItem<
+    TPayload = unknown,
+> extends SyncRequest<TPayload> {
+    id: string;
+    status: SyncQueueStatus;
+    attempts: number;
+    lastError: string | null;
+    createdAt: string;
+    updatedAt: string;
 }
 
 export interface SyncAcknowledgement {

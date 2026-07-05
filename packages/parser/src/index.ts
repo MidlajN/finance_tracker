@@ -1,5 +1,7 @@
 import type {
     FinancialEventInput,
+    ParsedFinancialEvent,
+    RawNotificationPayload,
     TransactionLike,
 } from "@finance/shared-types";
 
@@ -298,5 +300,129 @@ export function parseBackupPayload(
                 : new Date().toISOString(),
         financial_events:
             parsed.financial_events as FinancialEventInput[],
+    };
+}
+
+const AMOUNT_PATTERN =
+    /(?:₹|rs\.?|inr)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)|([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:₹|rs\.?|inr)/i;
+
+const DEBIT_PATTERN =
+    /\b(debited|debit|spent|paid|sent|purchase|withdrawn|charged)\b/i;
+
+const CREDIT_PATTERN =
+    /\b(credited|credit|received|refund|deposited|salary)\b/i;
+
+function parseAmount(text: string) {
+    const match = text.match(AMOUNT_PATTERN);
+
+    if (!match) {
+        return null;
+    }
+
+    const value = match[1] ?? match[2];
+    const amount = Number(value.replaceAll(",", ""));
+
+    return Number.isFinite(amount) && amount > 0
+        ? amount
+        : null;
+}
+
+function parseNotificationDirection(text: string) {
+    if (DEBIT_PATTERN.test(text)) {
+        return "debit" as const;
+    }
+
+    if (CREDIT_PATTERN.test(text)) {
+        return "credit" as const;
+    }
+
+    return null;
+}
+
+function parseMerchantName(
+    payload: RawNotificationPayload
+) {
+    const text =
+        `${payload.title ?? ""} ${payload.text ?? ""}`.trim();
+
+    const merchantMatch = text.match(
+        /\b(?:to|at|from)\s+([A-Za-z0-9][A-Za-z0-9&().'\-\s]{1,48})/i
+    );
+
+    if (merchantMatch?.[1]) {
+        return merchantMatch[1]
+            .replace(/\b(on|using|via|ref|reference)\b.*$/i, "")
+            .trim();
+    }
+
+    return payload.applicationName ??
+        payload.packageName;
+}
+
+export function parseNotificationPayload(
+    payload: RawNotificationPayload
+): ParsedFinancialEvent | null {
+    const rawText = [
+        payload.title,
+        payload.text,
+        payload.subText,
+    ]
+        .filter(Boolean)
+        .join(" ");
+
+    const amount = parseAmount(rawText);
+    const direction =
+        parseNotificationDirection(rawText);
+
+    if (!amount || !direction) {
+        return null;
+    }
+
+    const occurredAt = new Date(
+        payload.postedAt
+    );
+
+    if (
+        Number.isNaN(occurredAt.getTime())
+    ) {
+        return null;
+    }
+
+    return {
+        source: "android_notification",
+        packageName: payload.packageName,
+        merchantName:
+            parseMerchantName(payload),
+        amount,
+        currency: "INR",
+        direction,
+        occurredAt:
+            occurredAt.toISOString(),
+        reference: payload.id,
+        confidence: 0.72,
+        rawPayload: JSON.stringify(payload),
+    };
+}
+
+export function parsedNotificationToEventInput(
+    event: ParsedFinancialEvent
+): FinancialEventInput {
+    return {
+        amount: event.amount,
+        confidence: event.confidence,
+        currency: event.currency,
+        direction: event.direction,
+        merchant_id: null,
+        merchant_name_raw:
+            event.merchantName,
+        metadata: {
+            source: event.source,
+            packageName: event.packageName,
+            reference: event.reference ?? null,
+            rawPayload: event.rawPayload,
+        },
+        notes: null,
+        occurred_at: event.occurredAt,
+        status: "pending",
     };
 }

@@ -1,0 +1,18 @@
+<lint-module
+    format="1"
+    dir="/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android"
+    name=":finance-notification-listener"
+    type="LIBRARY"
+    maven="com.financeplatform.notifications:finance-notification-listener:0.0.0"
+    agpVersion="8.12.0"
+    buildFolder="build"
+    bootClassPath="/Users/ksum/Library/Android/sdk/platforms/android-36/android.jar:/Users/ksum/Library/Android/sdk/build-tools/35.0.0/core-lambda-stubs.jar"
+    javaSourceLevel="17"
+    compileTarget="android-36"
+    neverShrinking="true">
+  <lintOptions
+      absolutePaths="true"
+      checkReleaseBuilds="true"
+      explainIssues="true"/>
+  <variant name="release"/>
+</lint-module>

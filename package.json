@@ -11,7 +11,12 @@
     "dev": "npm run dev --workspace @finance/web",
     "build": "npm run typecheck && npm run build --workspace @finance/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspace @finance/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "mobile:prebuild:android": "npm run prebuild:android --workspace @finance/mobile",
+    "mobile:android:assembleDebug": "npm run android:assembleDebug --workspace @finance/mobile",
+    "mobile:android:bundleRelease": "npm run android:bundleRelease --workspace @finance/mobile",
+    "release:android:check-env": "npm run release:android:check-env --workspace @finance/mobile",
+    "release:android:bundle": "npm run release:android:bundle --workspace @finance/mobile",
     "preview": "npm run preview --workspace @finance/web"
   },
   "devDependencies": {

@@ -1,5 +1,6 @@
 import {
     BellRing,
+    BarChart3,
     FileText,
     Import,
     LayoutDashboard,
@@ -61,6 +62,11 @@ export const NAVIGATION = [
         label: "Reports",
         path: "/reports",
         icon: FileText,
+    },
+    {
+        label: "Analytics",
+        path: "/analytics",
+        icon: BarChart3,
     },
     {
         label: "Import / Export",

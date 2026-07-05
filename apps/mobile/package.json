@@ -1,5 +1,56 @@
 {
   "name": "@finance/mobile",
   "private": true,
-  "version": "0.0.0"
+  "version": "0.0.0",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "prebuild": "expo prebuild",
+    "prebuild:android": "expo prebuild --platform android --no-install",
+    "android:assembleDebug": "cd android && ./gradlew :app:assembleDebug",
+    "android:bundleRelease": "cd android && ./gradlew :app:bundleRelease",
+    "release:android:check-env": "node scripts/validate-release-env.mjs",
+    "release:android:bundle": "npm run release:android:check-env && npm run prebuild:android && npm run android:bundleRelease",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@finance/finance-core": "0.0.0",
+    "@finance/parser": "0.0.0",
+    "@finance/shared-api": "0.0.0",
+    "@finance/shared-types": "0.0.0",
+    "@finance/shared-utils": "0.0.0",
+    "@react-native-async-storage/async-storage": "latest",
+    "@react-navigation/native": "latest",
+    "@react-navigation/native-stack": "latest",
+    "@supabase/supabase-js": "^2.108.2",
+    "expo": "~57.0.0",
+    "expo-background-task": "^57.0.1",
+    "expo-constants": "latest",
+    "expo-modules-core": "latest",
+    "expo-secure-store": "latest",
+    "expo-sqlite": "latest",
+    "expo-status-bar": "latest",
+    "expo-system-ui": "^57.0.0",
+    "expo-task-manager": "^57.0.1",
+    "finance-notification-listener": "file:modules/finance-notification-listener",
+    "react": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-gesture-handler": "latest",
+    "react-native-safe-area-context": "latest",
+    "react-native-screens": "latest",
+    "react-native-url-polyfill": "latest",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/react": "^19.2.17",
+    "eslint": "^10.5.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.6.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.61.0"
+  }
 }

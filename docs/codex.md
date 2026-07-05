@@ -77,6 +77,10 @@ docs/roadmap.md
 
 ↓
 
+docs/release.md
+
+↓
+
 docs/codex.md
 ```
 
@@ -150,8 +154,9 @@ When documentation overlaps, use the following precedence.
 8. api-contract.md
 9. database.md
 10. development-workflow.md
-11. roadmap.md
-12. codex.md
+11. release.md
+12. roadmap.md
+13. codex.md
 
 Higher priority documents always take precedence.
 

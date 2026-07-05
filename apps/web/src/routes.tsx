@@ -2,6 +2,7 @@ import { createBrowserRouter } from "react-router-dom";
 
 import { AppLayout } from "./components/layout/AppLayout";
 
+import { Analytics } from "./features/analytics/Analytics";
 import { Dashboard } from "./features/dashboard/Dashboard";
 import { Events } from "./features/events/Events";
 import { Merchants } from "./features/merchants/Merchants";
@@ -50,6 +51,10 @@ export const router = createBrowserRouter([
             {
                 path: "reports",
                 element: <Reports />,
+            },
+            {
+                path: "analytics",
+                element: <Analytics />,
             },
             {
                 path: "import-export",

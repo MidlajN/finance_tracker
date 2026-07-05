@@ -425,6 +425,13 @@ Parsed Financial Event
 
 Each provider parser should expose a common interface.
 
+Current implementation:
+
+- Android notification payloads are represented as `RawNotificationPayload`.
+- The shared `parser` package normalizes supported notification payloads into `ParsedFinancialEvent`.
+- Parsed notifications are converted into Financial Event inputs.
+- Transactions are never created directly from notifications.
+
 ---
 
 # Parsed Financial Event

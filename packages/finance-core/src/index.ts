@@ -10,6 +10,10 @@ import type {
     BudgetInput,
     BudgetLike,
     FinancialEventInput,
+    FinancialAnalytics,
+    AnalyticsComparison,
+    AnalyticsGroup,
+    AnalyticsTrendPoint,
     FinancialReport,
     FinancialRule,
     FinancialRuleInput,
@@ -22,6 +26,10 @@ import type {
 } from "@finance/shared-types";
 
 export type {
+    AnalyticsComparison,
+    AnalyticsGroup,
+    AnalyticsTrendPoint,
+    FinancialAnalytics,
     FinancialReport,
     ReportGroup,
     ReportPeriod,
@@ -1104,6 +1112,323 @@ export function buildFinancialReport<
                 "Unknown Merchant"
         ),
         transactions: scopedTransactions,
+    };
+}
+
+function getMonthPeriod<
+    TTransaction extends TransactionLike,
+>(transaction: TTransaction) {
+    return transaction.occurred_at.slice(0, 7);
+}
+
+function getPreviousMonth(period: string) {
+    const [year, month] = period
+        .split("-")
+        .map(Number);
+    const date = new Date(year, month - 2, 1);
+
+    return `${date.getFullYear()}-${String(
+        date.getMonth() + 1
+    ).padStart(2, "0")}`;
+}
+
+function getPreviousYearPeriod(period: string) {
+    const [year, month] = period
+        .split("-")
+        .map(Number);
+
+    return `${year - 1}-${String(month).padStart(2, "0")}`;
+}
+
+function emptyTrendPoint(
+    period: string
+): AnalyticsTrendPoint {
+    return {
+        period,
+        income: 0,
+        expenses: 0,
+        net: 0,
+        transactionCount: 0,
+    };
+}
+
+function percentageChange(
+    current: number,
+    previous: number
+) {
+    if (previous === 0) {
+        return current === 0 ? 0 : null;
+    }
+
+    return ((current - previous) / previous) * 100;
+}
+
+function buildComparison(
+    period: string,
+    current: AnalyticsTrendPoint,
+    previous: AnalyticsTrendPoint | null
+): AnalyticsComparison {
+    const fallbackPrevious =
+        previous ?? emptyTrendPoint(period);
+
+    return {
+        period,
+        current,
+        previous,
+        incomeChange:
+            current.income -
+            fallbackPrevious.income,
+        incomeChangePercentage:
+            previous === null
+                ? null
+                : percentageChange(
+                      current.income,
+                      previous.income
+                  ),
+        expensesChange:
+            current.expenses -
+            fallbackPrevious.expenses,
+        expensesChangePercentage:
+            previous === null
+                ? null
+                : percentageChange(
+                      current.expenses,
+                      previous.expenses
+                  ),
+        netChange:
+            current.net - fallbackPrevious.net,
+        netChangePercentage:
+            previous === null
+                ? null
+                : percentageChange(
+                      current.net,
+                      previous.net
+                  ),
+    };
+}
+
+function buildAnalyticsGroups<
+    TTransaction extends TransactionLike,
+>(
+    transactions: TTransaction[],
+    totalExpenses: number,
+    getName: (
+        transaction: TTransaction
+    ) => string
+): AnalyticsGroup[] {
+    const groups = new Map<
+        string,
+        AnalyticsGroup
+    >();
+
+    transactions.forEach((transaction) => {
+        const name = getName(transaction);
+        const current =
+            groups.get(name) ?? {
+                name,
+                income: 0,
+                expenses: 0,
+                net: 0,
+                transactionCount: 0,
+                averageTransaction: 0,
+                percentageOfExpenses: 0,
+            };
+
+        const income =
+            getIncomeAmount(transaction);
+        const expenses =
+            getExpenseAmount(transaction);
+
+        groups.set(name, {
+            name,
+            income: current.income + income,
+            expenses:
+                current.expenses + expenses,
+            net:
+                current.net +
+                income -
+                expenses,
+            transactionCount:
+                current.transactionCount + 1,
+            averageTransaction: 0,
+            percentageOfExpenses: 0,
+        });
+    });
+
+    return Array.from(groups.values())
+        .map((group) => ({
+            ...group,
+            averageTransaction:
+                group.transactionCount > 0
+                    ? (group.income +
+                          group.expenses) /
+                      group.transactionCount
+                    : 0,
+            percentageOfExpenses:
+                totalExpenses > 0
+                    ? (group.expenses /
+                          totalExpenses) *
+                      100
+                    : 0,
+        }))
+        .sort((first, second) => {
+            if (
+                second.expenses !== first.expenses
+            ) {
+                return (
+                    second.expenses -
+                    first.expenses
+                );
+            }
+
+            if (second.income !== first.income) {
+                return second.income - first.income;
+            }
+
+            return first.name.localeCompare(
+                second.name
+            );
+        });
+}
+
+export function buildFinancialAnalytics<
+    TTransaction extends TransactionLike,
+>(
+    transactions: TTransaction[]
+): FinancialAnalytics {
+    const monthlyMap = new Map<
+        string,
+        AnalyticsTrendPoint
+    >();
+
+    transactions.forEach((transaction) => {
+        const period =
+            getMonthPeriod(transaction);
+        const current =
+            monthlyMap.get(period) ??
+            emptyTrendPoint(period);
+        const income =
+            getIncomeAmount(transaction);
+        const expenses =
+            getExpenseAmount(transaction);
+
+        monthlyMap.set(period, {
+            period,
+            income: current.income + income,
+            expenses:
+                current.expenses + expenses,
+            net:
+                current.net +
+                income -
+                expenses,
+            transactionCount:
+                current.transactionCount + 1,
+        });
+    });
+
+    const cashFlow = Array.from(
+        monthlyMap.values()
+    ).sort((first, second) =>
+        first.period.localeCompare(second.period)
+    );
+
+    const totalIncome = cashFlow.reduce(
+        (total, point) => total + point.income,
+        0
+    );
+
+    const totalExpenses = cashFlow.reduce(
+        (total, point) =>
+            total + point.expenses,
+        0
+    );
+
+    const activeMonthCount =
+        cashFlow.length || 1;
+
+    const monthlyComparisons = cashFlow.map(
+        (point) => {
+            const previousPeriod =
+                getPreviousMonth(point.period);
+
+            return buildComparison(
+                point.period,
+                point,
+                monthlyMap.get(previousPeriod) ??
+                    null
+            );
+        }
+    );
+
+    const yearOverYearComparisons =
+        cashFlow.map((point) => {
+            const previousYearPeriod =
+                getPreviousYearPeriod(
+                    point.period
+                );
+
+            return {
+                ...buildComparison(
+                    point.period,
+                    point,
+                    monthlyMap.get(
+                        previousYearPeriod
+                    ) ?? null
+                ),
+                previousYearPeriod,
+            };
+        });
+
+    return {
+        totalIncome,
+        totalExpenses,
+        netBalance:
+            totalIncome - totalExpenses,
+        averageMonthlyIncome:
+            totalIncome / activeMonthCount,
+        averageMonthlyExpenses:
+            totalExpenses / activeMonthCount,
+        averageMonthlyNet:
+            (totalIncome - totalExpenses) /
+            activeMonthCount,
+        savingsRate:
+            totalIncome > 0
+                ? ((totalIncome -
+                      totalExpenses) /
+                      totalIncome) *
+                  100
+                : 0,
+        incomeTrend: cashFlow.map((point) => ({
+            ...point,
+            expenses: 0,
+            net: point.income,
+        })),
+        spendingTrend: cashFlow.map(
+            (point) => ({
+                ...point,
+                income: 0,
+                net: -point.expenses,
+            })
+        ),
+        cashFlow,
+        categoryAnalytics:
+            buildAnalyticsGroups(
+                transactions,
+                totalExpenses,
+                (transaction) =>
+                    transaction.category?.name ??
+                    "Uncategorized"
+            ),
+        merchantAnalytics:
+            buildAnalyticsGroups(
+                transactions,
+                totalExpenses,
+                (transaction) =>
+                    transaction.merchant?.name ??
+                    "Unknown Merchant"
+            ),
+        monthlyComparisons,
+        yearOverYearComparisons,
     };
 }
 

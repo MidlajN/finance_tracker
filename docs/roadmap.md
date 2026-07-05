@@ -493,7 +493,18 @@ The Finance Engine becomes platform independent.
 
 ### Phase 13.3 — Mobile Client Foundation
 
-Status: ⏳ Current
+Status: ✅ Complete
+
+Completed:
+
+- Created the Expo SDK 57 mobile application foundation
+- Configured Expo Prebuild / Continuous Native Generation
+- Added TypeScript, React Navigation and Zustand
+- Added Supabase authentication integration
+- Added SQLite local database initialization
+- Integrated mobile dependencies on all shared packages
+- Added authenticated mobile screens for sign in, dashboard and settings
+- Added root typecheck and lint coverage for the mobile workspace
 
 Objective:
 
@@ -521,7 +532,18 @@ The Mobile Client becomes a first-class application within the platform.
 
 ### Phase 13.4 — Android Notification Listener
 
-Status: Planned
+Status: ✅ Complete
+
+Completed:
+
+- Implemented a local Expo native Android module for notification collection
+- Added `FinanceNotificationListenerService`
+- Bridged native notification payloads into TypeScript
+- Added notification parsing into the shared `parser` package
+- Converted parsed notifications into Financial Event inputs
+- Verified Expo autolinking resolves the local module
+- Verified Expo prebuild succeeds
+- Verified Android debug assembly succeeds
 
 Objective:
 
@@ -549,7 +571,15 @@ Financial activity can be captured automatically without user input.
 
 ### Phase 13.5 — Offline Storage
 
-Status: Planned
+Status: ✅ Complete
+
+Completed:
+
+- Added durable SQLite repositories for app metadata, cached Financial Events, cached Transactions and the synchronization queue
+- Persisted parsed Android notifications as cached pending Financial Events
+- Enqueued notification-created Financial Events as idempotent `create_financial_event` synchronization operations
+- Added mobile offline storage state through Zustand
+- Updated the mobile dashboard and settings screens to read cached local data and queue status
 
 Objective:
 
@@ -576,7 +606,18 @@ Financial information is immediately available and safely persisted locally.
 
 ### Phase 13.6 — Synchronization
 
-Status: Planned
+Status: ✅ Complete
+
+Completed:
+
+- Added mobile queue processing for `create_financial_event` operations
+- Applied shared Finance Core rule evaluation during mobile event upload
+- Added idempotent Supabase event creation using stable mobile UUIDs and client request metadata
+- Added retry state handling for queued sync operations
+- Added remote Financial Event and Transaction pull into SQLite
+- Added Supabase Realtime subscriptions for Financial Events and Transactions
+- Added Expo Background Task registration for periodic background synchronization
+- Added mobile sync state through Zustand and surfaced sync status in existing screens
 
 Objective:
 
@@ -603,7 +644,18 @@ Multiple clients remain synchronized while supporting offline usage.
 
 ### Phase 13.7 — Mobile Experience
 
-Status: Planned
+Status: ✅ Complete
+
+Completed:
+
+- Added mobile navigation for Financial Events, Transactions, Merchants, Categories, Budgets and Reports
+- Added offline Financial Event creation, ignore and delete workflows through the documented synchronization queue
+- Added online Financial Event confirmation through the existing Supabase confirmation pipeline
+- Added read-only cached Transaction, Merchant, Category and Budget views
+- Added locally generated budget and report views using shared Finance Core calculations
+- Added read-cache synchronization for Merchants, Categories, Budgets and Rules
+- Added local cached rule evaluation for mobile-created Financial Events
+- Updated dashboard and settings to expose the complete mobile workspace and cache status
 
 Objective:
 
@@ -630,38 +682,22 @@ The Mobile Client becomes a complete native experience.
 
 ---
 
-### Phase 13.8 — Production Release
-
-Status: Planned
-
-Objective:
-
-Prepare the Mobile Client for public release.
-
-Scope:
-
-- Production configuration
-- Release signing
-- Performance optimization
-- QA
-- Play Store assets
-- Release builds
-
-Completion Criteria:
-
-The Mobile Client is production ready.
-
-Outcome:
-
-The Personal Finance Platform is available on both Web and Android.
-
----
-
-# Upcoming Milestones
+# Current Milestones
 
 ## Phase 14 — Analytics
 
-Status: Planned
+Status: ✅ Complete
+
+Completed:
+
+- Added shared analytics contracts for trend points, grouped analytics and comparisons
+- Added deterministic Finance Core analytics generation from confirmed Transactions
+- Added income trends, spending trends and cash flow analysis
+- Added category analytics and merchant analytics
+- Added month-over-month and year-over-year comparisons
+- Added Web Analytics service, store, route and screen
+- Added Mobile Analytics screen backed by cached confirmed Transactions
+- Verified TypeScript, lint, build and Android debug assembly
 
 Objective:
 
@@ -689,7 +725,18 @@ The platform provides advanced financial analysis built entirely from confirmed 
 
 ## Phase 15 — Visualization
 
-Status: Planned
+Status: ✅ Complete
+
+Completed:
+
+- Added Web visualization components for bar, paired bar and cash flow charts
+- Added monthly income vs expense visualization
+- Added category and merchant expense charts
+- Added spending trend and cash flow visualizations
+- Added Mobile analytics visual bars using cached confirmed Transactions
+- Added Mobile budget progress visualization using the existing Finance Core budget overview
+- Preserved the rule that charts consume analytics and derived service outputs only
+- Verified TypeScript, lint, build and Android debug assembly
 
 Objective:
 
@@ -721,7 +768,22 @@ Financial insights become easier to interpret through reusable visualization com
 
 ## Phase 16 — Financial Intelligence
 
-Status: Planned
+Status: ⏳ Current — Blocked by required architecture and data model decisions
+
+Blocked:
+
+- The repository has no existing account, asset, liability, loan, investment, goal or net worth schema
+- `docs/database.md` lists these capabilities as future expansion but does not define their tables, relationships, ownership rules or migration sequence
+- `docs/sync-architecture.md` does not define mobile ownership, offline behavior or conflict resolution for these resources
+- No currency conversion policy, exchange-rate source, valuation model or investment pricing strategy is documented
+
+Required Decisions:
+
+- Account model and relationship to Transactions, Events, Budgets and Reports
+- Multi-currency conversion policy and exchange-rate source of truth
+- Asset, liability, loan, investment and goal persistence models
+- Net worth valuation rules and refresh cadence
+- Mobile synchronization ownership and offline behavior for each new resource
 
 Objective:
 
@@ -866,3 +928,43 @@ Regardless of whether financial information originates from:
 the Finance Engine must always process it through the same deterministic pipeline.
 
 This single pipeline is the foundation of the Personal Finance Platform.
+
+---
+
+## Phase 17 — Production Release
+
+Status: Planned
+
+Objective:
+
+Prepare the Personal Finance Platform for public production deployment.
+
+Repository Preparation (Completed):
+
+- Android release metadata
+- Android App Bundle generation
+- Expo release configuration
+- GitHub Actions release workflow
+- Environment validation
+- Release build automation
+- Release documentation
+
+External Release Activities:
+
+- Google Play Console project
+- Play App Signing enrollment
+- Upload keystore and credentials
+- Production Supabase configuration
+- Privacy policy
+- Store listing assets
+- Internal testing
+- Closed testing
+- Production rollout
+
+Completion Criteria:
+
+The Android application is successfully published through the Google Play Store.
+
+Outcome:
+
+The Personal Finance Platform is publicly available with both Web and Android clients.

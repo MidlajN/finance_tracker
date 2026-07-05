@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Finance Tracker",
+    "slug": "finance-tracker",
+    "scheme": "financetracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "platforms": ["android"],
+    "plugins": ["./plugins/withAndroidReleaseSigning.cjs"],
+    "android": {
+      "package": "com.financeplatform.mobile",
+      "versionCode": 1
+    },
+    "extra": {
+      "supabaseUrl": "${EXPO_PUBLIC_SUPABASE_URL}",
+      "supabasePublishableKey": "${EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY}"
+    }
+  }
+}

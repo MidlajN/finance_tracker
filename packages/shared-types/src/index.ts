@@ -34,12 +34,29 @@ export interface CategoryReference {
     color?: string | null;
 }
 
+export interface CachedCategory
+    extends CategoryReference {
+    id: string;
+    is_system: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface MerchantReference {
     id?: string | null;
     name: string;
     normalized_name?: string | null;
     usage_count?: number;
     category?: CategoryReference | null;
+}
+
+export interface CachedMerchant
+    extends MerchantReference {
+    id: string;
+    category_id?: string | null;
+    last_seen_at?: string | null;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface FinancialEventInput {
@@ -55,6 +72,14 @@ export interface FinancialEventInput {
     status?: EventStatus;
 }
 
+export interface CachedFinancialEvent
+    extends FinancialEventInput {
+    id: string;
+    source: string;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface ParsedFinancialEvent {
     source: string;
     packageName?: string;
@@ -68,6 +93,16 @@ export interface ParsedFinancialEvent {
     rawPayload: string;
 }
 
+export interface RawNotificationPayload {
+    id: string;
+    packageName: string;
+    applicationName: string | null;
+    title: string | null;
+    text: string | null;
+    subText: string | null;
+    postedAt: string;
+}
+
 export interface FinancialRule {
     id: string;
     name?: string;
@@ -76,9 +111,20 @@ export interface FinancialRule {
     merchant_id?: string | null;
     merchant?: MerchantReference | null;
     category_id?: string | null;
+    category?: CategoryReference | null;
     auto_confirm?: boolean;
     enabled?: boolean;
     priority?: number;
+}
+
+export interface CachedFinancialRule
+    extends FinancialRule {
+    name: string;
+    auto_confirm: boolean;
+    enabled: boolean;
+    priority: number;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface FinancialRuleInput {
@@ -105,12 +151,27 @@ export interface TransactionLike {
     category?: CategoryReference | null;
 }
 
+export interface CachedTransaction
+    extends TransactionLike {
+    id: string;
+    event_id: string;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface BudgetLike {
     id?: string;
     amount: number;
     category_id: string | null;
     month_start?: string;
     category?: CategoryReference | null;
+}
+
+export interface CachedBudget extends BudgetLike {
+    id: string;
+    currency: string;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface BudgetInput {
@@ -141,6 +202,58 @@ export interface FinancialReport<
     categoryReport: ReportGroup[];
     merchantReport: ReportGroup[];
     transactions: TTransaction[];
+}
+
+export interface AnalyticsTrendPoint {
+    period: string;
+    income: number;
+    expenses: number;
+    net: number;
+    transactionCount: number;
+}
+
+export interface AnalyticsGroup {
+    name: string;
+    income: number;
+    expenses: number;
+    net: number;
+    transactionCount: number;
+    averageTransaction: number;
+    percentageOfExpenses: number;
+}
+
+export interface AnalyticsComparison {
+    period: string;
+    current: AnalyticsTrendPoint;
+    previous: AnalyticsTrendPoint | null;
+    incomeChange: number;
+    incomeChangePercentage: number | null;
+    expensesChange: number;
+    expensesChangePercentage: number | null;
+    netChange: number;
+    netChangePercentage: number | null;
+}
+
+export interface YearOverYearComparison
+    extends AnalyticsComparison {
+    previousYearPeriod: string;
+}
+
+export interface FinancialAnalytics {
+    totalIncome: number;
+    totalExpenses: number;
+    netBalance: number;
+    averageMonthlyIncome: number;
+    averageMonthlyExpenses: number;
+    averageMonthlyNet: number;
+    savingsRate: number;
+    incomeTrend: AnalyticsTrendPoint[];
+    spendingTrend: AnalyticsTrendPoint[];
+    cashFlow: AnalyticsTrendPoint[];
+    categoryAnalytics: AnalyticsGroup[];
+    merchantAnalytics: AnalyticsGroup[];
+    monthlyComparisons: AnalyticsComparison[];
+    yearOverYearComparisons: YearOverYearComparison[];
 }
 
 export interface ImportResult {

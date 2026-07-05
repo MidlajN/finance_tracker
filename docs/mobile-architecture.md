@@ -45,7 +45,8 @@ The Mobile Client should:
 
 Framework
 
-- React Native
+- Expo SDK 57 with Expo Prebuild / Continuous Native Generation
+- React Native 0.86
 
 Language
 
@@ -66,6 +67,11 @@ Local Database
 Authentication
 
 - Supabase Authentication
+
+Environment
+
+- `EXPO_PUBLIC_SUPABASE_URL`
+- `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
 Synchronization
 
@@ -175,6 +181,8 @@ types/
 ```
 
 The Mobile Client mirrors the architectural principles of the Web Client while remaining optimized for mobile interaction.
+
+The Mobile Client is generated and maintained through Expo Prebuild. Native Android changes should be introduced through config plugins or local native modules so that generated native projects remain reproducible.
 
 ---
 
@@ -287,6 +295,13 @@ Report generation belongs to shared business logic.
 
 The Notification Listener is a native Android component.
 
+Implementation:
+
+- Local Expo native module: `finance-notification-listener`
+- Android service: `FinanceNotificationListenerService`
+- TypeScript bridge emits raw notification payloads into the Mobile Client
+- Notification payloads are parsed by the shared `parser` package
+
 Responsibilities:
 
 - Listen for notifications.
@@ -342,6 +357,16 @@ Local storage exists to provide:
 SQLite is not the permanent source of truth.
 
 Supabase remains authoritative.
+
+Current implementation:
+
+- `LocalDatabaseRepository` owns SQLite schema creation and persistence operations.
+- Cached Financial Events are stored in `cached_financial_events`.
+- Cached Transactions are stored in `cached_transactions`.
+- Durable sync operations are stored in `sync_queue`.
+- App metadata such as schema version and device id is stored in `app_metadata`.
+- `OfflineStorageService` writes parsed notifications to SQLite before queueing synchronization.
+- `offlineStore` exposes cached events, cached transactions and queue state to mobile UI.
 
 ---
 
@@ -489,6 +514,17 @@ Remove From Queue
 ```
 
 Failed uploads remain queued until successfully synchronized.
+
+Queue entries are idempotent by `request_id`, allowing repeated notification callbacks or retry attempts to preserve a single durable synchronization operation.
+
+Current implementation:
+
+- `SyncService` processes durable SQLite queue items and uploads Financial Events to Supabase.
+- Mobile uploads apply shared Finance Core rule evaluation before persistence.
+- Mobile-created Financial Events use stable UUIDs so the local cache and Supabase row can reconcile.
+- Supabase Realtime subscriptions refresh local Financial Events and Transactions.
+- `BackgroundSyncService` registers an Expo Background Task for periodic synchronization.
+- `syncStore` owns foreground sync, realtime subscription lifecycle and background task registration state.
 
 ---
 
