@@ -9,7 +9,14 @@ import {
 import type {
     BudgetInput,
     BudgetLike,
+    AccountBalance,
+    AccountLike,
+    AccountType,
+    AssetLike,
+    ExchangeRateLike,
     FinancialEventInput,
+    FinancialIntelligenceInput,
+    FinancialIntelligenceOverview,
     FinancialAnalytics,
     AnalyticsComparison,
     AnalyticsGroup,
@@ -18,7 +25,16 @@ import type {
     FinancialRule,
     FinancialRuleInput,
     Json,
+    GoalLike,
+    GoalProgress,
+    InvestmentLike,
+    InvestmentPerformance,
+    LiabilityLike,
+    LoanLike,
+    LoanSummary,
     MerchantReference,
+    NetWorthSummary,
+    ParsedAccountHint,
     ReportGroup,
     ReportPeriod,
     RuleMatchOperator,
@@ -26,6 +42,13 @@ import type {
 } from "@finance/shared-types";
 
 export type {
+    AccountBalance,
+    ParsedAccountHint,
+    FinancialIntelligenceOverview,
+    GoalProgress,
+    InvestmentPerformance,
+    LoanSummary,
+    NetWorthSummary,
     AnalyticsComparison,
     AnalyticsGroup,
     AnalyticsTrendPoint,
@@ -35,6 +58,143 @@ export type {
     ReportPeriod,
     RuleMatchOperator,
 };
+
+export interface AccountMatchCandidate {
+    account_type: AccountType;
+    archived?: boolean;
+    id?: string | null;
+    institution?: string | null;
+    name: string;
+}
+
+function normalizeAccountMatchText(value: string | null | undefined) {
+    return (value ?? "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+        .replace(/\s+/g, " ");
+}
+
+function getAccountMatchText(account: AccountMatchCandidate) {
+    return normalizeAccountMatchText(
+        `${account.name} ${account.institution ?? ""}`
+    );
+}
+
+function hasProviderMatch(
+    providerName: string | null | undefined,
+    accountText: string
+) {
+    const provider = normalizeAccountMatchText(providerName);
+
+    if (!provider) {
+        return false;
+    }
+
+    const tokens = provider
+        .split(" ")
+        .filter((token) => token.length > 1);
+
+    if (tokens.length === 0) {
+        return false;
+    }
+
+    return tokens.every((token) =>
+        accountText.includes(token)
+    );
+}
+
+function hasLast4Match(
+    last4: string | null | undefined,
+    accountText: string
+) {
+    const digits = (last4 ?? "").replace(/\D/g, "");
+
+    return digits.length === 4 && accountText.includes(digits);
+}
+
+function getAccountMatchScore(
+    hint: ParsedAccountHint,
+    account: AccountMatchCandidate
+) {
+    if (account.archived) {
+        return -1;
+    }
+
+    const accountText = getAccountMatchText(account);
+    const last4Match = hasLast4Match(hint.last4, accountText);
+    const providerMatch = hasProviderMatch(
+        hint.providerName,
+        accountText
+    );
+    const rawLabelMatch = normalizeAccountMatchText(
+        hint.rawLabel
+    )
+        .split(" ")
+        .filter((token) => token.length > 2)
+        .some((token) => accountText.includes(token));
+    const typeMatch =
+        hint.accountType !== null &&
+        hint.accountType !== undefined &&
+        account.account_type === hint.accountType;
+
+    let score = 0;
+
+    if (last4Match) {
+        score += 60;
+    }
+
+    if (providerMatch) {
+        score += 35;
+    }
+
+    if (typeMatch) {
+        score += 25;
+    }
+
+    if (rawLabelMatch) {
+        score += 10;
+    }
+
+    return score;
+}
+
+export function matchAccountFromHint<
+    TAccount extends AccountMatchCandidate,
+>(
+    hint: ParsedAccountHint | null | undefined,
+    accounts: TAccount[]
+): TAccount | null {
+    if (!hint) {
+        return null;
+    }
+
+    const matches = accounts
+        .map((account) => ({
+            account,
+            score: getAccountMatchScore(hint, account),
+        }))
+        .filter(({ score }) => {
+            if (hint.last4) {
+                return score >= 60;
+            }
+
+            return score >= 55;
+        })
+        .sort((left, right) => right.score - left.score);
+
+    if (matches.length === 0) {
+        return null;
+    }
+
+    const [best, second] = matches;
+
+    if (second && second.score === best.score) {
+        return null;
+    }
+
+    return best.account;
+}
 
 export const RULE_MATCH_OPERATORS: RuleMatchOperator[] = [
     "equals",
@@ -499,6 +659,11 @@ export function buildBudgetOverview<
     transactions: TTransaction[],
     monthStart = getCurrentMonthStart()
 ): BudgetOverview<TBudget> {
+    const monthlyBudgets =
+        budgets.filter((budget) =>
+            (budget.month_start ?? monthStart)
+                .slice(0, 10) === monthStart
+        );
     const monthlyExpenses =
         transactions.filter(
             (transaction) =>
@@ -510,7 +675,7 @@ export function buildBudgetOverview<
                 )
         );
 
-    const progress = budgets.map((budget) => {
+    const progress = monthlyBudgets.map((budget) => {
         const spent =
             monthlyExpenses
                 .filter(
@@ -541,7 +706,7 @@ export function buildBudgetOverview<
         };
     });
 
-    const totalBudgeted = budgets.reduce(
+    const totalBudgeted = monthlyBudgets.reduce(
         (total, budget) =>
             total + budget.amount,
         0
@@ -1429,6 +1594,344 @@ export function buildFinancialAnalytics<
             ),
         monthlyComparisons,
         yearOverYearComparisons,
+    };
+}
+
+function getExchangeRate(
+    exchangeRates: ExchangeRateLike[],
+    fromCurrency: string,
+    toCurrency: string,
+    occurredOn?: string
+) {
+    if (fromCurrency === toCurrency) {
+        return 1;
+    }
+
+    const candidates = exchangeRates
+        .filter(
+            (rate) =>
+                rate.base_currency === fromCurrency &&
+                rate.quote_currency === toCurrency &&
+                (!occurredOn ||
+                    rate.valid_on <= occurredOn)
+        )
+        .sort((first, second) =>
+            second.valid_on.localeCompare(
+                first.valid_on
+            )
+        );
+
+    return candidates[0]?.rate ?? null;
+}
+
+export function convertCurrency(
+    amount: number,
+    fromCurrency: string,
+    toCurrency: string,
+    exchangeRates: ExchangeRateLike[],
+    occurredOn?: string
+) {
+    const directRate = getExchangeRate(
+        exchangeRates,
+        fromCurrency,
+        toCurrency,
+        occurredOn
+    );
+
+    if (directRate !== null) {
+        return amount * directRate;
+    }
+
+    const inverseRate = getExchangeRate(
+        exchangeRates,
+        toCurrency,
+        fromCurrency,
+        occurredOn
+    );
+
+    if (inverseRate !== null) {
+        return amount / inverseRate;
+    }
+
+    return 0;
+}
+
+export function calculateAccountBalance<
+    TAccount extends AccountLike,
+    TTransaction extends TransactionLike,
+>(
+    account: TAccount,
+    transactions: TTransaction[]
+) {
+    return transactions
+        .filter(
+            (transaction) =>
+                transaction.account_id === account.id
+        )
+        .reduce((balance, transaction) => {
+            if (
+                transaction.transaction_type ===
+                    "income" ||
+                transaction.transaction_type ===
+                    "refund"
+            ) {
+                return balance + transaction.amount;
+            }
+
+            if (
+                transaction.transaction_type ===
+                "expense"
+            ) {
+                return balance - transaction.amount;
+            }
+
+            return balance;
+        }, account.opening_balance);
+}
+
+function convertDatedAmount(
+    amount: number,
+    currency: string,
+    baseCurrency: string,
+    exchangeRates: ExchangeRateLike[],
+    occurredOn?: string
+) {
+    return convertCurrency(
+        amount,
+        currency,
+        baseCurrency,
+        exchangeRates,
+        occurredOn
+    );
+}
+
+function calculateAccountBalances(
+    accounts: AccountLike[],
+    transactions: TransactionLike[],
+    exchangeRates: ExchangeRateLike[],
+    baseCurrency: string
+): AccountBalance[] {
+    return accounts.map((account) => {
+        const currentBalance =
+            calculateAccountBalance(
+                account,
+                transactions
+            );
+
+        return {
+            account,
+            currentBalance,
+            convertedBalance:
+                convertDatedAmount(
+                    currentBalance,
+                    account.currency,
+                    baseCurrency,
+                    exchangeRates
+                ),
+        };
+    });
+}
+
+function calculateAssetTotal(
+    assets: AssetLike[],
+    exchangeRates: ExchangeRateLike[],
+    baseCurrency: string
+) {
+    return assets.reduce(
+        (total, asset) =>
+            total +
+            convertDatedAmount(
+                asset.current_valuation,
+                asset.currency,
+                baseCurrency,
+                exchangeRates,
+                asset.acquisition_date
+            ),
+        0
+    );
+}
+
+function calculateLiabilityTotal(
+    liabilities: LiabilityLike[],
+    exchangeRates: ExchangeRateLike[],
+    baseCurrency: string
+) {
+    return liabilities.reduce(
+        (total, liability) =>
+            total +
+            convertDatedAmount(
+                liability.outstanding_balance,
+                liability.currency,
+                baseCurrency,
+                exchangeRates,
+                liability.end_date ??
+                    liability.start_date
+            ),
+        0
+    );
+}
+
+function calculateInvestmentPerformance(
+    investments: InvestmentLike[],
+    exchangeRates: ExchangeRateLike[],
+    baseCurrency: string
+): InvestmentPerformance[] {
+    return investments.map((investment) => {
+        const costBasis =
+            investment.quantity *
+            investment.average_purchase_price;
+        const marketValue =
+            investment.current_price ===
+                null ||
+            investment.current_price ===
+                undefined
+                ? 0
+                : investment.quantity *
+                  investment.current_price;
+        const gainLoss =
+            marketValue - costBasis;
+
+        return {
+            investment,
+            costBasis,
+            marketValue,
+            convertedMarketValue:
+                convertDatedAmount(
+                    marketValue,
+                    investment.currency,
+                    baseCurrency,
+                    exchangeRates
+                ),
+            gainLoss,
+            gainLossPercentage:
+                costBasis > 0
+                    ? (gainLoss / costBasis) *
+                      100
+                    : null,
+        };
+    });
+}
+
+function calculateLoanSummaries(
+    loans: LoanLike[]
+): LoanSummary[] {
+    return loans.map((loan) => ({
+        loan,
+        projectedRemainingPaymentTotal:
+            loan.monthly_payment *
+            loan.remaining_payments,
+        interestAccrued:
+            loan.interest_accrued,
+    }));
+}
+
+function calculateGoalProgress(
+    goals: GoalLike[],
+    netWorth: number,
+    exchangeRates: ExchangeRateLike[],
+    baseCurrency: string
+): GoalProgress[] {
+    return goals.map((goal) => {
+        const convertedTargetAmount =
+            convertDatedAmount(
+                goal.target_amount,
+                goal.currency,
+                baseCurrency,
+                exchangeRates,
+                goal.target_date ?? undefined
+            );
+        const currentProgress = Math.min(
+            Math.max(netWorth, 0),
+            convertedTargetAmount
+        );
+
+        return {
+            goal,
+            currentProgress,
+            convertedTargetAmount,
+            progressPercentage:
+                convertedTargetAmount > 0
+                    ? (currentProgress /
+                          convertedTargetAmount) *
+                      100
+                    : 0,
+            remainingAmount:
+                convertedTargetAmount -
+                currentProgress,
+        };
+    });
+}
+
+export function buildFinancialIntelligenceOverview(
+    input: FinancialIntelligenceInput
+): FinancialIntelligenceOverview {
+    const accountBalances =
+        calculateAccountBalances(
+            input.accounts,
+            input.transactions,
+            input.exchangeRates,
+            input.baseCurrency
+        );
+    const investments =
+        calculateInvestmentPerformance(
+            input.investments,
+            input.exchangeRates,
+            input.baseCurrency
+        );
+    const loans = calculateLoanSummaries(
+        input.loans
+    );
+    const totalAccounts =
+        accountBalances.reduce(
+            (total, account) =>
+                total +
+                account.convertedBalance,
+            0
+        );
+    const totalAssets = calculateAssetTotal(
+        input.assets,
+        input.exchangeRates,
+        input.baseCurrency
+    );
+    const totalInvestments =
+        investments.reduce(
+            (total, investment) =>
+                total +
+                investment.convertedMarketValue,
+            0
+        );
+    const totalLiabilities =
+        calculateLiabilityTotal(
+            input.liabilities,
+            input.exchangeRates,
+            input.baseCurrency
+        );
+    const netWorth =
+        totalAccounts +
+        totalAssets +
+        totalInvestments -
+        totalLiabilities;
+    const netWorthSummary: NetWorthSummary = {
+        baseCurrency: input.baseCurrency,
+        totalAccounts,
+        totalAssets,
+        totalInvestments,
+        totalLiabilities,
+        netWorth,
+    };
+
+    return {
+        baseCurrency: input.baseCurrency,
+        accounts: accountBalances,
+        goals: calculateGoalProgress(
+            input.goals,
+            netWorth,
+            input.exchangeRates,
+            input.baseCurrency
+        ),
+        investments,
+        loans,
+        netWorth: netWorthSummary,
     };
 }
 

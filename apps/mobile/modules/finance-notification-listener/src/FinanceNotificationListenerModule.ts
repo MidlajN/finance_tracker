@@ -1,12 +1,27 @@
 import { requireNativeModule, type EventSubscription } from "expo-modules-core";
 
-import type { NativeNotificationPayload } from "./types";
+import type {
+  NativeFinancialEventNotificationAction,
+  NativeNotificationPayload,
+} from "./types";
 
 interface FinanceNotificationListenerNativeModule {
+  getPendingFinancialEventNotificationActions: () => Promise<
+    NativeFinancialEventNotificationAction[]
+  >;
   openNotificationListenerSettings: () => Promise<void>;
+  requestPostNotificationsPermission: () => Promise<boolean>;
+  showFinancialEventNotification: (
+    eventId: string,
+    title: string,
+    body: string
+  ) => Promise<void>;
 }
 
 type FinanceNotificationListenerEvents = {
+  onFinancialEventNotificationAction: (
+    payload: NativeFinancialEventNotificationAction
+  ) => void;
   onNotification: (payload: NativeNotificationPayload) => void;
 };
 
@@ -26,4 +41,7 @@ export default requireNativeModule<
   }
 >("FinanceNotificationListener");
 
-export type { NativeNotificationPayload };
+export type {
+  NativeFinancialEventNotificationAction,
+  NativeNotificationPayload,
+};

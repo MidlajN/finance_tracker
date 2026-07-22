@@ -1,26 +1,73 @@
 import type {
   CreateFinancialEventSyncPayload,
+  ConfirmFinancialEventSyncPayload,
+  CreateAccountSyncPayload,
+  CreateAssetSyncPayload,
+  CreateBudgetSyncPayload,
+  CreateCategorySyncPayload,
+  CreateMerchantSyncPayload,
+  CreateGoalSyncPayload,
+  CreateInvestmentSyncPayload,
+  CreateLiabilitySyncPayload,
+  CreateLoanSyncPayload,
   DeleteFinancialEventSyncPayload,
+  DeleteResourceSyncPayload,
+  IgnoreFinancialEventSyncPayload,
   SyncQueueItem,
+  UpdateAccountSyncPayload,
+  UpdateAssetSyncPayload,
   UpdateFinancialEventSyncPayload,
+  UpdateGoalSyncPayload,
+  UpdateInvestmentSyncPayload,
+  UpdateLiabilitySyncPayload,
+  UpdateLoanSyncPayload,
+  UpdateMerchantSyncPayload,
 } from "@finance/shared-api";
 import type {
+  ParsedAccountHint,
+  AccountLike,
+  AssetLike,
+  BudgetLike,
+  CachedAccount,
+  CachedAsset,
   CachedBudget,
   CachedCategory,
   CachedFinancialEvent,
   CachedFinancialRule,
+  CachedGoal,
+  CachedInvestment,
+  CachedLiability,
+  CachedLoan,
   CachedMerchant,
   CachedTransaction,
+  CategoryLike,
+  CurrencyLike,
+  ExchangeRateLike,
   FinancialEventInput,
+  GoalLike,
+  InvestmentLike,
   Json,
+  LiabilityLike,
+  LoanLike,
+  MerchantLike,
 } from "@finance/shared-types";
+import { matchAccountFromHint } from "@finance/finance-core";
+import { normalizeMerchantName } from "@finance/shared-utils";
 
 import {
   AppMetadataRepository,
   initializeLocalDatabase,
+  LocalAccountRepository,
+  LocalAssetRepository,
   LocalBudgetRepository,
   LocalCategoryRepository,
   LocalEventRepository,
+  LocalExchangeRateRepository,
+  LocalGoalRepository,
+  LocalInvestmentRepository,
+  LocalLiabilityRepository,
+  LocalLoanRepository,
+  LocalCurrencyRepository,
   LocalMerchantRepository,
   LocalRuleRepository,
   LocalTransactionRepository,
@@ -29,10 +76,28 @@ import {
 import { MobileRuleEngineService } from "./MobileRuleEngineService";
 import type { ParsedNotificationResult } from "./NotificationService";
 
+const ACCOUNT_TYPES = [
+  "cash",
+  "bank",
+  "credit_card",
+  "investment",
+  "loan",
+  "digital_wallet",
+  "other",
+] as const;
+
 export interface OfflineSnapshot {
+  accounts: CachedAccount[];
+  assets: CachedAsset[];
   budgets: CachedBudget[];
   categories: CachedCategory[];
+  currencies: CurrencyLike[];
   events: CachedFinancialEvent[];
+  exchangeRates: ExchangeRateLike[];
+  goals: CachedGoal[];
+  investments: CachedInvestment[];
+  liabilities: CachedLiability[];
+  loans: CachedLoan[];
   merchants: CachedMerchant[];
   rules: CachedFinancialRule[];
   transactions: CachedTransaction[];
@@ -47,6 +112,16 @@ export interface PersistedFinancialEvent {
 export interface UpdatedFinancialEvent {
   event: CachedFinancialEvent;
   queueItem: SyncQueueItem<UpdateFinancialEventSyncPayload>;
+}
+
+export interface ConfirmedFinancialEvent {
+  event: CachedFinancialEvent;
+  queueItem: SyncQueueItem<ConfirmFinancialEventSyncPayload>;
+}
+
+export interface IgnoredFinancialEvent {
+  event: CachedFinancialEvent;
+  queueItem: SyncQueueItem<IgnoreFinancialEventSyncPayload>;
 }
 
 const DEVICE_ID_KEY = "device_id";
@@ -121,15 +196,79 @@ function getMetadataString(
     : null;
 }
 
+function getParsedAccountHint(metadata: Json | null | undefined) {
+  const value = getMetadataObject(metadata).account_hint;
+
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return null;
+  }
+
+  const hint = value as Partial<ParsedAccountHint>;
+  const accountType = ACCOUNT_TYPES.includes(
+    hint.accountType as (typeof ACCOUNT_TYPES)[number]
+  )
+    ? hint.accountType
+    : null;
+
+  return {
+    accountType,
+    last4: typeof hint.last4 === "string" ? hint.last4 : null,
+    providerName:
+      typeof hint.providerName === "string" ? hint.providerName : null,
+    rawLabel: typeof hint.rawLabel === "string" ? hint.rawLabel : null,
+  } satisfies ParsedAccountHint;
+}
+
+async function attachMatchedAccount(
+  event: FinancialEventInput
+): Promise<FinancialEventInput> {
+  const metadata = getMetadataObject(event.metadata);
+  const existingAccountId = getMetadataString(event.metadata, "account_id");
+
+  if (existingAccountId) {
+    return event;
+  }
+
+  const accountHint = getParsedAccountHint(event.metadata);
+  const matchedAccount = matchAccountFromHint(
+    accountHint,
+    await LocalAccountRepository.list()
+  );
+
+  if (!matchedAccount) {
+    return event;
+  }
+
+  return {
+    ...event,
+    metadata: {
+      ...metadata,
+      account_id: matchedAccount.id,
+      account_match: {
+        account_id: matchedAccount.id,
+        matched_at: new Date().toISOString(),
+        strategy: "notification_account_hint",
+      },
+    },
+  };
+}
+
 function getStableLocalEventId(event: FinancialEventInput) {
   const source = getMetadataString(event.metadata, "source");
   const reference = getMetadataString(event.metadata, "reference");
+  const packageName = getMetadataString(event.metadata, "packageName");
 
   if (!source || !reference) {
     return createRandomUuid();
   }
 
-  return createStableUuid(`${sanitizeIdSegment(source)}:${reference}`);
+  return createStableUuid(
+    `${sanitizeIdSegment(source)}:${sanitizeIdSegment(packageName ?? "unknown")}:${reference}`
+  );
 }
 
 function toFinancialEventInput(
@@ -165,6 +304,14 @@ export class OfflineStorageService {
       merchants,
       budgets,
       rules,
+      currencies,
+      exchangeRates,
+      accounts,
+      assets,
+      liabilities,
+      loans,
+      investments,
+      goals,
       queue,
     ] = await Promise.all([
       LocalEventRepository.list(),
@@ -173,13 +320,29 @@ export class OfflineStorageService {
       LocalMerchantRepository.list(),
       LocalBudgetRepository.list(),
       LocalRuleRepository.list(),
+      LocalCurrencyRepository.list(),
+      LocalExchangeRateRepository.list(),
+      LocalAccountRepository.list(),
+      LocalAssetRepository.list(),
+      LocalLiabilityRepository.list(),
+      LocalLoanRepository.list(),
+      LocalInvestmentRepository.list(),
+      LocalGoalRepository.list(),
       SyncQueueRepository.listPending(),
     ]);
 
     return {
+      accounts,
+      assets,
       budgets,
       categories,
+      currencies,
       events,
+      exchangeRates,
+      goals,
+      investments,
+      liabilities,
+      loans,
       merchants,
       rules,
       transactions,
@@ -206,9 +369,10 @@ export class OfflineStorageService {
   ): Promise<PersistedFinancialEvent> {
     await this.initialize();
 
+    const eventWithMatchedAccount = await attachMatchedAccount(event);
     const result =
       await MobileRuleEngineService.applyLocalRulesToEventWithResult(
-        event
+        eventWithMatchedAccount
       );
     const stableLocalEventId = getStableLocalEventId(result.event);
     const cachedEvent = await LocalEventRepository.createPending(
@@ -285,4 +449,455 @@ export class OfflineStorageService {
       result.event.source
     );
   }
+
+  static async confirmFinancialEvent(
+    eventId: string
+  ): Promise<ConfirmedFinancialEvent> {
+    await this.initialize();
+
+    const event = await LocalEventRepository.update(eventId, {
+      status: "confirmed",
+    });
+    const deviceId = await this.getDeviceId();
+    const payload: ConfirmFinancialEventSyncPayload = {
+      eventId,
+    };
+    const queueItem = await SyncQueueRepository.enqueue(
+      "confirm_event",
+      payload,
+      deviceId,
+      `confirm_event:${eventId}`
+    );
+
+    return {
+      event,
+      queueItem,
+    };
+  }
+
+  static async ignoreFinancialEvent(
+    eventId: string
+  ): Promise<IgnoredFinancialEvent> {
+    await this.initialize();
+
+    const event = await LocalEventRepository.update(eventId, {
+      status: "ignored",
+    });
+    const deviceId = await this.getDeviceId();
+    const payload: IgnoreFinancialEventSyncPayload = {
+      eventId,
+    };
+    const queueItem = await SyncQueueRepository.enqueue(
+      "ignore_event",
+      payload,
+      deviceId,
+      `ignore_event:${eventId}`
+    );
+
+    return {
+      event,
+      queueItem,
+    };
+  }
+
+  static async persistAccount(resource: AccountLike) {
+    const cached = toCachedAccount(resource);
+    await LocalAccountRepository.upsert(cached);
+
+    return enqueueResource<CreateAccountSyncPayload>(
+      "create_account",
+      {
+        localId: cached.id,
+        resource: cached,
+      },
+      `create_account:${cached.id}`
+    );
+  }
+
+  static async persistBudget(resource: BudgetLike) {
+    const cached = toCachedBudget(resource);
+    await LocalBudgetRepository.upsert(cached);
+
+    return enqueueResource<CreateBudgetSyncPayload>(
+      "create_budget",
+      {
+        localId: cached.id,
+        resource: cached,
+      },
+      `create_budget:${cached.id}`
+    );
+  }
+
+  static async persistCategory(resource: CategoryLike) {
+    const cached = toCachedCategory(resource);
+    await LocalCategoryRepository.upsert(cached);
+
+    return enqueueResource<CreateCategorySyncPayload>(
+      "create_category",
+      {
+        localId: cached.id,
+        resource: cached,
+      },
+      `create_category:${cached.id}`
+    );
+  }
+
+  static async persistMerchant(resource: MerchantLike) {
+    const cached = toCachedMerchant(resource);
+    await LocalMerchantRepository.upsert(cached);
+
+    return enqueueResource<CreateMerchantSyncPayload>(
+      "create_merchant",
+      {
+        localId: cached.id,
+        resource: cached,
+      },
+      `create_merchant:${cached.id}`
+    );
+  }
+
+  static async updateMerchant(id: string, updates: Partial<MerchantLike>) {
+    const cached = await updateLocalResource(
+      LocalMerchantRepository,
+      id,
+      updates
+    );
+
+    return enqueueResource<UpdateMerchantSyncPayload>(
+      "update_merchant",
+      {
+        id,
+        updates,
+      },
+      `update_merchant:${id}:${cached.updated_at}`
+    );
+  }
+
+  static async updateAccount(id: string, updates: Partial<AccountLike>) {
+    const cached = await updateLocalResource(
+      LocalAccountRepository,
+      id,
+      updates
+    );
+
+    return enqueueResource<UpdateAccountSyncPayload>(
+      "update_account",
+      {
+        id,
+        updates,
+      },
+      `update_account:${id}:${cached.updated_at}`
+    );
+  }
+
+  static async deleteAccount(id: string) {
+    await LocalAccountRepository.delete(id);
+
+    return enqueueDelete("delete_account", id);
+  }
+
+  static async persistAsset(resource: AssetLike) {
+    const cached = toCachedAsset(resource);
+    await LocalAssetRepository.upsert(cached);
+
+    return enqueueResource<CreateAssetSyncPayload>(
+      "create_asset",
+      {
+        localId: cached.id,
+        resource: cached,
+      },
+      `create_asset:${cached.id}`
+    );
+  }
+
+  static async updateAsset(id: string, updates: Partial<AssetLike>) {
+    const cached = await updateLocalResource(
+      LocalAssetRepository,
+      id,
+      updates
+    );
+
+    return enqueueResource<UpdateAssetSyncPayload>(
+      "update_asset",
+      {
+        id,
+        updates,
+      },
+      `update_asset:${id}:${cached.updated_at}`
+    );
+  }
+
+  static async deleteAsset(id: string) {
+    await LocalAssetRepository.delete(id);
+
+    return enqueueDelete("delete_asset", id);
+  }
+
+  static async persistLiability(resource: LiabilityLike) {
+    const cached = toCachedLiability(resource);
+    await LocalLiabilityRepository.upsert(cached);
+
+    return enqueueResource<CreateLiabilitySyncPayload>(
+      "create_liability",
+      {
+        localId: cached.id,
+        resource: cached,
+      },
+      `create_liability:${cached.id}`
+    );
+  }
+
+  static async updateLiability(
+    id: string,
+    updates: Partial<LiabilityLike>
+  ) {
+    const cached = await updateLocalResource(
+      LocalLiabilityRepository,
+      id,
+      updates
+    );
+
+    return enqueueResource<UpdateLiabilitySyncPayload>(
+      "update_liability",
+      {
+        id,
+        updates,
+      },
+      `update_liability:${id}:${cached.updated_at}`
+    );
+  }
+
+  static async deleteLiability(id: string) {
+    await LocalLiabilityRepository.delete(id);
+
+    return enqueueDelete("delete_liability", id);
+  }
+
+  static async persistLoan(resource: LoanLike) {
+    const cached = toCachedLoan(resource);
+    await LocalLoanRepository.upsert(cached);
+
+    return enqueueResource<CreateLoanSyncPayload>(
+      "create_loan",
+      {
+        localId: cached.id,
+        resource: cached,
+      },
+      `create_loan:${cached.id}`
+    );
+  }
+
+  static async updateLoan(id: string, updates: Partial<LoanLike>) {
+    const cached = await updateLocalResource(LocalLoanRepository, id, updates);
+
+    return enqueueResource<UpdateLoanSyncPayload>(
+      "update_loan",
+      {
+        id,
+        updates,
+      },
+      `update_loan:${id}:${cached.updated_at}`
+    );
+  }
+
+  static async deleteLoan(id: string) {
+    await LocalLoanRepository.delete(id);
+
+    return enqueueDelete("delete_loan", id);
+  }
+
+  static async persistInvestment(resource: InvestmentLike) {
+    const cached = toCachedInvestment(resource);
+    await LocalInvestmentRepository.upsert(cached);
+
+    return enqueueResource<CreateInvestmentSyncPayload>(
+      "create_investment",
+      {
+        localId: cached.id,
+        resource: cached,
+      },
+      `create_investment:${cached.id}`
+    );
+  }
+
+  static async updateInvestment(
+    id: string,
+    updates: Partial<InvestmentLike>
+  ) {
+    const cached = await updateLocalResource(
+      LocalInvestmentRepository,
+      id,
+      updates
+    );
+
+    return enqueueResource<UpdateInvestmentSyncPayload>(
+      "update_investment",
+      {
+        id,
+        updates,
+      },
+      `update_investment:${id}:${cached.updated_at}`
+    );
+  }
+
+  static async deleteInvestment(id: string) {
+    await LocalInvestmentRepository.delete(id);
+
+    return enqueueDelete("delete_investment", id);
+  }
+
+  static async persistGoal(resource: GoalLike) {
+    const cached = toCachedGoal(resource);
+    await LocalGoalRepository.upsert(cached);
+
+    return enqueueResource<CreateGoalSyncPayload>(
+      "create_goal",
+      {
+        localId: cached.id,
+        resource: cached,
+      },
+      `create_goal:${cached.id}`
+    );
+  }
+
+  static async updateGoal(id: string, updates: Partial<GoalLike>) {
+    const cached = await updateLocalResource(LocalGoalRepository, id, updates);
+
+    return enqueueResource<UpdateGoalSyncPayload>(
+      "update_goal",
+      {
+        id,
+        updates,
+      },
+      `update_goal:${id}:${cached.updated_at}`
+    );
+  }
+
+  static async deleteGoal(id: string) {
+    await LocalGoalRepository.delete(id);
+
+    return enqueueDelete("delete_goal", id);
+  }
+}
+
+function withTimestamps<TResource extends { id?: string }>(
+  resource: TResource
+) {
+  const now = new Date().toISOString();
+
+  return {
+    ...resource,
+    id: resource.id ?? createRandomUuid(),
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+function toCachedAccount(resource: AccountLike): CachedAccount {
+  return withTimestamps({
+    ...resource,
+    archived: resource.archived ?? false,
+  });
+}
+
+function toCachedBudget(resource: BudgetLike): CachedBudget {
+  const monthStart =
+    resource.month_start ?? new Date().toISOString().slice(0, 7) + "-01";
+
+  return {
+    ...withTimestamps(resource),
+    currency: "INR",
+    month_start: monthStart,
+  };
+}
+
+function toCachedCategory(resource: CategoryLike): CachedCategory {
+  return withTimestamps({
+    ...resource,
+    is_system: false,
+  });
+}
+
+function toCachedMerchant(resource: MerchantLike): CachedMerchant {
+  return withTimestamps({
+    ...resource,
+    category: resource.category ?? null,
+    category_id: resource.category_id ?? null,
+    last_seen_at: resource.last_seen_at ?? null,
+    normalized_name:
+      resource.normalized_name ?? normalizeMerchantName(resource.name),
+    usage_count: resource.usage_count ?? 0,
+  });
+}
+
+function toCachedAsset(resource: AssetLike): CachedAsset {
+  return withTimestamps(resource);
+}
+
+function toCachedLiability(resource: LiabilityLike): CachedLiability {
+  return withTimestamps(resource);
+}
+
+function toCachedLoan(resource: LoanLike): CachedLoan {
+  return withTimestamps(resource);
+}
+
+function toCachedInvestment(resource: InvestmentLike): CachedInvestment {
+  return withTimestamps({
+    ...resource,
+    purchase_history: resource.purchase_history ?? [],
+  });
+}
+
+function toCachedGoal(resource: GoalLike): CachedGoal {
+  return withTimestamps(resource);
+}
+
+async function updateLocalResource<
+  TResource extends { id: string; updated_at: string },
+>(
+  repository: {
+    list: () => Promise<TResource[]>;
+    upsert: (resource: TResource) => Promise<void>;
+  },
+  id: string,
+  updates: Partial<TResource>
+) {
+  const existing = (await repository.list()).find((resource) => resource.id === id);
+
+  if (!existing) {
+    throw new Error("Resource not found.");
+  }
+
+  const updated = {
+    ...existing,
+    ...updates,
+    id,
+    updated_at: new Date().toISOString(),
+  };
+
+  await repository.upsert(updated);
+
+  return updated;
+}
+
+async function enqueueResource<TPayload>(
+  operation: SyncQueueItem<TPayload>["operation"],
+  payload: TPayload,
+  requestId: string
+) {
+  await OfflineStorageService.initialize();
+  const deviceId = await OfflineStorageService.getDeviceId();
+
+  return SyncQueueRepository.enqueue(operation, payload, deviceId, requestId);
+}
+
+function enqueueDelete(operation: SyncQueueItem<DeleteResourceSyncPayload>["operation"], id: string) {
+  return enqueueResource<DeleteResourceSyncPayload>(
+    operation,
+    {
+      id,
+    },
+    `${operation}:${id}`
+  );
 }

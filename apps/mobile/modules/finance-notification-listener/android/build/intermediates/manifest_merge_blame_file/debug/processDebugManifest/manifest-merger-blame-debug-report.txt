@@ -4,25 +4,36 @@
 4
 5    <uses-sdk android:minSdkVersion="24" />
 6
-7    <application>
-7-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:2:3-12:17
-8        <service
-8-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:3:5-11:15
-9            android:name="com.financeplatform.notifications.FinanceNotificationListenerService"
-9-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:4:7-57
-10            android:exported="true"
-10-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:5:7-30
-11            android:label="Finance Tracker Notification Listener"
-11-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:6:7-60
-12            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" >
-12-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:7:7-81
-13            <intent-filter>
-13-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:8:7-10:23
-14                <action android:name="android.service.notification.NotificationListenerService" />
-14-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:9:9-91
-14-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:9:17-88
-15            </intent-filter>
-16        </service>
-17    </application>
-18
-19</manifest>
+7    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+7-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:2:3-75
+7-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:2:20-72
+8
+9    <application>
+9-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:4:3-18:17
+10        <receiver
+10-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:5:5-7:34
+11            android:name="com.financeplatform.notifications.FinanceNotificationActionReceiver"
+11-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:6:7-56
+12            android:exported="false" />
+12-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:7:7-31
+13
+14        <service
+14-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:9:5-17:15
+15            android:name="com.financeplatform.notifications.FinanceNotificationListenerService"
+15-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:10:7-57
+16            android:exported="true"
+16-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:11:7-30
+17            android:label="Finance Tracker Notification Listener"
+17-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:12:7-60
+18            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" >
+18-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:13:7-81
+19            <intent-filter>
+19-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:14:7-16:23
+20                <action android:name="android.service.notification.NotificationListenerService" />
+20-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:15:9-91
+20-->/Users/ksum/Personal/finance_engine/apps/mobile/modules/finance-notification-listener/android/src/main/AndroidManifest.xml:15:17-88
+21            </intent-filter>
+22        </service>
+23    </application>
+24
+25</manifest>

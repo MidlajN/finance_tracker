@@ -12,6 +12,7 @@ import { Input } from "../../components/common/Input";
 import { MerchantCombobox } from "../../components/common/MerchantCombobox";
 
 import { useCategoryStore } from "../../stores/categoryStore";
+import { useFinancialIntelligenceStore } from "../../stores/financialIntelligenceStore";
 import { useTransactionStore } from "../../stores/transactionStore";
 
 import type {
@@ -85,6 +86,17 @@ function EditTransactionForm({
         (state) => state.categories
     );
 
+    const accounts =
+        useFinancialIntelligenceStore(
+            (state) =>
+                state.data?.accounts ?? []
+        );
+
+    const refreshFinancialIntelligence =
+        useFinancialIntelligenceStore(
+            (state) => state.refresh
+        );
+
     const refreshCategories =
         useCategoryStore(
             (state) => state.refresh
@@ -102,6 +114,11 @@ function EditTransactionForm({
     const [categoryId, setCategoryId] =
         useState<string | null>(
             transaction.category_id
+        );
+
+    const [accountId, setAccountId] =
+        useState<string | null>(
+            transaction.account_id
         );
 
     const [amount, setAmount] =
@@ -130,7 +147,11 @@ function EditTransactionForm({
 
     useEffect(() => {
         refreshCategories();
-    }, [refreshCategories]);
+        refreshFinancialIntelligence();
+    }, [
+        refreshCategories,
+        refreshFinancialIntelligence,
+    ]);
 
     async function handleSubmit(
         event: FormEvent<HTMLFormElement>
@@ -181,6 +202,7 @@ function EditTransactionForm({
                     transaction.event_id,
                 merchant,
                 categoryId,
+                accountId,
                 amount: parsedAmount,
                 occurredAt:
                     parsedDate.toISOString(),
@@ -216,6 +238,50 @@ function EditTransactionForm({
                     onChange={setCategoryId}
                     disabled={loading}
                 />
+            </FormField>
+
+            <FormField label="Account">
+                <select
+                    value={accountId ?? ""}
+                    disabled={loading}
+                    onChange={(event) =>
+                        setAccountId(
+                            event.target.value ||
+                                null
+                        )
+                    }
+                    className="
+                        h-10
+                        w-full
+                        rounded-lg
+                        border
+                        border-slate-300
+                        bg-white
+                        px-3
+                        text-sm
+                        text-slate-900
+                        outline-none
+                        transition
+                        focus:border-blue-500
+                        focus:ring-2
+                        focus:ring-blue-500/20
+                        disabled:cursor-not-allowed
+                        disabled:bg-slate-50
+                        disabled:text-slate-500
+                    "
+                >
+                    <option value="">
+                        No account
+                    </option>
+                    {accounts.map((account) => (
+                        <option
+                            key={account.id}
+                            value={account.id}
+                        >
+                            {account.name}
+                        </option>
+                    ))}
+                </select>
             </FormField>
 
             <FormField

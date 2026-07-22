@@ -1,5 +1,8 @@
 import type {
+    AccountType,
     FinancialEventInput,
+    Json,
+    ParsedAccountHint,
     ParsedFinancialEvent,
     RawNotificationPayload,
     TransactionLike,
@@ -310,7 +313,10 @@ const DEBIT_PATTERN =
     /\b(debited|debit|spent|paid|sent|purchase|withdrawn|charged)\b/i;
 
 const CREDIT_PATTERN =
-    /\b(credited|credit|received|refund|deposited|salary)\b/i;
+    /\b(credited|credit(?!\s+(?:card|limit)\b)|received|refund|deposited|salary)\b/i;
+
+const INCOMING_PAYMENT_PATTERN =
+    /\b(?:paid|sent)\s+you\b|\byou\s+(?:received|got)\b/i;
 
 function parseAmount(text: string) {
     const match = text.match(AMOUNT_PATTERN);
@@ -328,6 +334,10 @@ function parseAmount(text: string) {
 }
 
 function parseNotificationDirection(text: string) {
+    if (INCOMING_PAYMENT_PATTERN.test(text)) {
+        return "credit" as const;
+    }
+
     if (DEBIT_PATTERN.test(text)) {
         return "debit" as const;
     }
@@ -339,20 +349,186 @@ function parseNotificationDirection(text: string) {
     return null;
 }
 
+function parseTransactionReference(text: string) {
+    const match = text.match(
+        /\b(?:ref(?:erence)?|txn|trxn)(?:\s*(?:no|number))?\.?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{5,})\b/i
+    );
+
+    return match?.[1] ?? null;
+}
+
+function parseOccurredAt(
+    text: string,
+    postedAt: string
+) {
+    const postedDate = new Date(postedAt);
+
+    if (Number.isNaN(postedDate.getTime())) {
+        return null;
+    }
+
+    const match = text.match(
+        /\b(?:on|dated?)\s+(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})\b/i
+    );
+
+    if (!match) {
+        return postedDate;
+    }
+
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const parsedYear = Number(match[3]);
+    const year = parsedYear < 100
+        ? 2000 + parsedYear
+        : parsedYear;
+    const occurredAt = new Date(
+        year,
+        month - 1,
+        day,
+        postedDate.getHours(),
+        postedDate.getMinutes(),
+        postedDate.getSeconds(),
+        postedDate.getMilliseconds()
+    );
+
+    if (
+        occurredAt.getFullYear() !== year ||
+        occurredAt.getMonth() !== month - 1 ||
+        occurredAt.getDate() !== day
+    ) {
+        return postedDate;
+    }
+
+    return occurredAt;
+}
+
+function cleanAccountProvider(value: string) {
+    return value
+        .replace(
+            /^.*\b(?:on|for|from|to|with|using)\s+(?:your|my)?\s*/i,
+            ""
+        )
+        .replace(/\b(on|for|from|to|your|my|the)\b/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function buildAccountHint(
+    accountType: AccountType,
+    match: RegExpMatchArray
+): ParsedAccountHint | null {
+    const providerName = cleanAccountProvider(match[1] ?? "");
+    const last4 = match[2]?.trim() ?? null;
+
+    if (!providerName && !last4) {
+        return null;
+    }
+
+    return {
+        accountType,
+        last4,
+        providerName: providerName || null,
+        rawLabel: match[0].trim(),
+    };
+}
+
+function parseAccountHint(text: string): ParsedAccountHint | null {
+    const creditCardMatch = text.match(
+        /\b(?:your|my)\s+([A-Za-z][A-Za-z0-9&.'\-\s]{0,31}?)\s+credit\s+card\b[^0-9]{0,80}(\d{4})\b/i
+    );
+
+    if (creditCardMatch) {
+        return buildAccountHint(
+            "credit_card",
+            creditCardMatch
+        );
+    }
+
+    const debitCardMatch = text.match(
+        /\b(?:your|my)\s+([A-Za-z][A-Za-z0-9&.'\-\s]{0,31}?)\s+debit\s+card\b[^0-9]{0,80}(\d{4})\b/i
+    );
+
+    if (debitCardMatch) {
+        return buildAccountHint("bank", debitCardMatch);
+    }
+
+    const accountMatch = text.match(
+        /\b(?:your|my)\s+([A-Za-z][A-Za-z0-9&.'\-\s]{0,31}?)\s+(?:bank\s+)?(?:account|acct|a\/c)\b[^0-9]{0,80}(\d{4})\b/i
+    );
+
+    if (accountMatch) {
+        return buildAccountHint("bank", accountMatch);
+    }
+
+    const walletMatch = text.match(
+        /\b(?:from|to|via)\s+(?:your|my)?\s*([A-Za-z][A-Za-z0-9&.'\-\s]{1,32}?)\s+wallet\b/i
+    );
+
+    if (walletMatch?.[1]) {
+        const providerName = cleanAccountProvider(walletMatch[1]);
+
+        return {
+            accountType: "digital_wallet",
+            last4: null,
+            providerName: providerName || null,
+            rawLabel: walletMatch[0].trim(),
+        };
+    }
+
+    const last4Match = text.match(
+        /\b(?:ending(?:\s+with)?|xx|x{2,})\s*(\d{4})\b/i
+    );
+
+    if (last4Match?.[1]) {
+        return {
+            accountType: null,
+            last4: last4Match[1],
+            providerName: null,
+            rawLabel: last4Match[0].trim(),
+        };
+    }
+
+    return null;
+}
+
 function parseMerchantName(
     payload: RawNotificationPayload
 ) {
-    const text =
-        `${payload.title ?? ""} ${payload.text ?? ""}`.trim();
+    const candidates = [
+        payload.text,
+        payload.title,
+        `${payload.title ?? ""} ${payload.text ?? ""}`,
+    ]
+        .filter(
+            (value): value is string =>
+                typeof value === "string" &&
+                value.trim().length > 0
+        )
+        .map((value) => value.trim());
 
-    const merchantMatch = text.match(
-        /\b(?:to|at|from)\s+([A-Za-z0-9][A-Za-z0-9&().'\-\s]{1,48})/i
-    );
+    for (const candidate of candidates) {
+        const incomingMatch = candidate.match(
+            /^\s*([A-Za-z0-9][A-Za-z0-9&().'\-\s]{1,48}?)\s+(?:paid|sent)\s+you\b/i
+        );
 
-    if (merchantMatch?.[1]) {
-        return merchantMatch[1]
-            .replace(/\b(on|using|via|ref|reference)\b.*$/i, "")
-            .trim();
+        if (incomingMatch?.[1]) {
+            return incomingMatch[1].trim();
+        }
+    }
+
+    for (const candidate of candidates) {
+        const merchantMatch = candidate.match(
+            /\b(?:to|at|from)\s+([A-Za-z0-9][A-Za-z0-9&().'\-\s]{1,48})/i
+        );
+
+        if (merchantMatch?.[1]) {
+            return merchantMatch[1]
+                .replace(
+                    /\b(on|using|via|ref|reference|trxn|txn|transaction|report)\b.*$/i,
+                    ""
+                )
+                .trim();
+        }
     }
 
     return payload.applicationName ??
@@ -378,13 +554,12 @@ export function parseNotificationPayload(
         return null;
     }
 
-    const occurredAt = new Date(
+    const occurredAt = parseOccurredAt(
+        rawText,
         payload.postedAt
     );
 
-    if (
-        Number.isNaN(occurredAt.getTime())
-    ) {
+    if (!occurredAt) {
         return null;
     }
 
@@ -398,9 +573,27 @@ export function parseNotificationPayload(
         direction,
         occurredAt:
             occurredAt.toISOString(),
-        reference: payload.id,
+        reference:
+            parseTransactionReference(rawText) ??
+            payload.id,
+        accountHint: parseAccountHint(rawText),
         confidence: 0.72,
         rawPayload: JSON.stringify(payload),
+    };
+}
+
+function toAccountHintMetadata(
+    hint: ParsedAccountHint | null | undefined
+): Json | null {
+    if (!hint) {
+        return null;
+    }
+
+    return {
+        accountType: hint.accountType ?? null,
+        last4: hint.last4 ?? null,
+        providerName: hint.providerName ?? null,
+        rawLabel: hint.rawLabel ?? null,
     };
 }
 
@@ -419,6 +612,9 @@ export function parsedNotificationToEventInput(
             source: event.source,
             packageName: event.packageName,
             reference: event.reference ?? null,
+            account_hint: toAccountHintMetadata(
+                event.accountHint
+            ),
             rawPayload: event.rawPayload,
         },
         notes: null,

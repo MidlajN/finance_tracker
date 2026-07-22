@@ -8,12 +8,14 @@
   },
   "types": "./src/index.ts",
   "scripts": {
+    "test": "node --test src/index.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@finance/shared-types": "0.0.0"
   },
   "devDependencies": {
+    "@types/node": "^24.13.2",
     "typescript": "~6.0.2"
   }
 }

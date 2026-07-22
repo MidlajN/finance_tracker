@@ -18,6 +18,8 @@ interface UpdateTransactionInput {
 
     categoryId: string | null;
 
+    accountId: string | null;
+
     amount: number;
 
     occurredAt: string;

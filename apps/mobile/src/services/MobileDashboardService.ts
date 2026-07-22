@@ -1,6 +1,7 @@
 import {
   buildBudgetOverview,
   buildDashboardData,
+  buildFinancialIntelligenceOverview,
   buildFinancialAnalytics,
   buildFinancialReport,
   getCurrentMonthStart,
@@ -9,6 +10,13 @@ import { parseFinancialEventsCsv } from "@finance/parser";
 import { API_RESOURCES } from "@finance/shared-api";
 import type {
   BudgetLike,
+  AccountLike,
+  AssetLike,
+  ExchangeRateLike,
+  GoalLike,
+  InvestmentLike,
+  LiabilityLike,
+  LoanLike,
   ParsedFinancialEvent,
   ReportPeriod,
   TransactionLike,
@@ -48,6 +56,40 @@ export class MobileDashboardService {
 
   static getAnalytics(transactions: TransactionLike[]) {
     return buildFinancialAnalytics(transactions);
+  }
+
+  static getFinancialIntelligenceOverview({
+    accounts,
+    assets,
+    baseCurrency,
+    exchangeRates,
+    goals,
+    investments,
+    liabilities,
+    loans,
+    transactions,
+  }: {
+    accounts: AccountLike[];
+    assets: AssetLike[];
+    baseCurrency: string;
+    exchangeRates: ExchangeRateLike[];
+    goals: GoalLike[];
+    investments: InvestmentLike[];
+    liabilities: LiabilityLike[];
+    loans: LoanLike[];
+    transactions: TransactionLike[];
+  }) {
+    return buildFinancialIntelligenceOverview({
+      accounts,
+      assets,
+      liabilities,
+      loans,
+      investments,
+      goals,
+      transactions,
+      exchangeRates,
+      baseCurrency,
+    });
   }
 
   static getFormattedBalance(amount: number) {

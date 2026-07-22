@@ -1,5 +1,6 @@
 import type {
   CachedTransaction,
+  CachedFinancialEvent,
   CategoryReference,
   MerchantReference,
 } from "@finance/shared-types";
@@ -9,6 +10,7 @@ import { supabase } from "../lib/supabase";
 interface RemoteTransactionRow {
   id: string;
   event_id: string;
+  account_id: string | null;
   amount: number;
   category_id: string | null;
   currency: string;
@@ -16,6 +18,7 @@ interface RemoteTransactionRow {
   notes: string | null;
   occurred_at: string;
   transaction_type: CachedTransaction["transaction_type"];
+  event?: CachedFinancialEvent | null;
   merchant?: MerchantReference | null;
   category?: CategoryReference | null;
   created_at: string;
@@ -28,6 +31,7 @@ function toCachedTransaction(
   return {
     id: row.id,
     event_id: row.event_id,
+    account_id: row.account_id,
     amount: row.amount,
     category_id: row.category_id,
     currency: row.currency,
@@ -35,6 +39,7 @@ function toCachedTransaction(
     notes: row.notes,
     occurred_at: row.occurred_at,
     transaction_type: row.transaction_type,
+    event: row.event ?? null,
     merchant: row.merchant ?? null,
     category: row.category ?? null,
     created_at: row.created_at,
@@ -48,6 +53,7 @@ export class RemoteTransactionRepository {
       .from("transactions")
       .select(`
         *,
+        event:financial_events(*),
         merchant:merchants(*),
         category:categories(*)
       `)

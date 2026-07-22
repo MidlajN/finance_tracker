@@ -3,8 +3,10 @@ import type {
   CachedCategory,
   CachedFinancialRule,
   CachedMerchant,
+  CategoryLike,
   CategoryReference,
   MerchantReference,
+  MerchantLike,
 } from "@finance/shared-types";
 
 import { supabase } from "../lib/supabase";
@@ -115,6 +117,18 @@ function toCachedRule(row: RuleRow): CachedFinancialRule {
   };
 }
 
+async function getUserId() {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("User not authenticated.");
+  }
+
+  return user.id;
+}
+
 export class RemoteCategoryRepository {
   static async list() {
     const { data, error } = await supabase
@@ -129,6 +143,28 @@ export class RemoteCategoryRepository {
     }
 
     return ((data ?? []) as CategoryRow[]).map(toCachedCategory);
+  }
+
+  static async create(localId: string, category: CategoryLike) {
+    const userId = await getUserId();
+    const { data, error } = await supabase
+      .from("categories")
+      .insert({
+        color: category.color ?? null,
+        icon: category.icon ?? null,
+        id: localId,
+        is_system: false,
+        name: category.name,
+        user_id: userId,
+      })
+      .select("*")
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return toCachedCategory(data as CategoryRow);
   }
 }
 
@@ -153,6 +189,57 @@ export class RemoteMerchantRepository {
 
     return ((data ?? []) as MerchantRow[]).map(toCachedMerchant);
   }
+
+  static async create(localId: string, merchant: MerchantLike) {
+    const userId = await getUserId();
+    const { data, error } = await supabase
+      .from("merchants")
+      .insert({
+        category_id: merchant.category_id ?? null,
+        id: localId,
+        name: merchant.name,
+        normalized_name:
+          merchant.normalized_name ?? merchant.name.trim().toLowerCase(),
+        user_id: userId,
+      })
+      .select(`
+        *,
+        category:categories(*)
+      `)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return toCachedMerchant(data as MerchantRow);
+  }
+
+  static async update(id: string, updates: Partial<MerchantLike>) {
+    const { data, error } = await supabase
+      .from("merchants")
+      .update({
+        ...(updates.category_id !== undefined
+          ? { category_id: updates.category_id }
+          : {}),
+        ...(updates.name !== undefined ? { name: updates.name } : {}),
+        ...(updates.normalized_name !== undefined
+          ? { normalized_name: updates.normalized_name }
+          : {}),
+      })
+      .eq("id", id)
+      .select(`
+        *,
+        category:categories(*)
+      `)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return toCachedMerchant(data as MerchantRow);
+  }
 }
 
 export class RemoteBudgetRepository {
@@ -172,6 +259,43 @@ export class RemoteBudgetRepository {
     }
 
     return ((data ?? []) as BudgetRow[]).map(toCachedBudget);
+  }
+
+  static async create(
+    localId: string,
+    budget: {
+      amount: number;
+      category_id: string | null;
+      month_start?: string;
+    }
+  ) {
+    if (!budget.category_id) {
+      throw new Error("Choose a category before saving a budget.");
+    }
+
+    const userId = await getUserId();
+    const { data, error } = await supabase
+      .from("budgets")
+      .insert({
+        id: localId,
+        amount: budget.amount,
+        category_id: budget.category_id,
+        currency: "INR",
+        month_start:
+          budget.month_start ?? new Date().toISOString().slice(0, 7) + "-01",
+        user_id: userId,
+      })
+      .select(`
+        *,
+        category:categories(*)
+      `)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return toCachedBudget(data as BudgetRow);
   }
 }
 

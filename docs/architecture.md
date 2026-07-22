@@ -22,18 +22,25 @@ financial knowledge.
 
 The engine owns:
 
--   Financial Event lifecycle
--   Rule Engine
--   Merchant Intelligence
--   Transaction lifecycle
--   Dashboard calculations
--   Budget calculations
--   Recurring detection
--   Reports
--   Financial analytics
+- Financial Event lifecycle
+- Rule Engine
+- Merchant Intelligence
+- Transaction lifecycle
+- Dashboard calculations
+- Budget calculations
+- Recurring detection
+- Reports
+- Financial Analytics
+- Financial planning calculations
 
-The engine is independent of the client that produced the financial
-data.
+The Finance Engine continues to transform financial activity into
+meaningful personal financial insights.
+
+As the platform evolves, it also powers long-term financial planning
+through Accounts, Goals, Assets, Liabilities and Net Worth.
+
+The financial planning model is documented in
+`docs/financial-intelligence.md`.
 
 ------------------------------------------------------------------------
 
@@ -187,47 +194,55 @@ Components should remain presentation-focused.
 
 Every financial input follows the same deterministic lifecycle.
 
-    Financial Source
+        Financial Source
 
-    ↓
+        ↓
 
-    Financial Event
+        Financial Event
 
-    ↓
+        ↓
 
-    Rule Engine
+        Rule Engine
 
-    ↓
+        ↓
 
-    Merchant Intelligence
+        Merchant Intelligence
 
-    ↓
+        ↓
 
-    User Review
+        User Review
 
-    ↓
+        ↓
 
-    Transaction
+        Transaction
 
-    ↓
+        ↓
 
-    Dashboard
+        Accounts
 
-    ↓
+        ↓
 
-    Budgets
+        Budgets
 
-    ↓
+        ↓
 
-    Recurring Detection
+        Goals
 
-    ↓
+        ↓
 
-    Reports
+        Net Worth
 
-    ↓
+        ↓
 
-    Financial Insight
+        Analytics
+
+        ↓
+
+        Reports
+
+        ↓
+
+        Financial Planning
 
 Every future capability integrates into this pipeline.
 
@@ -295,6 +310,32 @@ They power:
 
 Editing a transaction must preserve consistency with linked Financial
 Events.
+
+------------------------------------------------------------------------
+
+## Financial Planning
+
+Financial Planning builds upon confirmed Transactions to help users
+understand and improve their personal financial position.
+
+It introduces long-term financial resources including:
+
+- Accounts
+- Assets
+- Liabilities
+- Goals
+- Net Worth
+
+These resources consume confirmed Transactions and user-provided
+financial information.
+
+They never bypass the Financial Event pipeline.
+
+All calculations remain deterministic and belong inside the Finance
+Engine.
+
+The financial planning model is documented in
+`docs/financial-intelligence.md`.
 
 ------------------------------------------------------------------------
 
@@ -428,5 +469,6 @@ Additional architecture is documented in:
 -   docs/development-workflow.md
 -   docs/roadmap.md
 -   docs/codex.md
+-   docs/financial-intelligence.md
 
 Together these documents define the complete Personal Finance Platform.

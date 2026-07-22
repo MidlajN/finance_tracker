@@ -10,6 +10,7 @@ export class TransactionRepository {
             .from("transactions")
             .select(`
                 *,
+                account:accounts(*),
                 merchant:merchants(*),
                 category:categories(*),
                 event:financial_events(*)
@@ -30,6 +31,7 @@ export class TransactionRepository {
             .from("transactions")
             .select(`
                 *,
+                account:accounts(*),
                 merchant:merchants(*),
                 category:categories(*),
                 event:financial_events(*)
@@ -54,6 +56,7 @@ export class TransactionRepository {
             .eq("id", id)
             .select(`
                 *,
+                account:accounts(*),
                 merchant:merchants(*),
                 category:categories(*),
                 event:financial_events(*)

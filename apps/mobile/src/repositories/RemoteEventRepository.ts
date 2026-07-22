@@ -225,6 +225,10 @@ export class RemoteEventRepository {
     });
 
     if (error) {
+      if (error.message.toLowerCase().includes("already confirmed")) {
+        return;
+      }
+
       throw error;
     }
   }

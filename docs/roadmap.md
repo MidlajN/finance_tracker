@@ -768,22 +768,20 @@ Financial insights become easier to interpret through reusable visualization com
 
 ## Phase 16 — Financial Intelligence
 
-Status: ⏳ Current — Blocked by required architecture and data model decisions
+Status: ✅ Complete
 
-Blocked:
+Completed:
 
-- The repository has no existing account, asset, liability, loan, investment, goal or net worth schema
-- `docs/database.md` lists these capabilities as future expansion but does not define their tables, relationships, ownership rules or migration sequence
-- `docs/sync-architecture.md` does not define mobile ownership, offline behavior or conflict resolution for these resources
-- No currency conversion policy, exchange-rate source, valuation model or investment pricing strategy is documented
-
-Required Decisions:
-
-- Account model and relationship to Transactions, Events, Budgets and Reports
-- Multi-currency conversion policy and exchange-rate source of truth
-- Asset, liability, loan, investment and goal persistence models
-- Net worth valuation rules and refresh cadence
-- Mobile synchronization ownership and offline behavior for each new resource
+- Added database schema for currencies, exchange rates, accounts, assets, liabilities, loans, investments, goals and valuation history
+- Added account references to confirmed Transactions without bypassing the Financial Event pipeline
+- Added shared Financial Intelligence contracts for accounts, assets, liabilities, loans, investments, goals, currencies, exchange rates, goal progress and net worth
+- Added deterministic Finance Core calculations for account balances, currency conversion, investment performance, loan summaries, goal progress and net worth
+- Added shared API sync operation contracts for Financial Intelligence resources
+- Added Web Financial Intelligence repository, service, store, route and management screen
+- Extended Web transaction editing to assign confirmed Transactions to accounts
+- Added Mobile offline persistence, CRUD store actions, sync queue handling and remote synchronization for Financial Intelligence resources
+- Added Mobile Financial Intelligence screen backed by cached resources and Finance Core calculations
+- Verified TypeScript, lint and project build
 
 Objective:
 
@@ -933,7 +931,7 @@ This single pipeline is the foundation of the Personal Finance Platform.
 
 ## Phase 17 — Production Release
 
-Status: Planned
+Status: ⏳ Current — Blocked by external release activities
 
 Objective:
 

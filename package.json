@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "npm run dev --workspace @finance/web",
     "build": "npm run typecheck && npm run build --workspace @finance/web",
+    "test": "npm test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "mobile:prebuild:android": "npm run prebuild:android --workspace @finance/mobile",

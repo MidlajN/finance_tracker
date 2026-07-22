@@ -3,6 +3,7 @@ import {
     BarChart3,
     FileText,
     Import,
+    Landmark,
     LayoutDashboard,
     Receipt,
     Repeat,
@@ -67,6 +68,11 @@ export const NAVIGATION = [
         label: "Analytics",
         path: "/analytics",
         icon: BarChart3,
+    },
+    {
+        label: "Intelligence",
+        path: "/financial-intelligence",
+        icon: Landmark,
     },
     {
         label: "Import / Export",

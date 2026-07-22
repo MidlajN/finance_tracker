@@ -2,11 +2,19 @@ import * as SQLite from "expo-sqlite";
 
 import type {
   CachedBudget,
+  CachedAccount,
+  CachedAsset,
   CachedCategory,
   CachedFinancialEvent,
   CachedFinancialRule,
+  CachedGoal,
+  CachedInvestment,
+  CachedLiability,
+  CachedLoan,
   CachedMerchant,
   CachedTransaction,
+  CurrencyLike,
+  ExchangeRateLike,
   FinancialEventInput,
   Json,
 } from "@finance/shared-types";
@@ -17,7 +25,7 @@ import type {
 } from "@finance/shared-api";
 
 const DATABASE_NAME = "finance-platform.db";
-const SCHEMA_VERSION = "3";
+const SCHEMA_VERSION = "4";
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -47,6 +55,23 @@ function parseJson(value: string | null): Json | null {
 
 function createLocalId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+async function ensureColumn(
+  database: SQLite.SQLiteDatabase,
+  table: string,
+  column: string,
+  definition: string
+) {
+  const rows = await database.getAllAsync<{ name: string }>(
+    `pragma table_info(${table});`
+  );
+
+  if (!rows.some((row) => row.name === column)) {
+    await database.execAsync(
+      `alter table ${table} add column ${definition};`
+    );
+  }
 }
 
 export async function initializeLocalDatabase() {
@@ -85,6 +110,7 @@ export async function initializeLocalDatabase() {
     create table if not exists cached_transactions (
       id text primary key not null,
       event_id text not null,
+      account_id text,
       amount real not null,
       category_id text,
       currency text not null,
@@ -100,6 +126,9 @@ export async function initializeLocalDatabase() {
 
     create index if not exists idx_cached_transactions_occurred_at
       on cached_transactions(occurred_at);
+
+    create index if not exists idx_cached_transactions_account
+      on cached_transactions(account_id);
 
     create table if not exists cached_categories (
       id text primary key not null,
@@ -162,6 +191,120 @@ export async function initializeLocalDatabase() {
     create index if not exists idx_cached_rules_enabled_priority
       on cached_rules(enabled, priority);
 
+    create table if not exists cached_currencies (
+      code text primary key not null,
+      name text not null,
+      symbol text not null,
+      decimal_precision integer not null
+    );
+
+    create table if not exists cached_exchange_rates (
+      id text primary key not null,
+      base_currency text not null,
+      quote_currency text not null,
+      rate real not null,
+      valid_on text not null,
+      source text not null,
+      created_at text not null
+    );
+
+    create index if not exists idx_cached_exchange_rates_pair_date
+      on cached_exchange_rates(base_currency, quote_currency, valid_on);
+
+    create table if not exists cached_accounts (
+      id text primary key not null,
+      name text not null,
+      account_type text not null,
+      currency text not null,
+      opening_balance real not null,
+      institution text,
+      archived integer not null,
+      created_at text not null,
+      updated_at text not null
+    );
+
+    create index if not exists idx_cached_accounts_archived_name
+      on cached_accounts(archived, name);
+
+    create table if not exists cached_assets (
+      id text primary key not null,
+      name text not null,
+      asset_type text not null,
+      currency text not null,
+      quantity real not null,
+      acquisition_value real not null,
+      current_valuation real not null,
+      acquisition_date text not null,
+      notes text,
+      created_at text not null,
+      updated_at text not null
+    );
+
+    create index if not exists idx_cached_assets_name
+      on cached_assets(name);
+
+    create table if not exists cached_liabilities (
+      id text primary key not null,
+      name text not null,
+      liability_type text not null,
+      currency text not null,
+      outstanding_balance real not null,
+      original_amount real not null,
+      interest_rate real not null,
+      start_date text not null,
+      end_date text,
+      created_at text not null,
+      updated_at text not null
+    );
+
+    create index if not exists idx_cached_liabilities_name
+      on cached_liabilities(name);
+
+    create table if not exists cached_loans (
+      id text primary key not null,
+      liability_id text not null,
+      loan_type text not null,
+      monthly_payment real not null,
+      remaining_payments integer not null,
+      interest_accrued real not null,
+      liability text,
+      created_at text not null,
+      updated_at text not null
+    );
+
+    create index if not exists idx_cached_loans_liability
+      on cached_loans(liability_id);
+
+    create table if not exists cached_investments (
+      id text primary key not null,
+      symbol text not null,
+      quantity real not null,
+      average_purchase_price real not null,
+      current_price real,
+      currency text not null,
+      exchange text,
+      purchase_history text,
+      created_at text not null,
+      updated_at text not null
+    );
+
+    create index if not exists idx_cached_investments_symbol
+      on cached_investments(symbol);
+
+    create table if not exists cached_goals (
+      id text primary key not null,
+      name text not null,
+      target_amount real not null,
+      currency text not null,
+      target_date text,
+      status text not null,
+      created_at text not null,
+      updated_at text not null
+    );
+
+    create index if not exists idx_cached_goals_status_date
+      on cached_goals(status, target_date);
+
     create table if not exists sync_queue (
       id text primary key not null,
       operation text not null,
@@ -182,6 +325,13 @@ export async function initializeLocalDatabase() {
     create unique index if not exists idx_sync_queue_request_id
       on sync_queue(request_id);
   `);
+
+  await ensureColumn(
+    database,
+    "cached_transactions",
+    "account_id",
+    "account_id text"
+  );
 
   await database.runAsync(
     `
@@ -358,9 +508,26 @@ export class LocalTransactionRepository {
     const database = await getLocalDatabase();
     const rows = await database.getAllAsync<CachedTransactionRow>(
       `
-        select *
+        select
+          cached_transactions.*,
+          cached_financial_events.id as event_id_joined,
+          cached_financial_events.amount as event_amount,
+          cached_financial_events.confidence as event_confidence,
+          cached_financial_events.currency as event_currency,
+          cached_financial_events.direction as event_direction,
+          cached_financial_events.merchant_id as event_merchant_id,
+          cached_financial_events.merchant_name_raw as event_merchant_name_raw,
+          cached_financial_events.metadata as event_metadata,
+          cached_financial_events.notes as event_notes,
+          cached_financial_events.occurred_at as event_occurred_at,
+          cached_financial_events.status as event_status,
+          cached_financial_events.source as event_source,
+          cached_financial_events.created_at as event_created_at,
+          cached_financial_events.updated_at as event_updated_at
         from cached_transactions
-        order by occurred_at desc;
+        left join cached_financial_events
+          on cached_financial_events.id = cached_transactions.event_id
+        order by cached_transactions.occurred_at desc;
       `
     );
 
@@ -375,6 +542,7 @@ export class LocalTransactionRepository {
         insert into cached_transactions (
           id,
           event_id,
+          account_id,
           amount,
           category_id,
           currency,
@@ -387,9 +555,10 @@ export class LocalTransactionRepository {
           created_at,
           updated_at
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         on conflict(id) do update set
           event_id = excluded.event_id,
+          account_id = excluded.account_id,
           amount = excluded.amount,
           category_id = excluded.category_id,
           currency = excluded.currency,
@@ -404,6 +573,7 @@ export class LocalTransactionRepository {
       [
         transaction.id,
         transaction.event_id,
+        transaction.account_id ?? null,
         transaction.amount,
         transaction.category_id ?? null,
         transaction.currency ?? "INR",
@@ -673,6 +843,529 @@ export class LocalRuleRepository {
   }
 }
 
+export class LocalCurrencyRepository {
+  static async list() {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<CurrencyLike>(
+      `
+        select *
+        from cached_currencies
+        order by code asc;
+      `
+    );
+
+    return rows;
+  }
+
+  static async upsert(currency: CurrencyLike) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      `
+        insert into cached_currencies (
+          code,
+          name,
+          symbol,
+          decimal_precision
+        )
+        values (?, ?, ?, ?)
+        on conflict(code) do update set
+          name = excluded.name,
+          symbol = excluded.symbol,
+          decimal_precision = excluded.decimal_precision;
+      `,
+      [
+        currency.code,
+        currency.name,
+        currency.symbol,
+        currency.decimal_precision,
+      ]
+    );
+  }
+
+  static async clear() {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_currencies;");
+  }
+}
+
+export class LocalExchangeRateRepository {
+  static async list() {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<CachedExchangeRateRow>(
+      `
+        select *
+        from cached_exchange_rates
+        order by valid_on desc;
+      `
+    );
+
+    return rows.map(toExchangeRate);
+  }
+
+  static async upsert(rate: ExchangeRateLike) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      `
+        insert into cached_exchange_rates (
+          id,
+          base_currency,
+          quote_currency,
+          rate,
+          valid_on,
+          source,
+          created_at
+        )
+        values (?, ?, ?, ?, ?, ?, ?)
+        on conflict(id) do update set
+          base_currency = excluded.base_currency,
+          quote_currency = excluded.quote_currency,
+          rate = excluded.rate,
+          valid_on = excluded.valid_on,
+          source = excluded.source,
+          created_at = excluded.created_at;
+      `,
+      [
+        rate.id ?? createLocalId("rate"),
+        rate.base_currency,
+        rate.quote_currency,
+        rate.rate,
+        rate.valid_on,
+        rate.source,
+        rate.created_at ?? new Date().toISOString(),
+      ]
+    );
+  }
+
+  static async clear() {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_exchange_rates;");
+  }
+}
+
+export class LocalAccountRepository {
+  static async list() {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<CachedAccountRow>(
+      `
+        select *
+        from cached_accounts
+        order by archived asc, name asc;
+      `
+    );
+
+    return rows.map(toCachedAccount);
+  }
+
+  static async upsert(account: CachedAccount) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      `
+        insert into cached_accounts (
+          id,
+          name,
+          account_type,
+          currency,
+          opening_balance,
+          institution,
+          archived,
+          created_at,
+          updated_at
+        )
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(id) do update set
+          name = excluded.name,
+          account_type = excluded.account_type,
+          currency = excluded.currency,
+          opening_balance = excluded.opening_balance,
+          institution = excluded.institution,
+          archived = excluded.archived,
+          updated_at = excluded.updated_at;
+      `,
+      [
+        account.id,
+        account.name,
+        account.account_type,
+        account.currency,
+        account.opening_balance,
+        account.institution ?? null,
+        account.archived ? 1 : 0,
+        account.created_at,
+        account.updated_at,
+      ]
+    );
+  }
+
+  static async delete(id: string) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_accounts where id = ?;", [
+      id,
+    ]);
+  }
+
+  static async clear() {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_accounts;");
+  }
+}
+
+export class LocalAssetRepository {
+  static async list() {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<CachedAssetRow>(
+      `
+        select *
+        from cached_assets
+        order by name asc;
+      `
+    );
+
+    return rows.map(toCachedAsset);
+  }
+
+  static async upsert(asset: CachedAsset) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      `
+        insert into cached_assets (
+          id,
+          name,
+          asset_type,
+          currency,
+          quantity,
+          acquisition_value,
+          current_valuation,
+          acquisition_date,
+          notes,
+          created_at,
+          updated_at
+        )
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(id) do update set
+          name = excluded.name,
+          asset_type = excluded.asset_type,
+          currency = excluded.currency,
+          quantity = excluded.quantity,
+          acquisition_value = excluded.acquisition_value,
+          current_valuation = excluded.current_valuation,
+          acquisition_date = excluded.acquisition_date,
+          notes = excluded.notes,
+          updated_at = excluded.updated_at;
+      `,
+      [
+        asset.id,
+        asset.name,
+        asset.asset_type,
+        asset.currency,
+        asset.quantity,
+        asset.acquisition_value,
+        asset.current_valuation,
+        asset.acquisition_date,
+        asset.notes ?? null,
+        asset.created_at,
+        asset.updated_at,
+      ]
+    );
+  }
+
+  static async delete(id: string) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_assets where id = ?;", [id]);
+  }
+
+  static async clear() {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_assets;");
+  }
+}
+
+export class LocalLiabilityRepository {
+  static async list() {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<CachedLiabilityRow>(
+      `
+        select *
+        from cached_liabilities
+        order by name asc;
+      `
+    );
+
+    return rows.map(toCachedLiability);
+  }
+
+  static async upsert(liability: CachedLiability) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      `
+        insert into cached_liabilities (
+          id,
+          name,
+          liability_type,
+          currency,
+          outstanding_balance,
+          original_amount,
+          interest_rate,
+          start_date,
+          end_date,
+          created_at,
+          updated_at
+        )
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(id) do update set
+          name = excluded.name,
+          liability_type = excluded.liability_type,
+          currency = excluded.currency,
+          outstanding_balance = excluded.outstanding_balance,
+          original_amount = excluded.original_amount,
+          interest_rate = excluded.interest_rate,
+          start_date = excluded.start_date,
+          end_date = excluded.end_date,
+          updated_at = excluded.updated_at;
+      `,
+      [
+        liability.id,
+        liability.name,
+        liability.liability_type,
+        liability.currency,
+        liability.outstanding_balance,
+        liability.original_amount,
+        liability.interest_rate,
+        liability.start_date,
+        liability.end_date ?? null,
+        liability.created_at,
+        liability.updated_at,
+      ]
+    );
+  }
+
+  static async delete(id: string) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_liabilities where id = ?;", [
+      id,
+    ]);
+  }
+
+  static async clear() {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_liabilities;");
+  }
+}
+
+export class LocalLoanRepository {
+  static async list() {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<CachedLoanRow>(
+      `
+        select *
+        from cached_loans
+        order by created_at desc;
+      `
+    );
+
+    return rows.map(toCachedLoan);
+  }
+
+  static async upsert(loan: CachedLoan) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      `
+        insert into cached_loans (
+          id,
+          liability_id,
+          loan_type,
+          monthly_payment,
+          remaining_payments,
+          interest_accrued,
+          liability,
+          created_at,
+          updated_at
+        )
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(id) do update set
+          liability_id = excluded.liability_id,
+          loan_type = excluded.loan_type,
+          monthly_payment = excluded.monthly_payment,
+          remaining_payments = excluded.remaining_payments,
+          interest_accrued = excluded.interest_accrued,
+          liability = excluded.liability,
+          updated_at = excluded.updated_at;
+      `,
+      [
+        loan.id,
+        loan.liability_id,
+        loan.loan_type,
+        loan.monthly_payment,
+        loan.remaining_payments,
+        loan.interest_accrued,
+        serializePersistenceJson(loan.liability),
+        loan.created_at,
+        loan.updated_at,
+      ]
+    );
+  }
+
+  static async delete(id: string) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_loans where id = ?;", [id]);
+  }
+
+  static async clear() {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_loans;");
+  }
+}
+
+export class LocalInvestmentRepository {
+  static async list() {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<CachedInvestmentRow>(
+      `
+        select *
+        from cached_investments
+        order by symbol asc;
+      `
+    );
+
+    return rows.map(toCachedInvestment);
+  }
+
+  static async upsert(investment: CachedInvestment) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      `
+        insert into cached_investments (
+          id,
+          symbol,
+          quantity,
+          average_purchase_price,
+          current_price,
+          currency,
+          exchange,
+          purchase_history,
+          created_at,
+          updated_at
+        )
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(id) do update set
+          symbol = excluded.symbol,
+          quantity = excluded.quantity,
+          average_purchase_price = excluded.average_purchase_price,
+          current_price = excluded.current_price,
+          currency = excluded.currency,
+          exchange = excluded.exchange,
+          purchase_history = excluded.purchase_history,
+          updated_at = excluded.updated_at;
+      `,
+      [
+        investment.id,
+        investment.symbol,
+        investment.quantity,
+        investment.average_purchase_price,
+        investment.current_price ?? null,
+        investment.currency,
+        investment.exchange ?? null,
+        serializeJson(investment.purchase_history),
+        investment.created_at,
+        investment.updated_at,
+      ]
+    );
+  }
+
+  static async delete(id: string) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_investments where id = ?;", [
+      id,
+    ]);
+  }
+
+  static async clear() {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_investments;");
+  }
+}
+
+export class LocalGoalRepository {
+  static async list() {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<CachedGoalRow>(
+      `
+        select *
+        from cached_goals
+        order by status asc, target_date asc;
+      `
+    );
+
+    return rows.map(toCachedGoal);
+  }
+
+  static async upsert(goal: CachedGoal) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      `
+        insert into cached_goals (
+          id,
+          name,
+          target_amount,
+          currency,
+          target_date,
+          status,
+          created_at,
+          updated_at
+        )
+        values (?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(id) do update set
+          name = excluded.name,
+          target_amount = excluded.target_amount,
+          currency = excluded.currency,
+          target_date = excluded.target_date,
+          status = excluded.status,
+          updated_at = excluded.updated_at;
+      `,
+      [
+        goal.id,
+        goal.name,
+        goal.target_amount,
+        goal.currency,
+        goal.target_date ?? null,
+        goal.status,
+        goal.created_at,
+        goal.updated_at,
+      ]
+    );
+  }
+
+  static async delete(id: string) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_goals where id = ?;", [id]);
+  }
+
+  static async clear() {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_goals;");
+  }
+}
+
 export class SyncQueueRepository {
   static async enqueue<TPayload>(
     operation: SyncOperation,
@@ -815,6 +1508,7 @@ interface CachedFinancialEventRow {
 interface CachedTransactionRow {
   id: string;
   event_id: string;
+  account_id: string | null;
   amount: number;
   category_id: string | null;
   currency: string;
@@ -826,6 +1520,20 @@ interface CachedTransactionRow {
   category: string | null;
   created_at: string;
   updated_at: string;
+  event_id_joined: string | null;
+  event_amount: number | null;
+  event_confidence: number | null;
+  event_currency: string | null;
+  event_direction: CachedFinancialEvent["direction"] | null;
+  event_merchant_id: string | null;
+  event_merchant_name_raw: string | null;
+  event_metadata: string | null;
+  event_notes: string | null;
+  event_occurred_at: string | null;
+  event_status: CachedFinancialEvent["status"] | null;
+  event_source: string | null;
+  event_created_at: string | null;
+  event_updated_at: string | null;
 }
 
 interface CachedCategoryRow {
@@ -877,6 +1585,92 @@ interface CachedFinancialRuleRow {
   updated_at: string;
 }
 
+interface CachedExchangeRateRow {
+  id: string;
+  base_currency: string;
+  quote_currency: string;
+  rate: number;
+  valid_on: string;
+  source: string;
+  created_at: string;
+}
+
+interface CachedAccountRow {
+  id: string;
+  name: string;
+  account_type: CachedAccount["account_type"];
+  currency: string;
+  opening_balance: number;
+  institution: string | null;
+  archived: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CachedAssetRow {
+  id: string;
+  name: string;
+  asset_type: CachedAsset["asset_type"];
+  currency: string;
+  quantity: number;
+  acquisition_value: number;
+  current_valuation: number;
+  acquisition_date: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CachedLiabilityRow {
+  id: string;
+  name: string;
+  liability_type: CachedLiability["liability_type"];
+  currency: string;
+  outstanding_balance: number;
+  original_amount: number;
+  interest_rate: number;
+  start_date: string;
+  end_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CachedLoanRow {
+  id: string;
+  liability_id: string;
+  loan_type: CachedLoan["loan_type"];
+  monthly_payment: number;
+  remaining_payments: number;
+  interest_accrued: number;
+  liability: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CachedInvestmentRow {
+  id: string;
+  symbol: string;
+  quantity: number;
+  average_purchase_price: number;
+  current_price: number | null;
+  currency: string;
+  exchange: string | null;
+  purchase_history: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CachedGoalRow {
+  id: string;
+  name: string;
+  target_amount: number;
+  currency: string;
+  target_date: string | null;
+  status: CachedGoal["status"];
+  created_at: string;
+  updated_at: string;
+}
+
 interface SyncQueueRow {
   id: string;
   operation: SyncOperation;
@@ -915,9 +1709,38 @@ function toCachedFinancialEvent(
 function toCachedTransaction(
   row: CachedTransactionRow
 ): CachedTransaction {
+  const event: CachedFinancialEvent | null =
+    row.event_id_joined &&
+    row.event_amount !== null &&
+    row.event_currency &&
+    row.event_direction &&
+    row.event_occurred_at &&
+    row.event_status &&
+    row.event_source &&
+    row.event_created_at &&
+    row.event_updated_at
+      ? {
+          id: row.event_id_joined,
+          amount: row.event_amount,
+          confidence: row.event_confidence ?? undefined,
+          currency: row.event_currency,
+          direction: row.event_direction,
+          merchant_id: row.event_merchant_id,
+          merchant_name_raw: row.event_merchant_name_raw,
+          metadata: parseJson(row.event_metadata),
+          notes: row.event_notes,
+          occurred_at: row.event_occurred_at,
+          status: row.event_status,
+          source: row.event_source,
+          created_at: row.event_created_at,
+          updated_at: row.event_updated_at,
+        }
+      : null;
+
   return {
     id: row.id,
     event_id: row.event_id,
+    account_id: row.account_id,
     amount: row.amount,
     category_id: row.category_id,
     currency: row.currency,
@@ -925,8 +1748,109 @@ function toCachedTransaction(
     notes: row.notes,
     occurred_at: row.occurred_at,
     transaction_type: row.transaction_type,
+    event,
     merchant: parseJson(row.merchant) as CachedTransaction["merchant"],
     category: parseJson(row.category) as CachedTransaction["category"],
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function toExchangeRate(row: CachedExchangeRateRow): ExchangeRateLike {
+  return {
+    id: row.id,
+    base_currency: row.base_currency,
+    quote_currency: row.quote_currency,
+    rate: row.rate,
+    valid_on: row.valid_on,
+    source: row.source,
+    created_at: row.created_at,
+  };
+}
+
+function toCachedAccount(row: CachedAccountRow): CachedAccount {
+  return {
+    id: row.id,
+    name: row.name,
+    account_type: row.account_type,
+    currency: row.currency,
+    opening_balance: row.opening_balance,
+    institution: row.institution,
+    archived: Boolean(row.archived),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function toCachedAsset(row: CachedAssetRow): CachedAsset {
+  return {
+    id: row.id,
+    name: row.name,
+    asset_type: row.asset_type,
+    currency: row.currency,
+    quantity: row.quantity,
+    acquisition_value: row.acquisition_value,
+    current_valuation: row.current_valuation,
+    acquisition_date: row.acquisition_date,
+    notes: row.notes,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function toCachedLiability(row: CachedLiabilityRow): CachedLiability {
+  return {
+    id: row.id,
+    name: row.name,
+    liability_type: row.liability_type,
+    currency: row.currency,
+    outstanding_balance: row.outstanding_balance,
+    original_amount: row.original_amount,
+    interest_rate: row.interest_rate,
+    start_date: row.start_date,
+    end_date: row.end_date,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function toCachedLoan(row: CachedLoanRow): CachedLoan {
+  return {
+    id: row.id,
+    liability_id: row.liability_id,
+    loan_type: row.loan_type,
+    monthly_payment: row.monthly_payment,
+    remaining_payments: row.remaining_payments,
+    interest_accrued: row.interest_accrued,
+    liability: parseJson(row.liability) as CachedLoan["liability"],
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function toCachedInvestment(row: CachedInvestmentRow): CachedInvestment {
+  return {
+    id: row.id,
+    symbol: row.symbol,
+    quantity: row.quantity,
+    average_purchase_price: row.average_purchase_price,
+    current_price: row.current_price,
+    currency: row.currency,
+    exchange: row.exchange,
+    purchase_history: parseJson(row.purchase_history) ?? [],
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function toCachedGoal(row: CachedGoalRow): CachedGoal {
+  return {
+    id: row.id,
+    name: row.name,
+    target_amount: row.target_amount,
+    currency: row.currency,
+    target_date: row.target_date,
+    status: row.status,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

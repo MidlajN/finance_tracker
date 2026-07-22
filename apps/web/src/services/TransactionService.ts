@@ -12,6 +12,8 @@ interface UpdateTransactionInput {
 
     categoryId: string | null;
 
+    accountId: string | null;
+
     amount: number;
 
     occurredAt: string;
@@ -25,6 +27,7 @@ export class TransactionService {
         eventId,
         merchant,
         categoryId,
+        accountId,
         amount,
         occurredAt,
         notes,
@@ -37,6 +40,9 @@ export class TransactionService {
 
                 category_id:
                     categoryId,
+
+                account_id:
+                    accountId,
 
                 amount,
 

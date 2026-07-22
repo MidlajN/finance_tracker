@@ -11,6 +11,7 @@ import { Budgets } from "./features/budgets/Budgets";
 import { Recurring } from "./features/recurring/Recurring";
 import { Reports } from "./features/reports/Reports";
 import { ImportExport } from "./features/import-export/ImportExport";
+import { FinancialIntelligence } from "./features/financial-intelligence/FinancialIntelligence";
 import { Settings } from "./features/settings/Settings";
 import { Transactions } from "./features/transactions/Transactions";
 import { Rules } from "./features/rules/Rules";
@@ -55,6 +56,10 @@ export const router = createBrowserRouter([
             {
                 path: "analytics",
                 element: <Analytics />,
+            },
+            {
+                path: "financial-intelligence",
+                element: <FinancialIntelligence />,
             },
             {
                 path: "import-export",

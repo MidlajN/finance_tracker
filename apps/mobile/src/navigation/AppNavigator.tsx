@@ -5,7 +5,9 @@ import {
   AnalyticsScreen,
   BudgetsScreen,
   CategoriesScreen,
+  EventReviewScreen,
   EventsScreen,
+  FinancialIntelligenceScreen,
   MerchantsScreen,
   ReportsScreen,
   TransactionsScreen,
@@ -21,23 +23,38 @@ export function AppNavigator() {
   const session = useAuthStore((state) => state.session);
 
   return (
-    <Stack.Navigator>
+    <Stack.Navigator
+      screenOptions={{
+        contentStyle: {
+          backgroundColor: "#f8fafc",
+        },
+        headerStyle: {
+          backgroundColor: "#f8fafc",
+        },
+        headerShadowVisible: false,
+      }}
+    >
       {session ? (
         <>
           <Stack.Screen
             name="Dashboard"
             component={DashboardScreen}
-            options={{ title: "Dashboard" }}
+            options={{ headerShown: false }}
           />
           <Stack.Screen
             name="Settings"
             component={SettingsScreen}
-            options={{ title: "Settings" }}
+            options={{ headerShown: false }}
           />
           <Stack.Screen
             name="Events"
             component={EventsScreen}
-            options={{ title: "Financial Events" }}
+            options={{ title: "Add transaction" }}
+          />
+          <Stack.Screen
+            name="EventReview"
+            component={EventReviewScreen}
+            options={{ title: "Review transaction" }}
           />
           <Stack.Screen
             name="Transactions"
@@ -68,6 +85,11 @@ export function AppNavigator() {
             name="Analytics"
             component={AnalyticsScreen}
             options={{ title: "Analytics" }}
+          />
+          <Stack.Screen
+            name="FinancialIntelligence"
+            component={FinancialIntelligenceScreen}
+            options={{ title: "Accounts" }}
           />
         </>
       ) : (

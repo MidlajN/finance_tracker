@@ -1,6 +1,15 @@
 import type {
+    AccountLike,
+    AssetLike,
+    BudgetLike,
+    CategoryLike,
     FinancialEventInput,
+    GoalLike,
     ImportResult,
+    InvestmentLike,
+    LiabilityLike,
+    LoanLike,
+    MerchantLike,
     ParsedFinancialEvent,
 } from "@finance/shared-types";
 
@@ -14,6 +23,14 @@ export const API_RESOURCES = {
     merchants: "merchants",
     categories: "categories",
     budgets: "budgets",
+    accounts: "accounts",
+    assets: "assets",
+    liabilities: "liabilities",
+    loans: "loans",
+    investments: "investments",
+    goals: "goals",
+    currencies: "currencies",
+    exchangeRates: "exchange-rates",
     rules: "rules",
     reports: "reports",
     sync: "sync",
@@ -65,6 +82,65 @@ export interface DeleteFinancialEventSyncPayload {
     eventId: string;
 }
 
+export interface ConfirmFinancialEventSyncPayload {
+    eventId: string;
+}
+
+export interface IgnoreFinancialEventSyncPayload {
+    eventId: string;
+}
+
+export interface CreateResourceSyncPayload<
+    TResource,
+> {
+    localId: string;
+    resource: TResource;
+}
+
+export interface UpdateResourceSyncPayload<
+    TResource,
+> {
+    id: string;
+    updates: Partial<TResource>;
+}
+
+export interface DeleteResourceSyncPayload {
+    id: string;
+}
+
+export type CreateAccountSyncPayload =
+    CreateResourceSyncPayload<AccountLike>;
+export type CreateBudgetSyncPayload =
+    CreateResourceSyncPayload<BudgetLike>;
+export type CreateCategorySyncPayload =
+    CreateResourceSyncPayload<CategoryLike>;
+export type CreateMerchantSyncPayload =
+    CreateResourceSyncPayload<MerchantLike>;
+export type UpdateMerchantSyncPayload =
+    UpdateResourceSyncPayload<MerchantLike>;
+export type UpdateAccountSyncPayload =
+    UpdateResourceSyncPayload<AccountLike>;
+export type CreateAssetSyncPayload =
+    CreateResourceSyncPayload<AssetLike>;
+export type UpdateAssetSyncPayload =
+    UpdateResourceSyncPayload<AssetLike>;
+export type CreateLiabilitySyncPayload =
+    CreateResourceSyncPayload<LiabilityLike>;
+export type UpdateLiabilitySyncPayload =
+    UpdateResourceSyncPayload<LiabilityLike>;
+export type CreateLoanSyncPayload =
+    CreateResourceSyncPayload<LoanLike>;
+export type UpdateLoanSyncPayload =
+    UpdateResourceSyncPayload<LoanLike>;
+export type CreateInvestmentSyncPayload =
+    CreateResourceSyncPayload<InvestmentLike>;
+export type UpdateInvestmentSyncPayload =
+    UpdateResourceSyncPayload<InvestmentLike>;
+export type CreateGoalSyncPayload =
+    CreateResourceSyncPayload<GoalLike>;
+export type UpdateGoalSyncPayload =
+    UpdateResourceSyncPayload<GoalLike>;
+
 export interface SubmitParsedFinancialEventRequest {
     parsedEvent: ParsedFinancialEvent;
     idempotencyKey?: string;
@@ -74,11 +150,30 @@ export type SyncOperation =
     | "create_financial_event"
     | "update_financial_event"
     | "delete_financial_event"
+    | "create_account"
+    | "update_account"
+    | "delete_account"
+    | "create_asset"
+    | "update_asset"
+    | "delete_asset"
+    | "create_liability"
+    | "update_liability"
+    | "delete_liability"
+    | "create_loan"
+    | "update_loan"
+    | "delete_loan"
+    | "create_investment"
+    | "update_investment"
+    | "delete_investment"
+    | "create_goal"
+    | "update_goal"
+    | "delete_goal"
     | "confirm_event"
     | "ignore_event"
     | "create_merchant"
     | "update_merchant"
     | "update_transaction"
+    | "create_category"
     | "create_budget";
 
 export type SyncQueueStatus =

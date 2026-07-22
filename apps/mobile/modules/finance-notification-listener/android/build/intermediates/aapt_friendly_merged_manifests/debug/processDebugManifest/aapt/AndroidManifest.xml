@@ -4,7 +4,13 @@
 
     <uses-sdk android:minSdkVersion="24" />
 
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application>
+        <receiver
+            android:name="com.financeplatform.notifications.FinanceNotificationActionReceiver"
+            android:exported="false" />
+
         <service
             android:name="com.financeplatform.notifications.FinanceNotificationListenerService"
             android:exported="true"

@@ -7,3 +7,14 @@ export interface NativeNotificationPayload {
   subText: string | null;
   postedAt: string;
 }
+
+export type NativeFinancialEventNotificationActionType =
+  | "confirm"
+  | "ignore"
+  | "review";
+
+export interface NativeFinancialEventNotificationAction {
+  action: NativeFinancialEventNotificationActionType;
+  eventId: string;
+  receivedAt: string;
+}
