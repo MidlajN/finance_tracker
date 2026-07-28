@@ -4,6 +4,7 @@
     "slug": "finance-tracker",
     "scheme": "financetracker",
     "version": "1.0.0",
+    "backgroundColor": "#f8fafc",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "platforms": ["android"],

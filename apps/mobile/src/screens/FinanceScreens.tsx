@@ -16,6 +16,7 @@ import {
   Car,
   ChartNoAxesCombined,
   Check,
+  ChevronLeft,
   ChevronRight,
   CreditCard,
   Film,
@@ -39,7 +40,10 @@ import {
   X,
 } from "lucide-react-native";
 import {
+  Animated,
+  Easing,
   Modal,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -133,6 +137,7 @@ const analyticsRangeOptions = [
 
 export function EventsScreen({ navigation }: EventsScreenProps) {
   const accounts = useOfflineStore((state) => state.accounts);
+  const categories = useOfflineStore((state) => state.categories);
   const merchants = useOfflineStore((state) => state.merchants);
   const createFinancialEvent = useOfflineStore(
     (state) => state.createFinancialEvent
@@ -149,11 +154,20 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
     null
   );
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
+    null
+  );
+  const [categoryManuallySelected, setCategoryManuallySelected] =
+    useState(false);
+  const [occurredAt, setOccurredAt] = useState(() => new Date());
   const [notes, setNotes] = useState("");
+  const [notesExpanded, setNotesExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [transactionTypeWidth, setTransactionTypeWidth] = useState(0);
   const savingRef = useRef(false);
+  const [transactionTypePosition] = useState(() => new Animated.Value(0));
   const sortedMerchants = useMemo(
     () =>
       merchants
@@ -181,10 +195,29 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
     !sortedMerchants.some(
       (item) => item.name.toLowerCase() === merchantSearch.trim().toLowerCase()
     );
+  const parsedAmount = Number(amount);
+  const canSave =
+    merchant.trim().length > 0 &&
+    Number.isFinite(parsedAmount) &&
+    parsedAmount > 0;
+
+  useEffect(() => {
+    Animated.timing(transactionTypePosition, {
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      toValue: direction === "credit" ? 1 : 0,
+      useNativeDriver: true,
+    }).start();
+  }, [direction, transactionTypePosition]);
 
   function selectMerchant(nextMerchant: CachedMerchant) {
     setMerchant(nextMerchant.name);
     setSelectedMerchantId(nextMerchant.id);
+    if (!categoryManuallySelected) {
+      setSelectedCategoryId(
+        nextMerchant.category_id ?? nextMerchant.category?.id ?? null
+      );
+    }
     setMerchantSearch("");
     setMerchantPickerOpen(false);
     setError(null);
@@ -200,6 +233,9 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
 
     setMerchant(trimmedMerchant);
     setSelectedMerchantId(null);
+    if (!categoryManuallySelected) {
+      setSelectedCategoryId(null);
+    }
     setMerchantSearch("");
     setMerchantPickerOpen(false);
     setError(null);
@@ -234,6 +270,8 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           metadata: {
             source: "manual",
             account_id: selectedAccountId,
+            rule_category_id: selectedCategoryId,
+            category_override: categoryManuallySelected,
             account_match: selectedAccountId
               ? {
                   account_id: selectedAccountId,
@@ -243,7 +281,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
               : null,
           },
           notes: notes.trim() || null,
-          occurred_at: new Date().toISOString(),
+          occurred_at: occurredAt.toISOString(),
           status: "pending",
         },
         "manual"
@@ -253,6 +291,9 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
       setMerchant("");
       setSelectedMerchantId(null);
       setSelectedAccountId(null);
+      setSelectedCategoryId(null);
+      setCategoryManuallySelected(false);
+      setOccurredAt(new Date());
       setAmount("");
       setNotes("");
       setError(null);
@@ -266,71 +307,168 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
   return (
     <>
       <ScrollView contentContainerStyle={styles.transactionContainer}>
-        <View style={styles.transactionHero}>
-          <Text style={styles.transactionKicker}>Manual entry</Text>
-          <Text style={styles.transactionTitle}>Add transaction</Text>
-          <Text style={styles.transactionSubtitle}>
-            Save a clean financial event for the engine to process.
-          </Text>
-        </View>
+        <View
+          onLayout={(event) =>
+            setTransactionTypeWidth(event.nativeEvent.layout.width)
+          }
+          style={styles.transactionTypeRow}
+        >
+          {transactionTypeWidth > 0 ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.transactionTypeIndicator,
+                {
+                  transform: [
+                    {
+                      translateX: transactionTypePosition.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, (transactionTypeWidth - 6) / 2],
+                      }),
+                    },
+                  ],
+                  width: (transactionTypeWidth - 6) / 2,
+                },
+              ]}
+            />
+          ) : null}
+          {[
+            {
+              Icon: TrendingDown,
+              label: "Expense",
+              value: "debit",
+            },
+            {
+              Icon: TrendingUp,
+              label: "Income",
+              value: "credit",
+            },
+          ].map((item) => {
+            const active = direction === item.value;
+            const TypeIcon = item.Icon;
 
-        <View style={styles.transactionCard}>
-          <View style={styles.transactionCardHeader}>
-            <View>
-              <Text style={styles.transactionCardTitle}>Details</Text>
-              <Text style={styles.transactionCardSubtitle}>
-                Merchant, account, amount, and direction
-              </Text>
-            </View>
-            <View style={styles.transactionCardIcon}>
-              <Store color="#0f172a" size={18} strokeWidth={2.5} />
-            </View>
-          </View>
-
-          <View style={styles.transactionTypeRow}>
-            {[
-              {
-                label: "Expense",
-                value: "debit",
-              },
-              {
-                label: "Income",
-                value: "credit",
-              },
-            ].map((item) => (
+            return (
               <Pressable
                 key={item.value}
                 onPress={() => {
                   setDirection(item.value as EventDirection);
                   setSaved(false);
                 }}
-                style={[
-                  styles.transactionTypeButton,
-                  direction === item.value && styles.transactionTypeButtonActive,
-                ]}
+                style={styles.transactionTypeButton}
               >
+                <TypeIcon
+                  color={active ? "#ffffff" : "#64748b"}
+                  size={16}
+                  strokeWidth={2.6}
+                />
                 <Text
                   style={[
                     styles.transactionTypeText,
-                    direction === item.value &&
-                      styles.transactionTypeTextActive,
+                    active && styles.transactionTypeTextActive,
                   ]}
                 >
                   {item.label}
                 </Text>
               </Pressable>
-            ))}
+            );
+          })}
+        </View>
+
+        <View style={styles.transactionAmountCard}>
+          <Text style={styles.transactionFieldLabel}>Amount</Text>
+          <View style={styles.transactionAmountRow}>
+            <Text style={styles.currencyPrefix}>₹</Text>
+            <TextInput
+              keyboardType="decimal-pad"
+              onChangeText={(value) => {
+                setAmount(value);
+                setSaved(false);
+              }}
+              placeholder="0.00"
+              placeholderTextColor="#94a3b8"
+              style={styles.amountInput}
+              value={amount}
+            />
           </View>
+
+          <View style={styles.transactionAmountDivider} />
+
+          {notesExpanded ? (
+            <View style={styles.transactionInlineNote}>
+              <View style={styles.transactionFieldLabelRow}>
+                <Text style={styles.transactionFieldLabel}>Note</Text>
+                <Pressable onPress={() => setNotesExpanded(false)}>
+                  <Text style={styles.transactionNoteDone}>Done</Text>
+                </Pressable>
+              </View>
+              <TextInput
+                autoFocus
+                multiline
+                onChangeText={(value) => {
+                  setNotes(value);
+                  setSaved(false);
+                }}
+                placeholder="Receipt reference or reminder"
+                placeholderTextColor="#8b929d"
+                style={[styles.transactionInput, styles.notesInput]}
+                value={notes}
+              />
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => setNotesExpanded(true)}
+              style={styles.transactionAddNoteButton}
+            >
+              <ReceiptText color="#64748b" size={16} strokeWidth={2.4} />
+              <Text style={styles.transactionAddNoteText}>
+                {notes ? "Edit note" : "Add note"}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+
+        <CategoryPickerField
+          categories={categories}
+          onManageCategories={() => navigation.navigate("Categories")}
+          onSelect={(categoryId) => {
+            setSelectedCategoryId(categoryId);
+            setCategoryManuallySelected(true);
+            setSaved(false);
+          }}
+          selectedCategoryId={selectedCategoryId}
+        />
+
+        <View style={styles.transactionDetailsGroup}>
+          <AccountPickerField
+            accounts={accounts}
+            grouped
+            onAddAccount={() =>
+              navigation.navigate("FinancialIntelligence", {
+                formIntentId: Date.now(),
+                initialResource: "account",
+              })
+            }
+            onSelect={(accountId) => {
+              setSelectedAccountId(accountId);
+              setSaved(false);
+            }}
+            selectedAccountId={selectedAccountId}
+          />
 
           <Pressable
             onPress={() => {
               setMerchantSearch("");
               setMerchantPickerOpen(true);
             }}
-            style={styles.merchantSelect}
+            style={[styles.merchantSelect, styles.transactionGroupedRow]}
           >
-            <View style={styles.merchantSelectIcon}>
-              <Store color="#0f172a" size={18} strokeWidth={2.4} />
+            <View
+              style={[
+                styles.merchantSelectIcon,
+                { backgroundColor: "#f0edff" },
+              ]}
+            >
+              <Store color="#6d4aff" size={17} strokeWidth={2.4} />
             </View>
             <View style={styles.merchantSelectCopy}>
               <Text style={styles.merchantSelectLabel}>Merchant</Text>
@@ -349,69 +487,31 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
                 <Check color="#16a34a" size={14} strokeWidth={3} />
               </View>
             ) : null}
-            <Plus color="#0f172a" size={19} strokeWidth={2.7} />
+            <Plus color="#0f172a" size={18} strokeWidth={2.7} />
           </Pressable>
 
-          <AccountPickerField
-            accounts={accounts}
-            onAddAccount={() =>
-              navigation.navigate("FinancialIntelligence", {
-                formIntentId: Date.now(),
-                initialResource: "account",
-              })
-            }
-            onSelect={(accountId) => {
-              setSelectedAccountId(accountId);
+          <TransactionDateField
+            grouped
+            onSelect={(date) => {
+              setOccurredAt(date);
               setSaved(false);
             }}
-            selectedAccountId={selectedAccountId}
+            value={occurredAt}
           />
-
-          <View style={styles.amountInputWrap}>
-            <Text style={styles.currencyPrefix}>₹</Text>
-            <TextInput
-              keyboardType="decimal-pad"
-              onChangeText={(value) => {
-                setAmount(value);
-                setSaved(false);
-              }}
-              placeholder="0.00"
-              placeholderTextColor="#8b929d"
-              style={styles.amountInput}
-              value={amount}
-            />
-          </View>
-
-          <TextInput
-            multiline
-            onChangeText={(value) => {
-              setNotes(value);
-              setSaved(false);
-            }}
-            placeholder="Notes (optional)"
-            placeholderTextColor="#8b929d"
-            style={[styles.transactionInput, styles.notesInput]}
-            value={notes}
-          />
-
-          {error && <Text style={styles.error}>{error}</Text>}
-          {saved && (
-            <Text style={styles.successText}>Transaction saved for processing.</Text>
-          )}
-
-          <Pressable
-            disabled={isSaving}
-            onPress={handleCreate}
-            style={[
-              styles.transactionSaveButton,
-              isSaving && styles.saveButtonDisabled,
-            ]}
-          >
-            <Text style={styles.transactionSaveButtonText}>
-              {isSaving ? "Saving..." : "Save transaction"}
-            </Text>
-          </Pressable>
         </View>
+
+        {error && <Text style={styles.error}>{error}</Text>}
+        {saved && (
+          <Text style={styles.successText}>Transaction saved for processing.</Text>
+        )}
+
+        <SlideToSaveButton
+          disabled={!canSave}
+          loading={isSaving}
+          onComplete={() => {
+            void handleCreate();
+          }}
+        />
       </ScrollView>
 
       <Modal
@@ -516,6 +616,198 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
   );
 }
 
+function SlideToSaveButton({
+  disabled,
+  loading,
+  onComplete,
+}: {
+  disabled: boolean;
+  loading: boolean;
+  onComplete: () => void;
+}) {
+  const [translateX] = useState(() => new Animated.Value(0));
+  const [trackWidth, setTrackWidth] = useState(0);
+  const thumbSize = 42;
+  const trackPadding = 5;
+  const maxTravel = Math.max(
+    trackWidth - thumbSize - trackPadding * 2,
+    0
+  );
+  const animationRange = Math.max(maxTravel, 1);
+
+  const resetThumb = useCallback(() => {
+    Animated.spring(translateX, {
+      damping: 18,
+      mass: 0.7,
+      stiffness: 210,
+      toValue: 0,
+      useNativeDriver: true,
+    }).start();
+  }, [translateX]);
+
+  useEffect(() => {
+    if (!loading && disabled) {
+      resetThumb();
+    }
+  }, [disabled, loading, resetThumb]);
+
+  const completeSlide = useCallback(() => {
+    if (disabled || loading || maxTravel <= 0) {
+      resetThumb();
+      return;
+    }
+
+    Animated.timing(translateX, {
+      duration: 140,
+      toValue: maxTravel,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        onComplete();
+      }
+    });
+  }, [
+    disabled,
+    loading,
+    maxTravel,
+    onComplete,
+    resetThumb,
+    translateX,
+  ]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          !disabled &&
+          !loading &&
+          Math.abs(gesture.dx) > 7 &&
+          Math.abs(gesture.dx) > Math.abs(gesture.dy),
+        onPanResponderGrant: () => {
+          translateX.stopAnimation();
+        },
+        onPanResponderMove: (_, gesture) => {
+          translateX.setValue(
+            Math.max(0, Math.min(gesture.dx, maxTravel))
+          );
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (gesture.dx >= maxTravel * 0.72) {
+            completeSlide();
+          } else {
+            resetThumb();
+          }
+        },
+        onPanResponderTerminate: resetThumb,
+      }),
+    [
+      completeSlide,
+      disabled,
+      loading,
+      maxTravel,
+      resetThumb,
+      translateX,
+    ]
+  );
+
+  const labelOpacity = translateX.interpolate({
+    inputRange: [0, animationRange * 0.62, animationRange],
+    outputRange: [1, 0.35, 0],
+    extrapolate: "clamp",
+  });
+
+  return (
+    <Animated.View
+      accessibilityActions={[
+        {
+          label: "Save transaction",
+          name: "activate",
+        },
+      ]}
+      accessibilityHint="Swipe the handle to the right to save"
+      accessibilityLabel={
+        disabled
+          ? "Enter an amount and merchant before saving"
+          : "Slide to save transaction"
+      }
+      accessibilityRole="adjustable"
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "activate") {
+          completeSlide();
+        }
+      }}
+      onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+      style={[
+        styles.slideSaveTrack,
+        disabled && styles.slideSaveTrackDisabled,
+      ]}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.slideSaveLabelWrap,
+          {
+            opacity: labelOpacity,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.slideSaveLabel,
+            disabled && styles.slideSaveLabelDisabled,
+          ]}
+        >
+          {loading
+            ? "Saving transaction..."
+            : disabled
+              ? "Add amount and merchant"
+              : "Slide to save"}
+        </Text>
+        {!disabled && !loading ? (
+          <MotiView
+            animate={{ opacity: 0.45, translateX: 4 }}
+            from={{ opacity: 1, translateX: 0 }}
+            transition={{
+              duration: 760,
+              loop: true,
+              type: "timing",
+            }}
+          >
+            <ChevronRight color="#c4b5fd" size={17} strokeWidth={2.8} />
+          </MotiView>
+        ) : null}
+      </Animated.View>
+
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={[
+          styles.slideSaveThumb,
+          disabled && styles.slideSaveThumbDisabled,
+          {
+            transform: [{ translateX }],
+          },
+        ]}
+      >
+        {loading ? (
+          <MotiView
+            animate={{ rotate: "360deg" }}
+            from={{ rotate: "0deg" }}
+            transition={{
+              duration: 850,
+              loop: true,
+              type: "timing",
+            }}
+          >
+            <ReceiptText color="#ffffff" size={18} strokeWidth={2.5} />
+          </MotiView>
+        ) : (
+          <ChevronRight color="#ffffff" size={20} strokeWidth={3} />
+        )}
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
 function MerchantOptionRow({
   merchant,
   onPress,
@@ -554,13 +846,538 @@ function MerchantOptionRow({
   );
 }
 
+function CategoryPickerField({
+  categories,
+  onManageCategories,
+  onSelect,
+  selectedCategoryId,
+}: {
+  categories: CachedCategory[];
+  onManageCategories: () => void;
+  onSelect: (categoryId: string | null) => void;
+  selectedCategoryId: string | null;
+}) {
+  const [visible, setVisible] = useState(false);
+  const [search, setSearch] = useState("");
+  const selectedCategory =
+    categories.find((category) => category.id === selectedCategoryId) ?? null;
+  const quickCategories = useMemo(() => {
+    return categories
+      .slice()
+      .sort((first, second) => first.name.localeCompare(second.name))
+      .slice(0, 4);
+  }, [categories]);
+  const filteredCategories = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return categories
+      .filter((category) => category.name.toLowerCase().includes(query))
+      .slice()
+      .sort((first, second) => first.name.localeCompare(second.name));
+  }, [categories, search]);
+
+  function select(categoryId: string | null) {
+    setVisible(false);
+    setSearch("");
+    onSelect(categoryId);
+  }
+
+  return (
+    <>
+      <View style={styles.transactionCategoryCard}>
+        <View style={styles.transactionCategoryHeader}>
+          <Text style={styles.transactionCategoryTitle}>Category</Text>
+          <Text style={styles.transactionCategorySelection}>
+            {selectedCategory?.name ?? "Uncategorized"}
+          </Text>
+        </View>
+        <ScrollView
+          contentContainerStyle={styles.transactionCategoryChips}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+        >
+          <Pressable
+            hitSlop={4}
+            onPress={() => select(null)}
+            style={[
+              styles.transactionCategoryChip,
+              !selectedCategoryId && styles.transactionCategoryChipActive,
+            ]}
+          >
+            <ReceiptText
+              color={!selectedCategoryId ? "#0f172a" : "#64748b"}
+              size={15}
+              strokeWidth={2.4}
+            />
+            <Text
+              style={[
+                styles.transactionCategoryChipText,
+                !selectedCategoryId &&
+                  styles.transactionCategoryChipTextActive,
+              ]}
+            >
+              Other
+            </Text>
+          </Pressable>
+          {quickCategories.map((category) => {
+            const visual = getCategoryVisual(category);
+            const CategoryIcon = visual.Icon;
+            const selected = selectedCategoryId === category.id;
+
+            return (
+              <Pressable
+                hitSlop={4}
+                key={category.id}
+                onPress={() => onSelect(category.id)}
+                style={[
+                  styles.transactionCategoryChip,
+                  selected && styles.transactionCategoryChipActive,
+                ]}
+              >
+                <CategoryIcon
+                  color={selected ? "#0f172a" : visual.color}
+                  size={15}
+                  strokeWidth={2.4}
+                />
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.transactionCategoryChipText,
+                    selected && styles.transactionCategoryChipTextActive,
+                  ]}
+                >
+                  {category.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            accessibilityHint="Opens all categories"
+            accessibilityRole="button"
+            hitSlop={4}
+            onPress={() => setVisible(true)}
+            style={styles.transactionCategoryChip}
+          >
+            <Plus color="#6d4aff" size={15} strokeWidth={2.6} />
+            <Text style={styles.transactionCategoryMoreText}>More</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setVisible(false)}
+        transparent
+        visible={visible}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            onPress={() => setVisible(false)}
+            style={styles.modalDismissLayer}
+          />
+          <MotiView
+            animate={{ opacity: 1, translateY: 0 }}
+            from={{ opacity: 0, translateY: 24 }}
+            style={styles.modalPanel}
+            transition={{
+              damping: 18,
+              mass: 0.8,
+              stiffness: 180,
+              type: "spring",
+            }}
+          >
+            <View style={styles.categoryPickerContent}>
+              <View style={styles.modalHeader}>
+                <View style={styles.merchantPickerTitleBlock}>
+                  <Text style={styles.merchantPickerTitle}>Choose category</Text>
+                  <Text style={styles.merchantPickerSubtitle}>
+                    This category will be applied when the transaction is
+                    confirmed.
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => setVisible(false)}
+                  style={styles.modalCloseButton}
+                >
+                  <X color="#0f172a" size={20} strokeWidth={2.4} />
+                </Pressable>
+              </View>
+
+              <View style={styles.merchantSearchBar}>
+                <Search color="#7b818c" size={18} strokeWidth={2.3} />
+                <TextInput
+                  onChangeText={setSearch}
+                  placeholder="Search categories"
+                  placeholderTextColor="#8b929d"
+                  style={styles.merchantSearchInput}
+                  value={search}
+                />
+              </View>
+
+              <ScrollView
+                contentContainerStyle={styles.categoryPickerList}
+                keyboardShouldPersistTaps="handled"
+                style={styles.categoryPickerViewport}
+              >
+                <CategoryPickerOption
+                  category={null}
+                  onPress={() => select(null)}
+                  selected={!selectedCategoryId}
+                />
+                {filteredCategories.map((category) => (
+                  <CategoryPickerOption
+                    category={category}
+                    key={category.id}
+                    onPress={() => select(category.id)}
+                    selected={selectedCategoryId === category.id}
+                  />
+                ))}
+                {filteredCategories.length === 0 ? (
+                  <View style={styles.merchantEmptyState}>
+                    <Text style={styles.merchantEmptyTitle}>
+                      No matching category
+                    </Text>
+                    <Text style={styles.merchantEmptyText}>
+                      Create a category, then return to select it.
+                    </Text>
+                  </View>
+                ) : null}
+              </ScrollView>
+
+              <Pressable
+                onPress={() => {
+                  setVisible(false);
+                  setSearch("");
+                  onManageCategories();
+                }}
+                style={styles.categoryManageButton}
+              >
+                <Plus color="#ffffff" size={17} strokeWidth={2.8} />
+                <Text style={styles.categoryManageButtonText}>
+                  Manage categories
+                </Text>
+              </Pressable>
+            </View>
+          </MotiView>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+function CategoryPickerOption({
+  category,
+  onPress,
+  selected,
+}: {
+  category: CachedCategory | null;
+  onPress: () => void;
+  selected: boolean;
+}) {
+  const visual = category
+    ? getCategoryVisual(category)
+    : {
+        color: "#64748b",
+        Icon: ReceiptText,
+      };
+  const Icon = visual.Icon;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.categoryPickerOption,
+        selected && styles.categoryPickerOptionSelected,
+      ]}
+    >
+      <View
+        style={[
+          styles.categoryPickerOptionIcon,
+          { backgroundColor: visual.color + "14" },
+        ]}
+      >
+        <Icon color={visual.color} size={18} strokeWidth={2.5} />
+      </View>
+      <View style={styles.transactionSelectCopy}>
+        <Text style={styles.categoryPickerOptionName}>
+          {category?.name ?? "Uncategorized"}
+        </Text>
+        <Text style={styles.categoryPickerOptionMeta}>
+          {category
+            ? category.is_system
+              ? "System category"
+              : "Custom category"
+            : "No category assigned"}
+        </Text>
+      </View>
+      {selected ? (
+        <View style={styles.merchantOptionCheck}>
+          <Check color="#ffffff" size={14} strokeWidth={3} />
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function TransactionDateField({
+  grouped = false,
+  onSelect,
+  value,
+}: {
+  grouped?: boolean;
+  onSelect: (date: Date) => void;
+  value: Date;
+}) {
+  const [visible, setVisible] = useState(false);
+  const [monthCursor, setMonthCursor] = useState(
+    () => new Date(value.getFullYear(), value.getMonth(), 1)
+  );
+  const calendarDays = useMemo(
+    () => getCalendarDays(monthCursor),
+    [monthCursor]
+  );
+
+  function selectDate(date: Date) {
+    const nextDate = new Date(date);
+    nextDate.setHours(
+      value.getHours(),
+      value.getMinutes(),
+      value.getSeconds(),
+      0
+    );
+    onSelect(nextDate);
+    setVisible(false);
+  }
+
+  return (
+    <>
+      <Pressable
+        accessibilityHint="Opens the transaction date picker"
+        accessibilityRole="button"
+        onPress={() => {
+          setMonthCursor(new Date(value.getFullYear(), value.getMonth(), 1));
+          setVisible(true);
+        }}
+        style={[
+          styles.transactionSelect,
+          grouped && styles.transactionGroupedRowLast,
+        ]}
+      >
+        <View
+          style={[
+            styles.transactionSelectIcon,
+            { backgroundColor: "#eef2ff" },
+          ]}
+        >
+          <CalendarDays color="#4f46e5" size={17} strokeWidth={2.5} />
+        </View>
+        <View style={styles.transactionSelectCopy}>
+          <Text style={styles.transactionSelectLabel}>Transaction date</Text>
+          <Text style={styles.transactionSelectValue}>
+            {formatTransactionDate(value)}
+          </Text>
+        </View>
+        <ChevronRight color="#94a3b8" size={18} strokeWidth={2.4} />
+      </Pressable>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setVisible(false)}
+        transparent
+        visible={visible}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            onPress={() => setVisible(false)}
+            style={styles.modalDismissLayer}
+          />
+          <MotiView
+            animate={{ opacity: 1, translateY: 0 }}
+            from={{ opacity: 0, translateY: 24 }}
+            style={styles.datePickerPanel}
+            transition={{
+              damping: 18,
+              mass: 0.8,
+              stiffness: 180,
+              type: "spring",
+            }}
+          >
+            <View style={styles.datePickerHeader}>
+              <View>
+                <Text style={styles.merchantPickerTitle}>Transaction date</Text>
+                <Text style={styles.merchantPickerSubtitle}>
+                  Choose when this transaction occurred.
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setVisible(false)}
+                style={styles.modalCloseButton}
+              >
+                <X color="#0f172a" size={20} strokeWidth={2.4} />
+              </Pressable>
+            </View>
+
+            <View style={styles.datePickerMonthRow}>
+              <Pressable
+                onPress={() =>
+                  setMonthCursor(
+                    new Date(
+                      monthCursor.getFullYear(),
+                      monthCursor.getMonth() - 1,
+                      1
+                    )
+                  )
+                }
+                style={styles.datePickerNavButton}
+              >
+                <ChevronLeft color="#0f172a" size={19} strokeWidth={2.5} />
+              </Pressable>
+              <Text style={styles.datePickerMonth}>
+                {monthCursor.toLocaleDateString("en-IN", {
+                  month: "long",
+                  year: "numeric",
+                })}
+              </Text>
+              <Pressable
+                disabled={isCurrentMonth(monthCursor)}
+                onPress={() =>
+                  setMonthCursor(
+                    new Date(
+                      monthCursor.getFullYear(),
+                      monthCursor.getMonth() + 1,
+                      1
+                    )
+                  )
+                }
+                style={[
+                  styles.datePickerNavButton,
+                  isCurrentMonth(monthCursor) &&
+                    styles.datePickerNavButtonDisabled,
+                ]}
+              >
+                <ChevronRight color="#0f172a" size={19} strokeWidth={2.5} />
+              </Pressable>
+            </View>
+
+            <View style={styles.datePickerGrid}>
+              {["S", "M", "T", "W", "T", "F", "S"].map((label, index) => (
+                <Text
+                  key={`${label}-${index}`}
+                  style={styles.datePickerWeekday}
+                >
+                  {label}
+                </Text>
+              ))}
+              {calendarDays.map((date, index) => {
+                const selected = date ? isSameLocalDay(date, value) : false;
+                const future = date ? isFutureLocalDay(date) : false;
+
+                return (
+                  <View key={date?.toISOString() ?? `blank-${index}`} style={styles.datePickerCell}>
+                    {date ? (
+                      <Pressable
+                        disabled={future}
+                        onPress={() => selectDate(date)}
+                        style={[
+                          styles.datePickerDay,
+                          selected && styles.datePickerDaySelected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.datePickerDayText,
+                            future && styles.datePickerDayTextDisabled,
+                            selected && styles.datePickerDayTextSelected,
+                          ]}
+                        >
+                          {date.getDate()}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+
+            <Pressable
+              onPress={() => selectDate(new Date())}
+              style={styles.datePickerTodayButton}
+            >
+              <Text style={styles.datePickerTodayButtonText}>Select today</Text>
+            </Pressable>
+          </MotiView>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+function getCalendarDays(month: Date) {
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const leadingBlanks = new Date(year, monthIndex, 1).getDay();
+  const dayCount = new Date(year, monthIndex + 1, 0).getDate();
+
+  return [
+    ...Array.from({ length: leadingBlanks }, () => null),
+    ...Array.from(
+      { length: dayCount },
+      (_, index) => new Date(year, monthIndex, index + 1)
+    ),
+  ];
+}
+
+function isSameLocalDay(first: Date, second: Date) {
+  return (
+    first.getFullYear() === second.getFullYear() &&
+    first.getMonth() === second.getMonth() &&
+    first.getDate() === second.getDate()
+  );
+}
+
+function isFutureLocalDay(date: Date) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const candidate = new Date(date);
+  candidate.setHours(0, 0, 0, 0);
+  return candidate.getTime() > today.getTime();
+}
+
+function isCurrentMonth(date: Date) {
+  const today = new Date();
+  return (
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth()
+  );
+}
+
+function formatTransactionDate(date: Date) {
+  if (isSameLocalDay(date, new Date())) {
+    return "Today";
+  }
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (isSameLocalDay(date, yesterday)) {
+    return "Yesterday";
+  }
+
+  return date.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 function AccountPickerField({
   accounts,
+  grouped = false,
   onAddAccount,
   onSelect,
   selectedAccountId,
 }: {
   accounts: CachedAccount[];
+  grouped?: boolean;
   onAddAccount: () => void;
   onSelect: (accountId: string | null) => void;
   selectedAccountId: string | null;
@@ -595,7 +1412,10 @@ function AccountPickerField({
         accessibilityHint="Opens the account picker"
         accessibilityRole="button"
         onPress={() => setVisible(true)}
-        style={styles.accountSelect}
+        style={[
+          styles.accountSelect,
+          grouped && styles.transactionGroupedRow,
+        ]}
       >
         <View
           style={[
@@ -605,7 +1425,7 @@ function AccountPickerField({
             },
           ]}
         >
-          <Icon color={visual.color} size={18} strokeWidth={2.5} />
+          <Icon color={visual.color} size={17} strokeWidth={2.5} />
         </View>
         <View style={styles.accountSelectCopy}>
           <Text style={styles.accountSelectLabel}>Account</Text>
@@ -626,7 +1446,7 @@ function AccountPickerField({
                 : "Add an account to track its balance"}
           </Text>
         </View>
-        <ChevronRight color="#64748b" size={20} strokeWidth={2.4} />
+        <ChevronRight color="#64748b" size={18} strokeWidth={2.4} />
       </Pressable>
 
       <Modal
@@ -836,6 +1656,7 @@ export function EventReviewScreen({
       metadata: {
         ...getJsonObject(event.metadata),
         rule_category_id: categoryId,
+        category_override: true,
       },
     });
   }
@@ -5278,10 +6099,10 @@ const styles = StyleSheet.create({
   },
   accountSelectIcon: {
     alignItems: "center",
-    borderRadius: 15,
-    height: 40,
+    borderRadius: 12,
+    height: 36,
     justifyContent: "center",
-    width: 40,
+    width: 36,
   },
   accountSelectLabel: {
     color: "#64748b",
@@ -5299,7 +6120,7 @@ const styles = StyleSheet.create({
   },
   accountSelectValue: {
     color: "#0f172a",
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "900",
     marginTop: 2,
   },
@@ -5529,10 +6350,10 @@ const styles = StyleSheet.create({
   amountInput: {
     color: "#0f172a",
     flex: 1,
-    fontSize: 30,
+    fontSize: 38,
     fontWeight: "900",
     letterSpacing: 0,
-    minHeight: 58,
+    minHeight: 68,
     paddingVertical: 0,
   },
   amountInputWrap: {
@@ -6602,10 +7423,10 @@ const styles = StyleSheet.create({
   merchantSelectIcon: {
     alignItems: "center",
     backgroundColor: "#f1f5f9",
-    borderRadius: 15,
-    height: 38,
+    borderRadius: 12,
+    height: 36,
     justifyContent: "center",
-    width: 38,
+    width: 36,
   },
   merchantSelectLabel: {
     color: "#64748b",
@@ -6617,7 +7438,7 @@ const styles = StyleSheet.create({
   },
   merchantSelectValue: {
     color: "#0f172a",
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "900",
     marginTop: 3,
   },
@@ -6654,10 +7475,159 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
+  categoryManageButton: {
+    alignItems: "center",
+    backgroundColor: "#0f172a",
+    borderRadius: 16,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    minHeight: 50,
+  },
+  categoryManageButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  categoryPickerContent: {
+    gap: 14,
+    padding: 18,
+    paddingBottom: 28,
+  },
+  categoryPickerList: {
+    gap: 9,
+    paddingBottom: 4,
+  },
+  categoryPickerOption: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#eef2f7",
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 64,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  categoryPickerOptionIcon: {
+    alignItems: "center",
+    borderRadius: 15,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  categoryPickerOptionMeta: {
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  categoryPickerOptionName: {
+    color: "#0f172a",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  categoryPickerOptionSelected: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#0f172a",
+  },
+  categoryPickerViewport: {
+    maxHeight: 370,
+  },
   currencyPrefix: {
     color: "#0f172a",
     fontSize: 24,
     fontWeight: "900",
+  },
+  datePickerCell: {
+    alignItems: "center",
+    flexBasis: "14.285%",
+    height: 42,
+    justifyContent: "center",
+  },
+  datePickerDay: {
+    alignItems: "center",
+    borderRadius: 16,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  datePickerDaySelected: {
+    backgroundColor: "#0f172a",
+  },
+  datePickerDayText: {
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  datePickerDayTextDisabled: {
+    color: "#cbd5e1",
+  },
+  datePickerDayTextSelected: {
+    color: "#ffffff",
+  },
+  datePickerGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  datePickerHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  datePickerMonth: {
+    color: "#0f172a",
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  datePickerMonthRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  datePickerNavButton: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    borderRadius: 14,
+    borderWidth: 1,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  datePickerNavButtonDisabled: {
+    opacity: 0.35,
+  },
+  datePickerPanel: {
+    backgroundColor: "#ffffff",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    gap: 18,
+    padding: 18,
+    paddingBottom: 30,
+  },
+  datePickerTodayButton: {
+    alignItems: "center",
+    backgroundColor: "#eef2ff",
+    borderRadius: 15,
+    justifyContent: "center",
+    minHeight: 48,
+  },
+  datePickerTodayButtonText: {
+    color: "#4338ca",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  datePickerWeekday: {
+    color: "#94a3b8",
+    flexBasis: "14.285%",
+    fontSize: 11,
+    fontWeight: "900",
+    paddingVertical: 7,
+    textAlign: "center",
   },
   notesInput: {
     minHeight: 84,
@@ -6828,9 +7798,183 @@ const styles = StyleSheet.create({
   },
   transactionContainer: {
     backgroundColor: "#f8fafc",
-    gap: 16,
-    padding: 20,
-    paddingBottom: 36,
+    gap: 14,
+    padding: 16,
+    paddingBottom: 120,
+  },
+  transactionAddNoteButton: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#f1f5f9",
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 6,
+    minHeight: 34,
+    paddingHorizontal: 11,
+  },
+  transactionAddNoteText: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  transactionAmountCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e7ebf1",
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 12,
+    padding: 16,
+    shadowColor: "#0f172a",
+    shadowOffset: { height: 8, width: 0 },
+    shadowOpacity: 0.035,
+    shadowRadius: 20,
+  },
+  transactionAmountDivider: {
+    backgroundColor: "#e8edf3",
+    height: 1,
+  },
+  transactionAmountRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  transactionCategoryCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e7ebf1",
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 10,
+    paddingVertical: 12,
+    shadowColor: "#0f172a",
+    shadowOffset: { height: 8, width: 0 },
+    shadowOpacity: 0.03,
+    shadowRadius: 18,
+  },
+  transactionCategoryChip: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 5,
+    minHeight: 36,
+    paddingHorizontal: 10,
+  },
+  transactionCategoryChipActive: {
+    backgroundColor: "#f0edff",
+    borderColor: "#6d4aff",
+  },
+  transactionCategoryChipText: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "800",
+    maxWidth: 92,
+  },
+  transactionCategoryChipTextActive: {
+    color: "#0f172a",
+  },
+  transactionCategoryChips: {
+    gap: 7,
+    paddingHorizontal: 13,
+  },
+  transactionCategoryHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+  },
+  transactionCategoryMoreText: {
+    color: "#6d4aff",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  transactionCategorySelection: {
+    color: "#6d4aff",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  transactionCategoryTitle: {
+    color: "#0f172a",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  transactionDetailsGroup: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e7ebf1",
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: "hidden",
+    shadowColor: "#0f172a",
+    shadowOffset: { height: 8, width: 0 },
+    shadowOpacity: 0.035,
+    shadowRadius: 20,
+  },
+  transactionFieldBlock: {
+    gap: 7,
+  },
+  transactionFieldLabel: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  transactionFieldLabelRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  transactionGroupedRow: {
+    borderBottomColor: "#edf1f5",
+    borderBottomWidth: 1,
+    borderRadius: 0,
+    borderWidth: 0,
+    minHeight: 68,
+    paddingHorizontal: 13,
+  },
+  transactionGroupedRowLast: {
+    borderRadius: 0,
+    borderWidth: 0,
+    minHeight: 68,
+    paddingHorizontal: 13,
+  },
+  transactionInlineNote: {
+    gap: 9,
+  },
+  transactionNoteDone: {
+    color: "#6d4aff",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  transactionOptionalLabel: {
+    color: "#94a3b8",
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  transactionTip: {
+    alignItems: "center",
+    backgroundColor: "#f7f5ff",
+    borderColor: "#e4ddff",
+    borderRadius: 17,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    padding: 12,
+  },
+  transactionTipIcon: {
+    alignItems: "center",
+    backgroundColor: "#ebe7ff",
+    borderRadius: 12,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  transactionTipText: {
+    color: "#554a7a",
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
   },
   pendingReviewAmount: {
     color: "#0f172a",
@@ -7128,12 +8272,70 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingVertical: 0,
   },
+  slideSaveLabel: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 0.1,
+  },
+  slideSaveLabelDisabled: {
+    color: "#64748b",
+  },
+  slideSaveLabelWrap: {
+    alignItems: "center",
+    bottom: 0,
+    flexDirection: "row",
+    gap: 4,
+    justifyContent: "center",
+    left: 55,
+    position: "absolute",
+    right: 18,
+    top: 0,
+  },
+  slideSaveThumb: {
+    alignItems: "center",
+    backgroundColor: "#6d4aff",
+    borderRadius: 14,
+    height: 42,
+    justifyContent: "center",
+    shadowColor: "#6d4aff",
+    shadowOffset: { height: 5, width: 0 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    width: 42,
+  },
+  slideSaveThumbDisabled: {
+    backgroundColor: "#cbd5e1",
+    shadowOpacity: 0,
+  },
+  slideSaveTrack: {
+    backgroundColor: "#0f172a",
+    borderColor: "#0f172a",
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 52,
+    justifyContent: "center",
+    overflow: "hidden",
+    paddingHorizontal: 5,
+    shadowColor: "#0f172a",
+    shadowOffset: { height: 7, width: 0 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+  },
+  slideSaveTrackDisabled: {
+    backgroundColor: "#eef2f7",
+    borderColor: "#dbe4ee",
+    shadowOpacity: 0,
+  },
   transactionSaveButton: {
     alignItems: "center",
-    backgroundColor: "#000000",
-    borderRadius: 16,
+    backgroundColor: "#0f172a",
+    borderRadius: 18,
+    flexDirection: "row",
+    gap: 12,
     justifyContent: "center",
-    minHeight: 50,
+    minHeight: 58,
+    paddingHorizontal: 12,
     shadowColor: "#111827",
     shadowOffset: {
       height: 10,
@@ -7144,8 +8346,55 @@ const styles = StyleSheet.create({
   },
   transactionSaveButtonText: {
     color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  transactionSaveIcon: {
+    alignItems: "center",
+    backgroundColor: "#c4b5fd",
+    borderRadius: 13,
+    height: 36,
+    justifyContent: "center",
+    left: 12,
+    position: "absolute",
+    width: 36,
+  },
+  transactionSelect: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#dbe4ee",
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 11,
+    minHeight: 64,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  },
+  transactionSelectCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  transactionSelectIcon: {
+    alignItems: "center",
+    borderRadius: 12,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  transactionSelectLabel: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  transactionSelectPlaceholder: {
+    color: "#8b929d",
+  },
+  transactionSelectValue: {
+    color: "#0f172a",
     fontSize: 14,
     fontWeight: "900",
+    marginTop: 2,
   },
   transactionKicker: {
     color: "#0f172a",
@@ -7166,25 +8415,34 @@ const styles = StyleSheet.create({
   },
   transactionTypeButton: {
     alignItems: "center",
-    backgroundColor: "#ffffff",
+    borderRadius: 11,
+    flex: 1,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    minHeight: 42,
+    zIndex: 1,
+  },
+  transactionTypeIndicator: {
+    backgroundColor: "#0f172a",
+    borderRadius: 11,
+    bottom: 3,
+    left: 3,
+    position: "absolute",
+    top: 3,
+  },
+  transactionTypeRow: {
+    backgroundColor: "#edf2f7",
     borderColor: "#dbe4ee",
     borderRadius: 15,
     borderWidth: 1,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 42,
-  },
-  transactionTypeButtonActive: {
-    backgroundColor: "#0f172a",
-    borderColor: "#0f172a",
-  },
-  transactionTypeRow: {
     flexDirection: "row",
-    gap: 10,
+    minHeight: 48,
+    padding: 3,
   },
   transactionTypeText: {
     color: "#334155",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "900",
   },
   transactionTypeTextActive: {

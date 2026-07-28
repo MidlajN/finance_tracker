@@ -357,6 +357,11 @@ export function applyRuleToEvent<
         };
     }
 
+    const existingMetadata =
+        getObjectMetadata(event.metadata);
+    const hasManualCategoryOverride =
+        existingMetadata.category_override ===
+        true;
     const updatedEvent = {
         ...event,
         merchant_id:
@@ -368,10 +373,14 @@ export function applyRuleToEvent<
             event.merchant_name_raw ??
             null,
         metadata: {
-            ...getObjectMetadata(event.metadata),
+            ...existingMetadata,
             rule_id: rule.id,
             rule_category_id:
-                rule.category_id ?? null,
+                hasManualCategoryOverride
+                    ? existingMetadata
+                          .rule_category_id ??
+                      null
+                    : rule.category_id ?? null,
         },
     } as TEvent;
 

@@ -6,6 +6,7 @@ import {
   useNavigationContainerRef,
 } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
+import * as SystemUI from "expo-system-ui";
 
 import {
   AppBottomNavigation,
@@ -18,6 +19,10 @@ import { useNotificationStore } from "./stores/notificationStore";
 import { useOfflineStore } from "./stores/offlineStore";
 import { useSyncStore } from "./stores/syncStore";
 import type { RootStackParamList } from "./types/navigation";
+
+const APP_CANVAS_COLOR = "#f8fafc";
+
+void SystemUI.setBackgroundColorAsync(APP_CANVAS_COLOR);
 
 export default function App() {
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
@@ -178,6 +183,7 @@ export default function App() {
 
 const styles = StyleSheet.create({
   appShell: {
+    backgroundColor: APP_CANVAS_COLOR,
     flex: 1,
   },
   loadingContainer: {
