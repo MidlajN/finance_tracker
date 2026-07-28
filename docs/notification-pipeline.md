@@ -115,14 +115,22 @@ Responsibilities:
 
 - Observe notifications.
 - Capture notification metadata.
+- Assign a deterministic capture ID.
+- Durably queue the raw capture.
+- Perform conservative financial-notification classification.
+- Show an immediate native review preview for likely transactions.
 - Forward notification to the parser.
 
 Must not:
 
-- Parse financial values.
+- Treat native classification as financial parsing.
+- Confirm or ignore a capture before a Financial Event exists.
 - Apply rules.
 - Access Supabase.
 - Create Financial Events.
+
+The native preview is an attention mechanism only. It does not represent a
+persisted Financial Event and therefore exposes Review, not Confirm or Ignore.
 
 ---
 
@@ -490,6 +498,35 @@ Synchronization failure
 Retry Queue
 
 Errors should never create inconsistent financial data.
+
+---
+
+# Background and Cold-Start Processing
+
+The Android notification listener runs independently from the React Native UI.
+
+When the UI runtime is unavailable:
+
+1. The listener assigns a stable capture ID.
+2. The raw notification is stored in the native durable queue.
+3. A likely financial notification produces an immediate native Review alert.
+4. Tapping Review starts the Finance Tracker activity directly, avoiding
+   Android's blocked broadcast-to-activity notification trampoline.
+5. Startup drains captures sequentially and persists Financial Events.
+6. Only after persistence are queued actions drained.
+7. The preliminary alert is replaced with Confirm, Review and Ignore actions
+   using the same Android notification identity.
+8. The capture ID resolves the exact Financial Event and opens its Review screen.
+
+Processed capture IDs are retained in a bounded native deduplication history.
+The Financial Event also stores the capture ID in metadata so a native Review
+action can resolve the exact event.
+
+Android force-stop is an operating-system boundary. If the user force-stops the
+application, notification listener delivery and background work are suspended
+until the application is opened again. Swiping the application from recents is
+not equivalent to force-stop, although manufacturer battery policies may still
+delay background work.
 
 ---
 

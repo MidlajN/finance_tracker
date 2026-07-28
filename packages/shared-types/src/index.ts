@@ -142,6 +142,7 @@ export interface CachedFinancialEvent
 
 export interface ParsedFinancialEvent {
     source: string;
+    captureId?: string | null;
     packageName?: string;
     merchantName: string | null;
     amount: number;
@@ -156,6 +157,7 @@ export interface ParsedFinancialEvent {
 
 export interface RawNotificationPayload {
     id: string;
+    captureId?: string | null;
     packageName: string;
     applicationName: string | null;
     title: string | null;

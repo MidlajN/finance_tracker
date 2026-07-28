@@ -929,7 +929,125 @@ This single pipeline is the foundation of the Personal Finance Platform.
 
 ---
 
-## Phase 17 — Production Release
+## Phase 17 — Background Transaction Notifications
+
+Status: ✅ Complete
+
+Completed:
+
+- Added conservative native detection for likely transaction notifications
+- Added an immediate private Android review alert that does not depend on the React Native UI
+- Added stable capture identifiers and a durable bounded native capture queue
+- Added idempotent capture processing and notification replacement after Financial Event persistence
+- Ordered cold-start processing so captures are persisted before queued actions run
+- Added durable capture-aware Review, Confirm and Ignore actions
+- Routed Review actions directly into the Android activity and exact Financial Event review screen
+- Added notification-access, posting-permission, battery and queue diagnostics to the More screen
+- Added a safe test-alert control that creates no financial data
+- Documented the background, cold-start and Android force-stop behavior
+- Verified TypeScript, lint, parser tests, Android debug assembly and native cold-state delivery
+
+Objective:
+
+Make Android transaction detection immediate and reliable when the React Native UI is backgrounded or not running, without bypassing the Financial Event pipeline.
+
+Safety Rule:
+
+Native capture may announce that a likely transaction was detected, but Confirm and Ignore actions are exposed only after the notification has been parsed and durably persisted as a Financial Event.
+
+### Phase 17.1 — Immediate Native Detection
+
+Status: ✅ Complete
+
+Scope:
+
+- Conservative native financial-notification detection
+- Immediate native review notification
+- Stable capture identifiers
+- Lock-screen-safe notification content
+
+Completion Criteria:
+
+A likely transaction produces an Android review notification without requiring the React Native UI to be opened.
+
+---
+
+### Phase 17.2 — Durable Capture Lifecycle
+
+Status: ✅ Complete
+
+Scope:
+
+- Durable native capture queue
+- Capture deduplication
+- Captured, parsed, pending-review and terminal lifecycle states
+- Replacement of preliminary notifications after event persistence
+
+Completion Criteria:
+
+Every supported notification is processed once and maps to at most one Financial Event.
+
+---
+
+### Phase 17.3 — Ordered Action Processing
+
+Status: ✅ Complete
+
+Scope:
+
+- Drain captures before notification actions
+- Resolve capture review actions to persisted Financial Events
+- Idempotent Confirm and Ignore handling
+- Durable action retry
+
+Completion Criteria:
+
+Notification actions cannot run before their Financial Event exists and cannot create duplicate Transactions.
+
+---
+
+### Phase 17.4 — Notification Diagnostics
+
+Status: ✅ Complete
+
+Scope:
+
+- Notification Access status
+- Post Notifications permission status
+- Battery-optimization status
+- Last capture and processing timestamps
+- Queued capture and action counts
+- Safe test-notification control
+
+Completion Criteria:
+
+Users can understand and test transaction-notification readiness from the More screen.
+
+---
+
+### Phase 17.5 — Production Hardening
+
+Status: ✅ Complete
+
+Scope:
+
+- TypeScript and lint verification
+- Parser regression tests
+- Android debug assembly
+- Background and cold-start verification
+- Force-stop limitation documentation
+
+Completion Criteria:
+
+The background notification pipeline is deterministic, deployable and documented for production release.
+
+Outcome:
+
+Android users receive an immediate transaction-detection alert while durable parsing, review and confirmation continue through the existing Financial Event pipeline.
+
+---
+
+## Phase 18 — Production Release
 
 Status: ⏳ Current — Blocked by external release activities
 

@@ -819,6 +819,12 @@ export function EventReviewScreen({
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  useEffect(() => {
+    if (event && event.status !== "pending") {
+      navigation.popTo("Transactions");
+    }
+  }, [event, navigation]);
+
   async function handleCategory(categoryId: string | null) {
     if (!event) {
       return;
@@ -857,7 +863,7 @@ export function EventReviewScreen({
   }
 
   async function handleConfirm() {
-    if (!event || isSaving) {
+    if (!event || event.status !== "pending" || isSaving) {
       return;
     }
 
@@ -867,7 +873,7 @@ export function EventReviewScreen({
     try {
       await confirmFinancialEvent(event.id);
       await synchronize();
-      navigation.navigate("Transactions");
+      navigation.popTo("Transactions");
     } catch (confirmError) {
       setError(
         confirmError instanceof Error
@@ -880,7 +886,7 @@ export function EventReviewScreen({
   }
 
   async function handleIgnore() {
-    if (!event || isSaving) {
+    if (!event || event.status !== "pending" || isSaving) {
       return;
     }
 
@@ -890,7 +896,7 @@ export function EventReviewScreen({
     try {
       await ignoreFinancialEvent(event.id);
       await synchronize();
-      navigation.navigate("Transactions");
+      navigation.popTo("Transactions");
     } catch (ignoreError) {
       setError(
         ignoreError instanceof Error

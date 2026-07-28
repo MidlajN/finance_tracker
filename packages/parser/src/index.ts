@@ -565,6 +565,7 @@ export function parseNotificationPayload(
 
     return {
         source: "android_notification",
+        captureId: payload.captureId ?? null,
         packageName: payload.packageName,
         merchantName:
             parseMerchantName(payload),
@@ -610,6 +611,7 @@ export function parsedNotificationToEventInput(
             event.merchantName,
         metadata: {
             source: event.source,
+            capture_id: event.captureId ?? null,
             packageName: event.packageName,
             reference: event.reference ?? null,
             account_hint: toAccountHintMetadata(

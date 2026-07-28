@@ -2,6 +2,7 @@ import type { EventSubscription } from "expo-modules-core";
 
 import FinanceNotificationListenerModule, {
   type NativeFinancialEventNotificationAction,
+  type NativeNotificationDiagnostics,
   type NativeNotificationPayload,
 } from "./FinanceNotificationListenerModule";
 
@@ -16,13 +17,45 @@ export function requestPostNotificationsPermission() {
 export function showFinancialEventNotification(
   eventId: string,
   title: string,
-  body: string
+  body: string,
+  notificationKey: string
 ) {
   return FinanceNotificationListenerModule.showFinancialEventNotification(
     eventId,
     title,
-    body
+    body,
+    notificationKey
   );
+}
+
+export function dismissFinancialEventNotification(notificationKey: string) {
+  return FinanceNotificationListenerModule.dismissFinancialEventNotification(
+    notificationKey
+  );
+}
+
+export function getNotificationDiagnostics() {
+  return FinanceNotificationListenerModule.getNotificationDiagnostics();
+}
+
+export function getPendingNotifications() {
+  return FinanceNotificationListenerModule.getPendingNotifications();
+}
+
+export function markNotificationCaptureProcessed(
+  captureId: string,
+  eventId: string | null,
+  status: string
+) {
+  return FinanceNotificationListenerModule.markNotificationCaptureProcessed(
+    captureId,
+    eventId,
+    status
+  );
+}
+
+export function showTestFinancialNotification() {
+  return FinanceNotificationListenerModule.showTestFinancialNotification();
 }
 
 export function getPendingFinancialEventNotificationActions() {
@@ -49,5 +82,6 @@ export function addFinancialEventNotificationActionListener(
 
 export type {
   NativeFinancialEventNotificationAction,
+  NativeNotificationDiagnostics,
   NativeNotificationPayload,
 };

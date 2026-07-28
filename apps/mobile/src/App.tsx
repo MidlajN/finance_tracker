@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import {
+  CommonActions,
   NavigationContainer,
   useNavigationContainerRef,
 } from "@react-navigation/native";
@@ -133,7 +134,20 @@ export default function App() {
 
   function navigateFromBottomBar(route: AppBottomNavigationRoute) {
     if (navigationRef.isReady()) {
-      navigationRef.navigate(route);
+      const routes =
+        route === "Dashboard"
+          ? [{ name: "Dashboard" as const }]
+          : [
+              { name: "Dashboard" as const },
+              { name: route },
+            ];
+
+      navigationRef.dispatch(
+        CommonActions.reset({
+          index: routes.length - 1,
+          routes,
+        })
+      );
     }
   }
 

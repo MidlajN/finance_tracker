@@ -1,8 +1,17 @@
-import { type ComponentType, useMemo, useState } from "react";
+import {
+  type ComponentType,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import Constants from "expo-constants";
 import {
   Bell,
+  BellRing,
+  Battery,
+  Check,
   ChevronRight,
   Cloud,
   Download,
@@ -12,6 +21,7 @@ import {
   PiggyBank,
   ReceiptText,
   RefreshCw,
+  ShieldAlert,
   ShieldCheck,
   Store,
   Tags,
@@ -48,6 +58,15 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
     (state) => state.openSettings
   );
   const notificationError = useNotificationStore((state) => state.error);
+  const notificationDiagnostics = useNotificationStore(
+    (state) => state.diagnostics
+  );
+  const refreshNotificationDiagnostics = useNotificationStore(
+    (state) => state.refreshDiagnostics
+  );
+  const sendTestNotification = useNotificationStore(
+    (state) => state.sendTestNotification
+  );
   const accounts = useOfflineStore((state) => state.accounts);
   const budgets = useOfflineStore((state) => state.budgets);
   const categories = useOfflineStore((state) => state.categories);
@@ -61,6 +80,14 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [testNotificationStatus, setTestNotificationStatus] =
+    useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshNotificationDiagnostics();
+    }, [refreshNotificationDiagnostics])
+  );
 
   const email = session?.user.email ?? "Signed-in account";
   const displayName = useMemo(() => {
@@ -114,6 +141,16 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
 
   async function handleSync() {
     await synchronize();
+  }
+
+  async function handleTestNotification() {
+    setTestNotificationStatus("Sending test alert...");
+    const shown = await sendTestNotification();
+    setTestNotificationStatus(
+      shown
+        ? "Test alert sent without creating financial data"
+        : "Enable notification permission to send a test alert"
+    );
   }
 
   return (
@@ -244,6 +281,23 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
         />
       </SettingsSection>
 
+      <SettingsSection label="Transaction detection">
+        <NotificationDiagnosticsCard
+          diagnostics={notificationDiagnostics}
+        />
+        <MoreActionRow
+          Icon={BellRing}
+          color="#6d4aff"
+          onPress={() => void handleTestNotification()}
+          showDivider
+          subtitle={
+            testNotificationStatus ??
+            "Verify that Finance Tracker can show background alerts"
+          }
+          title="Send test alert"
+        />
+      </SettingsSection>
+
       <SettingsSection label="About">
         <MoreActionRow
           Icon={Info}
@@ -282,6 +336,115 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
         </Text>
       </Pressable>
     </ScrollView>
+  );
+}
+
+function NotificationDiagnosticsCard({
+  diagnostics,
+}: {
+  diagnostics: ReturnType<
+    typeof useNotificationStore.getState
+  >["diagnostics"];
+}) {
+  if (!diagnostics) {
+    return (
+      <View style={styles.diagnosticsLoading}>
+        <Text style={styles.rowSubtitle}>
+          Checking Android notification readiness...
+        </Text>
+      </View>
+    );
+  }
+
+  const ready =
+    diagnostics.notificationAccessEnabled &&
+    diagnostics.postNotificationsGranted;
+
+  return (
+    <View style={styles.diagnosticsCard}>
+      <View style={styles.diagnosticsHeader}>
+        <View
+          style={[
+            styles.diagnosticsStatusIcon,
+            {
+              backgroundColor: ready ? "#dcfce7" : "#fff7ed",
+            },
+          ]}
+        >
+          {ready ? (
+            <Check color="#16a34a" size={19} strokeWidth={2.8} />
+          ) : (
+            <ShieldAlert color="#ea580c" size={19} strokeWidth={2.5} />
+          )}
+        </View>
+        <View style={styles.rowCopy}>
+          <Text style={styles.rowTitle}>
+            {ready ? "Background alerts ready" : "Action required"}
+          </Text>
+          <Text style={styles.rowSubtitle}>
+            {ready
+              ? "Likely transaction messages can trigger an immediate review alert."
+              : "Enable both Android notification permissions for automatic detection."}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.diagnosticsGrid}>
+        <DiagnosticValue
+          label="Notification access"
+          value={
+            diagnostics.notificationAccessEnabled ? "Enabled" : "Disabled"
+          }
+        />
+        <DiagnosticValue
+          label="Post alerts"
+          value={
+            diagnostics.postNotificationsGranted ? "Enabled" : "Disabled"
+          }
+        />
+        <DiagnosticValue
+          label="Battery"
+          value={
+            diagnostics.batteryOptimizationExempt
+              ? "Unrestricted"
+              : "Optimized"
+          }
+        />
+        <DiagnosticValue
+          label="Waiting"
+          value={
+            diagnostics.pendingCaptureCount +
+            diagnostics.pendingActionCount +
+            " queued"
+          }
+        />
+      </View>
+
+      <View style={styles.diagnosticsFooter}>
+        <Battery color="#64748b" size={15} strokeWidth={2.2} />
+        <Text style={styles.diagnosticsFooterText}>
+          {diagnostics.lastCapturedAt
+            ? "Last captured " +
+              formatRelativeSyncTime(diagnostics.lastCapturedAt)
+            : "No transaction notification captured yet"}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function DiagnosticValue({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.diagnosticValue}>
+      <Text style={styles.diagnosticValueLabel}>{label}</Text>
+      <Text style={styles.diagnosticValueText}>{value}</Text>
+    </View>
   );
 }
 
@@ -431,6 +594,61 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.58,
+  },
+  diagnosticValue: {
+    backgroundColor: "#f8fafc",
+    borderRadius: 13,
+    flexBasis: "47%",
+    flexGrow: 1,
+    gap: 3,
+    padding: 11,
+  },
+  diagnosticValueLabel: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  diagnosticValueText: {
+    color: "#0f172a",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  diagnosticsCard: {
+    gap: 14,
+    padding: 16,
+  },
+  diagnosticsFooter: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 7,
+  },
+  diagnosticsFooterText: {
+    color: "#64748b",
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  diagnosticsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  diagnosticsHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+  diagnosticsLoading: {
+    minHeight: 76,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  diagnosticsStatusIcon: {
+    alignItems: "center",
+    borderRadius: 14,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
   },
   metricDivider: {
     backgroundColor: "rgba(255, 255, 255, 0.12)",

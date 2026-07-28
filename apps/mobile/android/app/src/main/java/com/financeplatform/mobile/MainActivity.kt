@@ -1,5 +1,6 @@
 package com.financeplatform.mobile
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 
@@ -7,6 +8,8 @@ import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+
+import com.financeplatform.notifications.FinanceNotificationActionReceiver
 
 import expo.modules.ReactActivityDelegateWrapper
 
@@ -17,6 +20,19 @@ class MainActivity : ReactActivity() {
     // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
     super.onCreate(null)
+    FinanceNotificationActionReceiver.handleReviewLaunch(
+      applicationContext,
+      intent
+    )
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    FinanceNotificationActionReceiver.handleReviewLaunch(
+      applicationContext,
+      intent
+    )
   }
 
   /**

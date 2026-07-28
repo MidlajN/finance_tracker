@@ -149,6 +149,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
             ? error.message
             : "Unable to confirm Financial Event.",
       });
+      throw error;
     }
   },
 
@@ -163,6 +164,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
             ? error.message
             : "Unable to ignore Financial Event.",
       });
+      throw error;
     }
   },
 

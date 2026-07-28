@@ -8,6 +8,8 @@ const SBI_SPEND_MESSAGE =
 
 test("parses an SBI credit-card spend as an expense", () => {
     const parsed = parseNotificationPayload({
+        captureId:
+            "11111111-1111-1111-1111-111111111111",
         id: "android-notification-key",
         packageName: "com.sbi.card",
         applicationName: "SBI Card",
@@ -21,6 +23,10 @@ test("parses an SBI credit-card spend as an expense", () => {
     assert.equal(parsed.amount, 47);
     assert.equal(parsed.currency, "INR");
     assert.equal(parsed.direction, "debit");
+    assert.equal(
+        parsed.captureId,
+        "11111111-1111-1111-1111-111111111111"
+    );
     assert.equal(parsed.merchantName, "THEBLOOMSCOCHINPREMI");
     assert.equal(parsed.reference, "656911848080");
     assert.deepEqual(parsed.accountHint, {
