@@ -8,6 +8,7 @@
   },
   "types": "./src/index.ts",
   "scripts": {
+    "test": "node --test src/matchMerchant.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -15,6 +16,7 @@
     "@finance/shared-utils": "0.0.0"
   },
   "devDependencies": {
+    "@types/node": "^24.13.3",
     "typescript": "~6.0.2"
   }
 }

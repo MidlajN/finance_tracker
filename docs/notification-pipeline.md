@@ -280,6 +280,25 @@ Responsibilities:
 
 Merchant Intelligence improves data quality before review.
 
+Matching is deterministic and lives in `finance-core`
+(`matchMerchantFromRaw`):
+
+1. Exact — the normalized raw name equals a merchant's normalized name.
+2. Alias — the normalized raw name equals a stored merchant alias.
+3. Containment — exactly one merchant name (4+ characters) appears
+   inside the raw name. Any ambiguity resolves to no match.
+
+Matching runs after the Rule Engine; an explicit rule always wins and
+the matcher only fills events that are still unlinked. Matches stamp
+`merchant_id` on the Financial Event, so confirmation propagates the
+merchant to the Transaction, applies its default category, and updates
+usage counts.
+
+Aliases are learned only from explicit user action: linking a merchant
+during review stores the raw captured name as an alias of that
+merchant. Canonical merchants are never created automatically from raw
+names.
+
 ---
 
 # Stage 7 — Financial Event Creation

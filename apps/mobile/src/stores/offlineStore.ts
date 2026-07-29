@@ -14,6 +14,7 @@ import type {
   CachedLiability,
   CachedLoan,
   CachedMerchant,
+  CachedMerchantAlias,
   CachedTransaction,
   CategoryLike,
   CurrencyLike,
@@ -47,6 +48,7 @@ interface OfflineState {
   investments: CachedInvestment[];
   liabilities: CachedLiability[];
   loans: CachedLoan[];
+  merchantAliases: CachedMerchantAlias[];
   merchants: CachedMerchant[];
   queue: SyncQueueItem[];
   rules: CachedFinancialRule[];
@@ -78,6 +80,21 @@ interface OfflineState {
     result: ParsedNotificationResult
   ) => Promise<PersistedFinancialEvent | null>;
   refresh: () => Promise<void>;
+  assignEventMerchant: (
+    eventId: string,
+    merchantId: string | null,
+    rawName?: string | null
+  ) => Promise<void>;
+  createMerchantForEvent: (
+    eventId: string,
+    name: string,
+    rawName?: string | null
+  ) => Promise<void>;
+  addMerchantAlias: (
+    merchantId: string,
+    alias: string
+  ) => Promise<boolean>;
+  deleteMerchantAlias: (id: string) => Promise<void>;
   updateFinancialEvent: (
     eventId: string,
     updates: Partial<FinancialEventInput>
@@ -111,6 +128,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
   investments: [],
   liabilities: [],
   loans: [],
+  merchantAliases: [],
   merchants: [],
   queue: [],
   rules: [],
@@ -323,6 +341,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         investments: snapshot.investments,
         liabilities: snapshot.liabilities,
         loans: snapshot.loans,
+        merchantAliases: snapshot.merchantAliases,
         merchants: snapshot.merchants,
         queue: snapshot.queue,
         rules: snapshot.rules,
@@ -336,6 +355,93 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
             : "Unable to load offline data.",
         initialized: true,
       });
+    }
+  },
+
+  async addMerchantAlias(merchantId, alias) {
+    try {
+      const result = await OfflineStorageService.learnMerchantAlias(
+        merchantId,
+        alias
+      );
+
+      await get().refresh();
+
+      return result !== null;
+    } catch (error) {
+      set({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to add the alias.",
+      });
+      throw error;
+    }
+  },
+
+  async deleteMerchantAlias(id) {
+    try {
+      await OfflineStorageService.deleteMerchantAlias(id);
+      await get().refresh();
+    } catch (error) {
+      set({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to remove the alias.",
+      });
+      throw error;
+    }
+  },
+
+  async createMerchantForEvent(eventId, name, rawName) {
+    try {
+      const { merchant } = await OfflineStorageService.persistMerchant({
+        name,
+      });
+
+      await OfflineStorageService.updateFinancialEvent(eventId, {
+        merchant_id: merchant.id,
+      });
+
+      if (rawName) {
+        await OfflineStorageService.learnMerchantAlias(
+          merchant.id,
+          rawName
+        );
+      }
+
+      await get().refresh();
+    } catch (error) {
+      set({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to create the merchant.",
+      });
+      throw error;
+    }
+  },
+
+  async assignEventMerchant(eventId, merchantId, rawName) {
+    try {
+      await OfflineStorageService.updateFinancialEvent(eventId, {
+        merchant_id: merchantId,
+      });
+
+      if (merchantId && rawName) {
+        await OfflineStorageService.learnMerchantAlias(merchantId, rawName);
+      }
+
+      await get().refresh();
+    } catch (error) {
+      set({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to update the merchant.",
+      });
+      throw error;
     }
   },
 

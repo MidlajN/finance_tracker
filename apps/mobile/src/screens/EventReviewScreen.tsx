@@ -1,7 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { CreditCard, LayoutGrid, Store } from "lucide-react-native";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { MotiView } from "moti";
+import {
+  Check,
+  ChevronRight,
+  CreditCard,
+  LayoutGrid,
+  Plus,
+  Search,
+  Store,
+  X,
+} from "lucide-react-native";
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+
+import { normalizeMerchantName } from "@finance/shared-utils";
 
 import { AccountPickerField } from "../components/finance/AccountPicker";
 import { CategoryPickerField } from "../components/finance/CategoryPicker";
@@ -23,6 +44,20 @@ type EventReviewScreenProps = NativeStackScreenProps<
   "EventReview"
 >;
 
+function getMerchantInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length === 0) {
+    return "?";
+  }
+
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
 export function EventReviewScreen({
   navigation,
   route,
@@ -30,7 +65,14 @@ export function EventReviewScreen({
   const events = useOfflineStore((state) => state.events);
   const accounts = useOfflineStore((state) => state.accounts);
   const categories = useOfflineStore((state) => state.categories);
+  const merchants = useOfflineStore((state) => state.merchants);
   const transactions = useOfflineStore((state) => state.transactions);
+  const assignEventMerchant = useOfflineStore(
+    (state) => state.assignEventMerchant
+  );
+  const createMerchantForEvent = useOfflineStore(
+    (state) => state.createMerchantForEvent
+  );
   const updateFinancialEvent = useOfflineStore(
     (state) => state.updateFinancialEvent
   );
@@ -65,6 +107,57 @@ export function EventReviewScreen({
     () => getFrequentCategoryIds(transactions),
     [transactions]
   );
+  const linkedMerchant = merchants.find(
+    (merchant) => merchant.id === event?.merchant_id
+  );
+  const [merchantPickerVisible, setMerchantPickerVisible] = useState(false);
+  const [merchantSearch, setMerchantSearch] = useState("");
+  const [isCreatingMerchant, setIsCreatingMerchant] = useState(false);
+  const visibleMerchants = useMemo(() => {
+    const query = merchantSearch.trim().toLowerCase();
+    const normalizedRaw = normalizeMerchantName(
+      event?.merchant_name_raw ?? ""
+    );
+    const isSuggested = (name: string, normalizedName?: string | null) => {
+      const normalized = normalizeMerchantName(normalizedName ?? name);
+
+      return (
+        normalized.length >= 4 &&
+        normalizedRaw.length > 0 &&
+        normalizedRaw.includes(normalized)
+      );
+    };
+    const ranked = merchants
+      .slice()
+      .map((merchant) => ({
+        merchant,
+        suggested: isSuggested(merchant.name, merchant.normalized_name),
+      }))
+      .sort(
+        (first, second) =>
+          Number(second.suggested) - Number(first.suggested) ||
+          (second.merchant.usage_count ?? 0) -
+            (first.merchant.usage_count ?? 0) ||
+          first.merchant.name.localeCompare(second.merchant.name)
+      );
+
+    if (!query) {
+      return ranked;
+    }
+
+    return ranked.filter(({ merchant }) =>
+      merchant.name.toLowerCase().includes(query)
+    );
+  }, [event?.merchant_name_raw, merchantSearch, merchants]);
+  const trimmedMerchantSearch = merchantSearch.trim();
+  const canCreateMerchant =
+    trimmedMerchantSearch.length > 0 &&
+    !merchants.some(
+      (merchant) =>
+        normalizeMerchantName(
+          merchant.normalized_name ?? merchant.name
+        ) === normalizeMerchantName(trimmedMerchantSearch)
+    );
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -88,6 +181,42 @@ export function EventReviewScreen({
         category_override: true,
       },
     });
+  }
+
+  async function handleMerchant(merchantId: string | null) {
+    if (!event) {
+      return;
+    }
+
+    setMerchantPickerVisible(false);
+    setMerchantSearch("");
+    setError(null);
+    await assignEventMerchant(
+      event.id,
+      merchantId,
+      event.merchant_name_raw
+    );
+  }
+
+  async function handleCreateMerchant() {
+    if (!event || !canCreateMerchant || isCreatingMerchant) {
+      return;
+    }
+
+    setIsCreatingMerchant(true);
+    setError(null);
+
+    try {
+      await createMerchantForEvent(
+        event.id,
+        trimmedMerchantSearch,
+        event.merchant_name_raw
+      );
+      setMerchantPickerVisible(false);
+      setMerchantSearch("");
+    } finally {
+      setIsCreatingMerchant(false);
+    }
   }
 
   async function handleAccount(accountId: string | null) {
@@ -187,7 +316,9 @@ export function EventReviewScreen({
         </View>
         <View style={styles.eventReviewSummaryCopy}>
           <Text numberOfLines={1} style={styles.eventReviewMerchant}>
-            {event.merchant_name_raw ?? "Unknown merchant"}
+            {linkedMerchant?.name ??
+              event.merchant_name_raw ??
+              "Unknown merchant"}
           </Text>
           <Text style={styles.eventReviewMeta}>
             {event.direction === "credit" ? "Income" : "Expense"} ·{" "}
@@ -209,6 +340,54 @@ export function EventReviewScreen({
         <Text style={styles.eventReviewAmount}>
           {MobileDashboardService.getFormattedBalance(event.amount)}
         </Text>
+      </View>
+
+      <View style={styles.eventReviewCard}>
+        <View style={styles.eventReviewSectionHeader}>
+          <View style={styles.eventReviewSectionIcon}>
+            <Store
+              color={premiumTheme.colors.ink}
+              size={17}
+              strokeWidth={2.3}
+            />
+          </View>
+          <Text style={styles.eventReviewSectionTitle}>Merchant</Text>
+        </View>
+
+        <Pressable
+          onPress={() => setMerchantPickerVisible(true)}
+          style={({ pressed }) => [
+            styles.merchantLinkRow,
+            pressed && financeStyles.saveButtonDisabled,
+          ]}
+        >
+          <View style={styles.merchantLinkCopy}>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.merchantLinkName,
+                !linkedMerchant && styles.merchantLinkNameEmpty,
+              ]}
+            >
+              {linkedMerchant?.name ?? "Not linked"}
+            </Text>
+            <Text numberOfLines={1} style={styles.merchantLinkMeta}>
+              {linkedMerchant
+                ? `Captured as ${event.merchant_name_raw ?? "unknown"}`
+                : "Link a merchant so future captures match automatically."}
+            </Text>
+          </View>
+          {linkedMerchant ? (
+            <View style={styles.merchantLinkedBadge}>
+              <Check color="#16a34a" size={13} strokeWidth={3} />
+            </View>
+          ) : null}
+          <ChevronRight
+            color={premiumTheme.colors.muted}
+            size={18}
+            strokeWidth={2.4}
+          />
+        </Pressable>
       </View>
 
       <View style={styles.eventReviewCard}>
@@ -289,11 +468,324 @@ export function EventReviewScreen({
           </Pressable>
         </View>
       </View>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => {
+          setMerchantPickerVisible(false);
+          setMerchantSearch("");
+        }}
+        transparent
+        visible={merchantPickerVisible}
+      >
+        <KeyboardAvoidingView
+          behavior="padding"
+          style={financeStyles.modalBackdrop}
+        >
+          <Pressable
+            onPress={() => {
+              setMerchantPickerVisible(false);
+              setMerchantSearch("");
+            }}
+            style={financeStyles.modalDismissLayer}
+          />
+          <MotiView
+            animate={{ opacity: 1, translateY: 0 }}
+            from={{ opacity: 0, translateY: 24 }}
+            style={financeStyles.modalPanel}
+            transition={{
+              damping: 18,
+              mass: 0.8,
+              stiffness: 180,
+              type: "spring",
+            }}
+          >
+            <View style={styles.merchantPickerContent}>
+              <View style={financeStyles.modalHeader}>
+                <View style={financeStyles.merchantPickerTitleBlock}>
+                  <Text style={financeStyles.merchantPickerTitle}>
+                    Link merchant
+                  </Text>
+                  <Text style={financeStyles.merchantPickerSubtitle}>
+                    "{event.merchant_name_raw ?? "This capture"}" will match
+                    this merchant automatically next time.
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => {
+                    setMerchantPickerVisible(false);
+                    setMerchantSearch("");
+                  }}
+                  style={financeStyles.modalCloseButton}
+                >
+                  <X color="#0f172a" size={20} strokeWidth={2.4} />
+                </Pressable>
+              </View>
+
+              <View style={financeStyles.merchantSearchBar}>
+                <Search color="#7b818c" size={18} strokeWidth={2.3} />
+                <TextInput
+                  onChangeText={setMerchantSearch}
+                  placeholder="Search or type a new merchant"
+                  placeholderTextColor="#8b929d"
+                  style={financeStyles.merchantSearchInput}
+                  value={merchantSearch}
+                />
+              </View>
+
+              <ScrollView
+                contentContainerStyle={styles.merchantPickerList}
+                keyboardShouldPersistTaps="handled"
+                style={styles.merchantPickerViewport}
+              >
+                {canCreateMerchant ? (
+                  <Pressable
+                    disabled={isCreatingMerchant}
+                    onPress={() => {
+                      void handleCreateMerchant();
+                    }}
+                    style={({ pressed }) => [
+                      styles.merchantCreateRow,
+                      (pressed || isCreatingMerchant) &&
+                        financeStyles.saveButtonDisabled,
+                    ]}
+                  >
+                    <View style={styles.merchantCreateIcon}>
+                      <Plus color="#ffffff" size={16} strokeWidth={2.8} />
+                    </View>
+                    <View style={styles.merchantPickerRowCopy}>
+                      <Text
+                        numberOfLines={1}
+                        style={styles.merchantPickerRowName}
+                      >
+                        {isCreatingMerchant
+                          ? "Creating..."
+                          : `Create "${trimmedMerchantSearch}"`}
+                      </Text>
+                      <Text style={styles.merchantPickerRowMeta}>
+                        New merchant, linked to this transaction
+                      </Text>
+                    </View>
+                  </Pressable>
+                ) : null}
+                {visibleMerchants.map(({ merchant, suggested }) => {
+                  const selected = merchant.id === event.merchant_id;
+
+                  return (
+                    <Pressable
+                      key={merchant.id}
+                      onPress={() => {
+                        void handleMerchant(merchant.id);
+                      }}
+                      style={({ pressed }) => [
+                        styles.merchantPickerRow,
+                        selected && styles.merchantPickerRowSelected,
+                        pressed && financeStyles.saveButtonDisabled,
+                      ]}
+                    >
+                      <View style={styles.merchantAvatar}>
+                        <Text style={styles.merchantAvatarText}>
+                          {getMerchantInitials(merchant.name)}
+                        </Text>
+                      </View>
+                      <View style={styles.merchantPickerRowCopy}>
+                        <Text
+                          numberOfLines={1}
+                          style={styles.merchantPickerRowName}
+                        >
+                          {merchant.name}
+                        </Text>
+                        <Text style={styles.merchantPickerRowMeta}>
+                          {merchant.usage_count ?? 0} transactions
+                        </Text>
+                      </View>
+                      {suggested && !selected ? (
+                        <View style={styles.merchantSuggestedBadge}>
+                          <Text style={styles.merchantSuggestedText}>
+                            Suggested
+                          </Text>
+                        </View>
+                      ) : null}
+                      {selected ? (
+                        <Check
+                          color={premiumTheme.colors.ink}
+                          size={16}
+                          strokeWidth={2.8}
+                        />
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+                {visibleMerchants.length === 0 && !canCreateMerchant ? (
+                  <View style={financeStyles.merchantEmptyState}>
+                    <Text style={financeStyles.merchantEmptyTitle}>
+                      No merchants yet
+                    </Text>
+                    <Text style={financeStyles.merchantEmptyText}>
+                      Type a name above to create your first merchant.
+                    </Text>
+                  </View>
+                ) : null}
+                {linkedMerchant ? (
+                  <Pressable
+                    onPress={() => {
+                      void handleMerchant(null);
+                    }}
+                    style={({ pressed }) => [
+                      styles.merchantUnlinkRow,
+                      pressed && financeStyles.saveButtonDisabled,
+                    ]}
+                  >
+                    <X
+                      color={premiumTheme.colors.danger}
+                      size={15}
+                      strokeWidth={2.6}
+                    />
+                    <Text style={styles.merchantUnlinkText}>
+                      Remove merchant link
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </ScrollView>
+            </View>
+          </MotiView>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  merchantLinkCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  merchantLinkMeta: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 3,
+  },
+  merchantLinkName: {
+    color: premiumTheme.colors.ink,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  merchantLinkNameEmpty: {
+    color: premiumTheme.colors.muted,
+  },
+  merchantLinkRow: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 14,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 56,
+    paddingHorizontal: 14,
+  },
+  merchantLinkedBadge: {
+    alignItems: "center",
+    backgroundColor: "#dcfce7",
+    borderRadius: premiumTheme.radius.pill,
+    height: 22,
+    justifyContent: "center",
+    width: 22,
+  },
+  merchantPickerContent: {
+    gap: 14,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  merchantPickerList: {
+    gap: 4,
+    paddingBottom: 8,
+  },
+  merchantPickerRow: {
+    alignItems: "center",
+    borderRadius: 14,
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 54,
+    paddingHorizontal: 10,
+  },
+  merchantPickerRowCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  merchantAvatar: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: premiumTheme.radius.pill,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  merchantAvatarText: {
+    color: premiumTheme.colors.ink,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  merchantCreateIcon: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.ink,
+    borderRadius: premiumTheme.radius.pill,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  merchantCreateRow: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 14,
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 56,
+    paddingHorizontal: 10,
+  },
+  merchantSuggestedBadge: {
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: premiumTheme.radius.pill,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  merchantSuggestedText: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  merchantUnlinkRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    marginTop: 6,
+    minHeight: 44,
+  },
+  merchantUnlinkText: {
+    color: premiumTheme.colors.danger,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  merchantPickerRowMeta: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: 2,
+  },
+  merchantPickerRowName: {
+    color: premiumTheme.colors.ink,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  merchantPickerRowSelected: {
+    backgroundColor: premiumTheme.colors.field,
+  },
+  merchantPickerViewport: {
+    maxHeight: 380,
+  },
   eventReviewAccountMeta: {
     color: "#0f172a",
     fontSize: 12,

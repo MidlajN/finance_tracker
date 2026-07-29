@@ -5,6 +5,7 @@ import type {
   CreateAssetSyncPayload,
   CreateBudgetSyncPayload,
   CreateCategorySyncPayload,
+  CreateMerchantAliasSyncPayload,
   CreateMerchantSyncPayload,
   CreateGoalSyncPayload,
   CreateInvestmentSyncPayload,
@@ -39,6 +40,7 @@ import type {
   CachedLiability,
   CachedLoan,
   CachedMerchant,
+  CachedMerchantAlias,
   CachedTransaction,
   CategoryLike,
   CurrencyLike,
@@ -51,7 +53,10 @@ import type {
   LoanLike,
   MerchantLike,
 } from "@finance/shared-types";
-import { matchAccountFromHint } from "@finance/finance-core";
+import {
+  matchAccountFromHint,
+  matchMerchantFromRaw,
+} from "@finance/finance-core";
 import { normalizeMerchantName } from "@finance/shared-utils";
 
 import {
@@ -68,6 +73,7 @@ import {
   LocalLiabilityRepository,
   LocalLoanRepository,
   LocalCurrencyRepository,
+  LocalMerchantAliasRepository,
   LocalMerchantRepository,
   LocalRuleRepository,
   LocalTransactionRepository,
@@ -98,6 +104,7 @@ export interface OfflineSnapshot {
   investments: CachedInvestment[];
   liabilities: CachedLiability[];
   loans: CachedLoan[];
+  merchantAliases: CachedMerchantAlias[];
   merchants: CachedMerchant[];
   rules: CachedFinancialRule[];
   transactions: CachedTransaction[];
@@ -257,6 +264,41 @@ async function attachMatchedAccount(
   };
 }
 
+async function attachMatchedMerchant(
+  event: FinancialEventInput
+): Promise<FinancialEventInput> {
+  if (event.merchant_id) {
+    return event;
+  }
+
+  const [merchants, aliases] = await Promise.all([
+    LocalMerchantRepository.list(),
+    LocalMerchantAliasRepository.list(),
+  ]);
+  const matchedMerchant = matchMerchantFromRaw(
+    event.merchant_name_raw,
+    merchants,
+    aliases
+  );
+
+  if (!matchedMerchant) {
+    return event;
+  }
+
+  return {
+    ...event,
+    merchant_id: matchedMerchant.id,
+    metadata: {
+      ...getMetadataObject(event.metadata),
+      merchant_match: {
+        matched_at: new Date().toISOString(),
+        merchant_id: matchedMerchant.id,
+        strategy: "merchant_name_match",
+      },
+    },
+  };
+}
+
 function getStableLocalEventId(event: FinancialEventInput) {
   const source = getMetadataString(event.metadata, "source");
   const reference = getMetadataString(event.metadata, "reference");
@@ -313,6 +355,7 @@ export class OfflineStorageService {
       investments,
       goals,
       queue,
+      merchantAliases,
     ] = await Promise.all([
       LocalEventRepository.list(),
       LocalTransactionRepository.list(),
@@ -329,6 +372,7 @@ export class OfflineStorageService {
       LocalInvestmentRepository.list(),
       LocalGoalRepository.list(),
       SyncQueueRepository.listPending(),
+      LocalMerchantAliasRepository.list(),
     ]);
 
     return {
@@ -343,6 +387,7 @@ export class OfflineStorageService {
       investments,
       liabilities,
       loans,
+      merchantAliases,
       merchants,
       rules,
       transactions,
@@ -374,9 +419,16 @@ export class OfflineStorageService {
       await MobileRuleEngineService.applyLocalRulesToEventWithResult(
         eventWithMatchedAccount
       );
-    const stableLocalEventId = getStableLocalEventId(result.event);
+    // Merchant intelligence runs after rules so an explicit rule always
+    // wins; the matcher only fills events that are still unlinked.
+    const eventWithMatchedMerchant = await attachMatchedMerchant(
+      result.event
+    );
+    const stableLocalEventId = getStableLocalEventId(
+      eventWithMatchedMerchant
+    );
     const cachedEvent = await LocalEventRepository.createPending(
-      result.event,
+      eventWithMatchedMerchant,
       source,
       stableLocalEventId
     );
@@ -546,13 +598,99 @@ export class OfflineStorageService {
     const cached = toCachedMerchant(resource);
     await LocalMerchantRepository.upsert(cached);
 
-    return enqueueResource<CreateMerchantSyncPayload>(
+    const queueItem = await enqueueResource<CreateMerchantSyncPayload>(
       "create_merchant",
       {
         localId: cached.id,
         resource: cached,
       },
       `create_merchant:${cached.id}`
+    );
+
+    return {
+      merchant: cached,
+      queueItem,
+    };
+  }
+
+  /**
+   * Stage 6 learning loop: store the raw captured name as an alias of the
+   * merchant the user linked, so future captures auto-match. No-ops when
+   * the alias adds nothing (blank, equals the canonical name, or already
+   * known).
+   */
+  static async learnMerchantAlias(merchantId: string, rawName: string) {
+    await this.initialize();
+
+    const alias = rawName.trim();
+
+    if (!alias) {
+      return null;
+    }
+
+    const normalizedAlias = normalizeMerchantName(alias);
+    const [merchants, aliases] = await Promise.all([
+      LocalMerchantRepository.list(),
+      LocalMerchantAliasRepository.list(),
+    ]);
+    const merchant = merchants.find((item) => item.id === merchantId);
+
+    if (!merchant) {
+      return null;
+    }
+
+    const normalizedName = normalizeMerchantName(
+      merchant.normalized_name ?? merchant.name
+    );
+
+    if (normalizedName === normalizedAlias) {
+      return null;
+    }
+
+    const exists = aliases.some(
+      (item) =>
+        item.merchant_id === merchantId &&
+        normalizeMerchantName(item.alias) === normalizedAlias
+    );
+
+    if (exists) {
+      return null;
+    }
+
+    const cached: CachedMerchantAlias = {
+      alias,
+      id: createRandomUuid(),
+      merchant_id: merchantId,
+    };
+
+    await LocalMerchantAliasRepository.upsert(cached);
+
+    return enqueueResource<CreateMerchantAliasSyncPayload>(
+      "create_merchant_alias",
+      {
+        localId: cached.id,
+        resource: {
+          alias: cached.alias,
+          merchant_id: cached.merchant_id,
+        },
+      },
+      `create_merchant_alias:${cached.id}`
+    );
+  }
+
+  static async deleteMerchantAlias(id: string) {
+    await this.initialize();
+    await LocalMerchantAliasRepository.delete(id);
+
+    const deviceId = await this.getDeviceId();
+
+    return SyncQueueRepository.enqueue(
+      "delete_merchant_alias",
+      {
+        id,
+      },
+      deviceId,
+      `delete_merchant_alias:${id}`
     );
   }
 

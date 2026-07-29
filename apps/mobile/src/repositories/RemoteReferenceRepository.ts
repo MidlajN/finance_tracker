@@ -3,6 +3,7 @@ import type {
   CachedCategory,
   CachedFinancialRule,
   CachedMerchant,
+  CachedMerchantAlias,
   CategoryLike,
   CategoryReference,
   MerchantReference,
@@ -239,6 +240,68 @@ export class RemoteMerchantRepository {
     }
 
     return toCachedMerchant(data as MerchantRow);
+  }
+}
+
+interface MerchantAliasRow {
+  id: string;
+  merchant_id: string;
+  alias: string;
+}
+
+export class RemoteMerchantAliasRepository {
+  static async list(): Promise<CachedMerchantAlias[]> {
+    const { data, error } = await supabase
+      .from("merchant_aliases")
+      .select("*")
+      .order("alias", {
+        ascending: true,
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    return ((data ?? []) as MerchantAliasRow[]).map((row) => ({
+      id: row.id,
+      merchant_id: row.merchant_id,
+      alias: row.alias,
+    }));
+  }
+
+  static async create(localId: string, merchantId: string, alias: string) {
+    const { data, error } = await supabase
+      .from("merchant_aliases")
+      .insert({
+        alias,
+        id: localId,
+        merchant_id: merchantId,
+      })
+      .select("*")
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    const row = data as MerchantAliasRow;
+
+    return {
+      id: row.id,
+      merchant_id: row.merchant_id,
+      alias: row.alias,
+    } satisfies CachedMerchantAlias;
+  }
+
+  static async delete(id: string) {
+    const { error } = await supabase
+      .from("merchant_aliases")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      throw error;
+    }
   }
 }
 

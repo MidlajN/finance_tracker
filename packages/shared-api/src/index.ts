@@ -9,6 +9,7 @@ import type {
     InvestmentLike,
     LiabilityLike,
     LoanLike,
+    MerchantAliasLike,
     MerchantLike,
     ParsedFinancialEvent,
 } from "@finance/shared-types";
@@ -118,6 +119,8 @@ export type CreateMerchantSyncPayload =
     CreateResourceSyncPayload<MerchantLike>;
 export type UpdateMerchantSyncPayload =
     UpdateResourceSyncPayload<MerchantLike>;
+export type CreateMerchantAliasSyncPayload =
+    CreateResourceSyncPayload<MerchantAliasLike>;
 export type UpdateAccountSyncPayload =
     UpdateResourceSyncPayload<AccountLike>;
 export type CreateAssetSyncPayload =
@@ -171,6 +174,8 @@ export type SyncOperation =
     | "confirm_event"
     | "ignore_event"
     | "create_merchant"
+    | "create_merchant_alias"
+    | "delete_merchant_alias"
     | "update_merchant"
     | "update_transaction"
     | "create_category"

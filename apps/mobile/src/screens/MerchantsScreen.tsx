@@ -43,6 +43,13 @@ export function MerchantsScreen() {
   const transactions = useOfflineStore((state) => state.transactions);
   const createMerchant = useOfflineStore((state) => state.createMerchant);
   const updateMerchant = useOfflineStore((state) => state.updateMerchant);
+  const merchantAliases = useOfflineStore((state) => state.merchantAliases);
+  const addMerchantAlias = useOfflineStore(
+    (state) => state.addMerchantAlias
+  );
+  const deleteMerchantAlias = useOfflineStore(
+    (state) => state.deleteMerchantAlias
+  );
   const synchronize = useSyncStore((state) => state.synchronize);
   const [searchQuery, setSearchQuery] = useState("");
   const [sort, setSort] = useState<MerchantSort>("name");
@@ -54,6 +61,8 @@ export function MerchantsScreen() {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [aliasInput, setAliasInput] = useState("");
+  const [aliasNotice, setAliasNotice] = useState<string | null>(null);
   const usageByMerchantId = useMemo(() => {
     const usage = new Map<string, number>();
 
@@ -102,11 +111,51 @@ export function MerchantsScreen() {
   const selectedSort =
     merchantSortOptions.find((option) => option.value === sort)?.label ?? "Name";
 
+  const editingAliases = editingMerchant
+    ? merchantAliases.filter(
+        (alias) => alias.merchant_id === editingMerchant.id
+      )
+    : [];
+
+  async function handleDeleteAlias(aliasId: string) {
+    try {
+      await deleteMerchantAlias(aliasId);
+    } catch {
+      // Store exposes the friendly error message.
+    }
+  }
+
+  async function handleAddAlias() {
+    const alias = aliasInput.trim();
+
+    if (!editingMerchant || !alias) {
+      return;
+    }
+
+    setAliasNotice(null);
+
+    try {
+      const added = await addMerchantAlias(editingMerchant.id, alias);
+
+      if (added) {
+        setAliasInput("");
+      } else {
+        setAliasNotice(
+          "This alias is already covered by the merchant's name or an existing alias."
+        );
+      }
+    } catch {
+      // Store exposes the friendly error message.
+    }
+  }
+
   function openEditor(merchant: CachedMerchant | null = null) {
     setEditingMerchant(merchant);
     setMerchantName(merchant?.name ?? "");
     setCategoryId(merchant?.category_id ?? merchant?.category?.id ?? null);
     setFormError(null);
+    setAliasInput("");
+    setAliasNotice(null);
     setEditorVisible(true);
   }
 
@@ -292,7 +341,7 @@ export function MerchantsScreen() {
           {displayedMerchants.length === 0 ? (
             <View style={styles.merchantDirectoryEmpty}>
               <View style={styles.merchantDirectoryEmptyIcon}>
-                <Store color="#6d4aff" size={24} strokeWidth={2.2} />
+                <Store color={premiumTheme.colors.ink} size={24} strokeWidth={2.2} />
               </View>
               <Text style={financeStyles.merchantEmptyTitle}>
                 {searchQuery.trim() ? "No merchants found" : "No merchants yet"}
@@ -361,7 +410,7 @@ export function MerchantsScreen() {
                     {option.label}
                   </Text>
                   {sort === option.value ? (
-                    <Check color="#6d4aff" size={19} strokeWidth={2.8} />
+                    <Check color={premiumTheme.colors.ink} size={19} strokeWidth={2.8} />
                   ) : null}
                 </Pressable>
               ))}
@@ -445,7 +494,7 @@ export function MerchantsScreen() {
                   </View>
                   <Text style={styles.merchantCategoryOptionText}>Uncategorized</Text>
                   {categoryId === null ? (
-                    <Check color="#6d4aff" size={16} strokeWidth={2.8} />
+                    <Check color={premiumTheme.colors.ink} size={16} strokeWidth={2.8} />
                   ) : null}
                 </Pressable>
                 {categories.map((category) => {
@@ -473,12 +522,87 @@ export function MerchantsScreen() {
                         {category.name}
                       </Text>
                       {selected ? (
-                        <Check color="#6d4aff" size={16} strokeWidth={2.8} />
+                        <Check color={premiumTheme.colors.ink} size={16} strokeWidth={2.8} />
                       ) : null}
                     </Pressable>
                   );
                 })}
               </ScrollView>
+
+              {editingMerchant ? (
+                <>
+                  <Text style={styles.accountSectionLabel}>Aliases</Text>
+                  {editingAliases.length > 0 ? (
+                    <View style={styles.aliasList}>
+                      {editingAliases.map((alias) => (
+                        <View key={alias.id} style={styles.aliasRow}>
+                          <Text
+                            numberOfLines={1}
+                            style={styles.aliasText}
+                          >
+                            {alias.alias}
+                          </Text>
+                          <Pressable
+                            accessibilityLabel={`Remove alias ${alias.alias}`}
+                            hitSlop={8}
+                            onPress={() => {
+                              void handleDeleteAlias(alias.id);
+                            }}
+                            style={({ pressed }) => [
+                              styles.aliasRemoveButton,
+                              pressed &&
+                                financeStyles.saveButtonDisabled,
+                            ]}
+                          >
+                            <X
+                              color={premiumTheme.colors.secondary}
+                              size={13}
+                              strokeWidth={2.6}
+                            />
+                          </Pressable>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.aliasEmptyText}>
+                      No aliases yet. Aliases are learned automatically when
+                      you link captured transactions to this merchant, and
+                      make future captures match on their own.
+                    </Text>
+                  )}
+
+                  <View style={styles.aliasAddRow}>
+                    <TextInput
+                      autoCapitalize="none"
+                      onChangeText={(value) => {
+                        setAliasInput(value);
+                        setAliasNotice(null);
+                      }}
+                      onSubmitEditing={() => void handleAddAlias()}
+                      placeholder="Add an alias, e.g. SWIGGY*ORDER"
+                      placeholderTextColor="#94a3b8"
+                      returnKeyType="done"
+                      style={styles.aliasAddInput}
+                      value={aliasInput}
+                    />
+                    <Pressable
+                      accessibilityLabel="Add alias"
+                      disabled={!aliasInput.trim()}
+                      onPress={() => void handleAddAlias()}
+                      style={({ pressed }) => [
+                        styles.aliasAddButton,
+                        (pressed || !aliasInput.trim()) &&
+                          financeStyles.saveButtonDisabled,
+                      ]}
+                    >
+                      <Plus color="#ffffff" size={16} strokeWidth={2.8} />
+                    </Pressable>
+                  </View>
+                  {aliasNotice ? (
+                    <Text style={styles.aliasNoticeText}>{aliasNotice}</Text>
+                  ) : null}
+                </>
+              ) : null}
 
               {formError ? <Text style={financeStyles.error}>{formError}</Text> : null}
               <View style={styles.merchantFormActions}>
@@ -704,6 +828,69 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 13,
     fontWeight: "900",
+  },
+  aliasAddButton: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.ink,
+    borderRadius: premiumTheme.radius.pill,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  aliasAddInput: {
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 12,
+    color: premiumTheme.colors.ink,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    minHeight: 42,
+    paddingHorizontal: 12,
+    paddingVertical: 0,
+  },
+  aliasAddRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 2,
+  },
+  aliasEmptyText: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  aliasNoticeText: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  aliasList: {
+    gap: 7,
+  },
+  aliasRemoveButton: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: premiumTheme.radius.pill,
+    height: 24,
+    justifyContent: "center",
+    width: 24,
+  },
+  aliasRow: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    minHeight: 42,
+    paddingHorizontal: 12,
+  },
+  aliasText: {
+    color: premiumTheme.colors.ink,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    minWidth: 0,
   },
   merchantFormActions: {
     alignItems: "stretch",

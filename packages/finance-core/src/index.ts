@@ -32,6 +32,7 @@ import type {
     LiabilityLike,
     LoanLike,
     LoanSummary,
+    MerchantAliasLike,
     MerchantReference,
     NetWorthSummary,
     ParsedAccountHint,
@@ -194,6 +195,80 @@ export function matchAccountFromHint<
     }
 
     return best.account;
+}
+
+export interface MerchantMatchCandidate {
+    id: string;
+    name: string;
+    normalized_name?: string | null;
+}
+
+/**
+ * Deterministic merchant matching for raw captured names (Stage 6 of the
+ * notification pipeline).
+ *
+ * Match order:
+ *   1. exact  — normalized raw equals a merchant's normalized name
+ *   2. alias  — normalized raw equals a stored alias
+ *   3. contains — exactly one merchant whose normalized name (4+ chars)
+ *      appears inside the normalized raw text; any ambiguity returns null
+ *
+ * Never guesses: no fuzzy matching, ties resolve to null.
+ */
+export function matchMerchantFromRaw<
+    TMerchant extends MerchantMatchCandidate,
+>(
+    rawName: string | null | undefined,
+    merchants: TMerchant[],
+    aliases: MerchantAliasLike[] = []
+): TMerchant | null {
+    const normalizedRaw = normalizeMerchantName(rawName ?? "");
+
+    if (!normalizedRaw) {
+        return null;
+    }
+
+    const getNormalizedName = (merchant: TMerchant) =>
+        normalizeMerchantName(
+            merchant.normalized_name ?? merchant.name
+        );
+
+    const exact = merchants.find(
+        (merchant) =>
+            getNormalizedName(merchant) === normalizedRaw
+    );
+
+    if (exact) {
+        return exact;
+    }
+
+    const aliasHit = aliases.find(
+        (alias) =>
+            normalizeMerchantName(alias.alias) === normalizedRaw
+    );
+
+    if (aliasHit) {
+        return (
+            merchants.find(
+                (merchant) => merchant.id === aliasHit.merchant_id
+            ) ?? null
+        );
+    }
+
+    const contained = merchants.filter((merchant) => {
+        const normalizedName = getNormalizedName(merchant);
+
+        return (
+            normalizedName.length >= 4 &&
+            normalizedRaw.includes(normalizedName)
+        );
+    });
+
+    if (contained.length === 1) {
+        return contained[0];
+    }
+
+    return null;
 }
 
 export const RULE_MATCH_OPERATORS: RuleMatchOperator[] = [

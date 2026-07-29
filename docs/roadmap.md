@@ -1084,3 +1084,29 @@ The Android application is successfully published through the Google Play Store.
 Outcome:
 
 The Personal Finance Platform is publicly available with both Web and Android clients.
+
+---
+
+## Phase 19 — Merchant Intelligence (Mobile)
+
+Status: ✅ Complete
+
+Completed:
+
+- Deterministic merchant matcher in finance-core
+  (`matchMerchantFromRaw`: exact, alias, unambiguous containment)
+- finance-core unit tests (first test suite in the package)
+- `merchant_aliases` cached locally and pulled during synchronization
+- Matching wired into event persistence after the Rule Engine, so
+  notification and manual events link known merchants offline
+- Merchant section on the Review screen: link, relink, or unlink a
+  merchant before confirming
+- Alias learning on review linking, synced through the
+  `create_merchant_alias` queue operation (duplicate aliases resolve
+  as success)
+
+Outcome:
+
+Notification-derived transactions carry canonical merchants, merchant
+usage counts and default categories engage, and every user correction
+teaches the matcher permanently.

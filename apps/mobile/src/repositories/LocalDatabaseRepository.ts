@@ -12,6 +12,7 @@ import type {
   CachedLiability,
   CachedLoan,
   CachedMerchant,
+  CachedMerchantAlias,
   CachedTransaction,
   CurrencyLike,
   ExchangeRateLike,
@@ -157,6 +158,15 @@ export async function initializeLocalDatabase() {
 
     create index if not exists idx_cached_merchants_name
       on cached_merchants(name);
+
+    create table if not exists cached_merchant_aliases (
+      id text primary key not null,
+      merchant_id text not null,
+      alias text not null
+    );
+
+    create index if not exists idx_cached_merchant_aliases_merchant
+      on cached_merchant_aliases(merchant_id);
 
     create table if not exists cached_budgets (
       id text primary key not null,
@@ -709,6 +719,55 @@ export class LocalMerchantRepository {
     const database = await getLocalDatabase();
 
     await database.runAsync("delete from cached_merchants;");
+  }
+}
+
+export class LocalMerchantAliasRepository {
+  static async list() {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<CachedMerchantAliasRow>(
+      `
+        select *
+        from cached_merchant_aliases
+        order by alias asc;
+      `
+    );
+
+    return rows.map(toCachedMerchantAlias);
+  }
+
+  static async upsert(alias: CachedMerchantAlias) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      `
+        insert into cached_merchant_aliases (
+          id,
+          merchant_id,
+          alias
+        )
+        values (?, ?, ?)
+        on conflict(id) do update set
+          merchant_id = excluded.merchant_id,
+          alias = excluded.alias;
+      `,
+      [alias.id, alias.merchant_id, alias.alias]
+    );
+  }
+
+  static async delete(id: string) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      "delete from cached_merchant_aliases where id = ?;",
+      [id]
+    );
+  }
+
+  static async clear() {
+    const database = await getLocalDatabase();
+
+    await database.runAsync("delete from cached_merchant_aliases;");
   }
 }
 
@@ -1558,6 +1617,12 @@ interface CachedMerchantRow {
   updated_at: string;
 }
 
+interface CachedMerchantAliasRow {
+  id: string;
+  merchant_id: string;
+  alias: string;
+}
+
 interface CachedBudgetRow {
   id: string;
   amount: number;
@@ -1879,6 +1944,16 @@ function toCachedMerchant(row: CachedMerchantRow): CachedMerchant {
     last_seen_at: row.last_seen_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
+  };
+}
+
+function toCachedMerchantAlias(
+  row: CachedMerchantAliasRow
+): CachedMerchantAlias {
+  return {
+    id: row.id,
+    merchant_id: row.merchant_id,
+    alias: row.alias,
   };
 }
 

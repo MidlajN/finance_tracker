@@ -1,7 +1,10 @@
 import { useMemo, useState } from "react";
+import { MotiView } from "moti";
 import {
   CalendarDays,
   ChartNoAxesCombined,
+  Check,
+  ChevronDown,
   IndianRupee,
   TrendingDown,
   TrendingUp,
@@ -61,10 +64,37 @@ const analyticsRangeOptions = [
 export function AnalyticsScreen() {
   const { width } = useWindowDimensions();
   const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>("month");
+  const [anchorOffset, setAnchorOffset] = useState(0);
+  const [periodOpen, setPeriodOpen] = useState(false);
   const transactions = useOfflineStore((state) => state.transactions);
+  const periodOptions = useMemo(() => {
+    const now = new Date();
+
+    return Array.from({ length: 12 }, (_, offset) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+
+      return {
+        label: date.toLocaleDateString("en-IN", {
+          month: "short",
+          year: "numeric",
+        }),
+        offset,
+      };
+    });
+  }, []);
+  const anchorDate = useMemo(() => {
+    const now = new Date();
+
+    return new Date(now.getFullYear(), now.getMonth() - anchorOffset, 1);
+  }, [anchorOffset]);
   const filteredTransactions = useMemo(
-    () => filterTransactionsForAnalyticsRange(transactions, analyticsRange),
-    [analyticsRange, transactions]
+    () =>
+      filterTransactionsForAnalyticsRange(
+        transactions,
+        analyticsRange,
+        anchorDate
+      ),
+    [analyticsRange, anchorDate, transactions]
   );
   const analytics = useMemo(
     () => MobileDashboardService.getAnalytics(filteredTransactions),
@@ -87,37 +117,119 @@ export function AnalyticsScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.analyticsContainer}>
-      <View style={styles.analyticsDatePill}>
-        <View style={styles.analyticsDateLeading}>
-          <CalendarDays color="#64748b" size={18} strokeWidth={2.3} />
-          <Text style={styles.analyticsDateText}>
-            {formatAnalyticsRange(filteredTransactions, analyticsRange)}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.analyticsRangeSelector}>
-        {analyticsRangeOptions.map((option) => (
+      <View style={styles.analyticsHeaderRow}>
+        <View style={styles.analyticsPeriodWrap}>
+          {periodOpen ? (
+            <Pressable
+              onPress={() => setPeriodOpen(false)}
+              style={styles.analyticsPeriodBackdrop}
+            />
+          ) : null}
           <Pressable
-            key={option.value}
-            onPress={() => setAnalyticsRange(option.value)}
-            style={[
-              styles.analyticsRangeButton,
-              analyticsRange === option.value &&
-                styles.analyticsRangeButtonActive,
+            disabled={analyticsRange === "all"}
+            onPress={() => setPeriodOpen((open) => !open)}
+            style={({ pressed }) => [
+              styles.analyticsDatePill,
+              pressed && styles.analyticsPressed,
             ]}
           >
-            <Text
+            <CalendarDays
+              color={premiumTheme.colors.ink}
+              size={15}
+              strokeWidth={2.2}
+            />
+            <Text numberOfLines={1} style={styles.analyticsDateText}>
+              {formatAnalyticsRange(analyticsRange, anchorDate)}
+            </Text>
+            {analyticsRange !== "all" ? (
+              <ChevronDown
+                color={premiumTheme.colors.secondary}
+                size={14}
+                strokeWidth={2.4}
+              />
+            ) : null}
+          </Pressable>
+
+          {periodOpen ? (
+            <MotiView
+              animate={{ opacity: 1, translateY: 0 }}
+              from={{ opacity: 0, translateY: -6 }}
+              style={styles.analyticsPeriodMenu}
+              transition={{ duration: 140, type: "timing" }}
+            >
+              <ScrollView
+                nestedScrollEnabled
+                style={styles.analyticsPeriodViewport}
+              >
+                {periodOptions.map((option) => {
+                  const active = option.offset === anchorOffset;
+
+                  return (
+                    <Pressable
+                      key={option.offset}
+                      onPress={() => {
+                        setAnchorOffset(option.offset);
+                        setPeriodOpen(false);
+                      }}
+                      style={({ pressed }) => [
+                        styles.analyticsPeriodOption,
+                        pressed && styles.analyticsPressed,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.analyticsPeriodOptionText,
+                          active && styles.analyticsPeriodOptionTextActive,
+                        ]}
+                      >
+                        {option.offset === 0
+                          ? "This month"
+                          : option.label}
+                      </Text>
+                      {active ? (
+                        <Check
+                          color={premiumTheme.colors.ink}
+                          size={14}
+                          strokeWidth={2.8}
+                        />
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </MotiView>
+          ) : null}
+        </View>
+
+        <View style={styles.analyticsRangeSelector}>
+          {analyticsRangeOptions.map((option) => (
+            <Pressable
+              key={option.value}
+              onPress={() => {
+                setAnalyticsRange(option.value);
+
+                if (option.value === "all") {
+                  setPeriodOpen(false);
+                }
+              }}
               style={[
-                styles.analyticsRangeText,
+                styles.analyticsRangeButton,
                 analyticsRange === option.value &&
-                  styles.analyticsRangeTextActive,
+                  styles.analyticsRangeButtonActive,
               ]}
             >
-              {option.label}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={[
+                  styles.analyticsRangeText,
+                  analyticsRange === option.value &&
+                    styles.analyticsRangeTextActive,
+                ]}
+              >
+                {option.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
 
       <View style={styles.analyticsMetricRow}>
@@ -629,15 +741,28 @@ function emptyTrendPointForPeriod(period: string): AnalyticsTrendPoint {
 
 function filterTransactionsForAnalyticsRange(
   transactions: CachedTransaction[],
-  range: AnalyticsRange
+  range: AnalyticsRange,
+  anchor: Date
 ) {
   if (range === "all") {
     return transactions;
   }
 
-  const now = new Date();
   const monthOffset = range === "month" ? 0 : range === "3m" ? 2 : 5;
-  const start = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+  const start = new Date(
+    anchor.getFullYear(),
+    anchor.getMonth() - monthOffset,
+    1
+  );
+  const end = new Date(
+    anchor.getFullYear(),
+    anchor.getMonth() + 1,
+    0,
+    23,
+    59,
+    59,
+    999
+  );
 
   return transactions.filter((transaction) => {
     const occurredAt = new Date(transaction.occurred_at);
@@ -645,66 +770,48 @@ function filterTransactionsForAnalyticsRange(
     return (
       Number.isFinite(occurredAt.getTime()) &&
       occurredAt >= start &&
-      occurredAt <= now
+      occurredAt <= end
     );
   });
 }
 
-function formatAnalyticsRange(
-  transactions: CachedTransaction[],
-  range: AnalyticsRange
-) {
+function formatAnalyticsRange(range: AnalyticsRange, anchor: Date) {
+  if (range === "all") {
+    return "All transactions";
+  }
+
   if (range === "month") {
-    return formatMonthRange(new Date());
+    return formatMonthRange(anchor);
   }
 
-  if (transactions.length === 0) {
-    const now = new Date();
-    if (range === "all") {
-      return "All transactions";
-    }
+  const anchorEnd = new Date(
+    anchor.getFullYear(),
+    anchor.getMonth() + 1,
+    0
+  );
 
-    return formatRollingRange(now, range);
-  }
-
-  const dates = transactions
-    .map((transaction) => new Date(transaction.occurred_at))
-    .filter((date) => Number.isFinite(date.getTime()))
-    .sort((first, second) => first.getTime() - second.getTime());
-
-  if (dates.length === 0) {
-    return range === "all" ? "All transactions" : formatRollingRange(new Date(), range);
-  }
-
-  const first = dates[0];
-  const last = dates[dates.length - 1];
-
-  if (
-    first.getFullYear() === last.getFullYear() &&
-    first.getMonth() === last.getMonth()
-  ) {
-    return formatMonthRange(last);
-  }
-
-  return `${first.toLocaleDateString("en-IN", {
-    month: "short",
-    year: "numeric",
-  })} - ${last.toLocaleDateString("en-IN", {
-    month: "short",
-    year: "numeric",
-  })}`;
+  return formatRollingRange(anchorEnd, range);
 }
 
 function formatRollingRange(date: Date, range: AnalyticsRange) {
   const monthOffset = range === "3m" ? 2 : 5;
   const start = new Date(date.getFullYear(), date.getMonth() - monthOffset, 1);
 
+  if (start.getFullYear() === date.getFullYear()) {
+    return `${start.toLocaleDateString("en-IN", {
+      month: "short",
+    })} - ${date.toLocaleDateString("en-IN", {
+      month: "short",
+      year: "numeric",
+    })}`;
+  }
+
   return `${start.toLocaleDateString("en-IN", {
     month: "short",
-    year: "numeric",
+    year: "2-digit",
   })} - ${date.toLocaleDateString("en-IN", {
     month: "short",
-    year: "numeric",
+    year: "2-digit",
   })}`;
 }
 
@@ -816,24 +923,79 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 28,
   },
-  analyticsDateLeading: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
   analyticsDatePill: {
     alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: premiumTheme.radius.control,
+    backgroundColor: "#ffffff",
+    borderColor: premiumTheme.colors.border,
+    borderRadius: premiumTheme.radius.pill,
+    borderWidth: 1,
     flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 46,
-    paddingHorizontal: 13,
+    gap: 6,
+    justifyContent: "center",
+    minHeight: 40,
+    paddingHorizontal: 10,
+    ...premiumTheme.shadow.soft,
   },
   analyticsDateText: {
     color: "#0f172a",
-    fontSize: 15,
-    fontWeight: "900",
+    flexShrink: 1,
+    fontSize: 12,
+    fontVariant: ["tabular-nums"],
+    fontWeight: "700",
+  },
+  analyticsHeaderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    zIndex: 30,
+  },
+  analyticsPeriodBackdrop: {
+    bottom: -1000,
+    left: -1000,
+    position: "absolute",
+    right: -1000,
+    top: -1000,
+    zIndex: 25,
+  },
+  analyticsPeriodMenu: {
+    backgroundColor: "#ffffff",
+    borderColor: premiumTheme.colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    left: 0,
+    minWidth: 176,
+    paddingVertical: 6,
+    position: "absolute",
+    top: 50,
+    zIndex: 30,
+    ...premiumTheme.shadow.soft,
+  },
+  analyticsPeriodOption: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    minHeight: 38,
+    paddingHorizontal: 14,
+  },
+  analyticsPeriodOptionText: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  analyticsPeriodOptionTextActive: {
+    color: premiumTheme.colors.ink,
+    fontWeight: "700",
+  },
+  analyticsPeriodViewport: {
+    maxHeight: 264,
+  },
+  analyticsPeriodWrap: {
+    flex: 1,
+    zIndex: 30,
+  },
+  analyticsPressed: {
+    opacity: 0.85,
   },
   analyticsDonutCenter: {
     alignItems: "center",
@@ -977,35 +1139,30 @@ const styles = StyleSheet.create({
   },
   analyticsRangeButton: {
     alignItems: "center",
-    borderRadius: 13,
+    borderRadius: premiumTheme.radius.pill,
     flex: 1,
     justifyContent: "center",
-    minHeight: 34,
+    minHeight: 32,
   },
   analyticsRangeButtonActive: {
-    backgroundColor: premiumTheme.colors.canvas,
-    shadowColor: premiumTheme.colors.ink,
-    shadowOffset: {
-      height: 5,
-      width: 0,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
+    backgroundColor: premiumTheme.colors.ink,
   },
   analyticsRangeSelector: {
     backgroundColor: premiumTheme.colors.field,
-    borderRadius: 17,
+    borderRadius: premiumTheme.radius.pill,
+    flex: 1.15,
     flexDirection: "row",
-    gap: 4,
-    padding: 5,
+    gap: 2,
+    padding: 4,
   },
   analyticsRangeText: {
     color: "#64748b",
-    fontSize: 12,
-    fontWeight: "900",
+    fontSize: 11,
+    fontWeight: "600",
   },
   analyticsRangeTextActive: {
-    color: "#0f172a",
+    color: "#ffffff",
+    fontWeight: "700",
   },
   analyticsSectionTitle: {
     color: "#0f172a",

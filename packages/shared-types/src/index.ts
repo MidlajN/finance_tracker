@@ -112,6 +112,17 @@ export interface CachedMerchant
     updated_at: string;
 }
 
+export interface MerchantAliasLike {
+    id?: string;
+    merchant_id: string;
+    alias: string;
+}
+
+export interface CachedMerchantAlias
+    extends MerchantAliasLike {
+    id: string;
+}
+
 export interface FinancialEventInput {
     amount: number;
     confidence?: number;

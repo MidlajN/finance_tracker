@@ -9,6 +9,7 @@ import type {
   CreateInvestmentSyncPayload,
   CreateLiabilitySyncPayload,
   CreateLoanSyncPayload,
+  CreateMerchantAliasSyncPayload,
   CreateMerchantSyncPayload,
   DeleteFinancialEventSyncPayload,
   DeleteResourceSyncPayload,
@@ -37,6 +38,7 @@ import {
   LocalLiabilityRepository,
   LocalLoanRepository,
   LocalCurrencyRepository,
+  LocalMerchantAliasRepository,
   LocalMerchantRepository,
   LocalRuleRepository,
   LocalTransactionRepository,
@@ -48,6 +50,7 @@ import {
   RemoteBudgetRepository,
   RemoteCategoryRepository,
   RemoteFinancialRuleRepository,
+  RemoteMerchantAliasRepository,
   RemoteMerchantRepository,
 } from "../repositories/RemoteReferenceRepository";
 import { RemoteTransactionRepository } from "../repositories/RemoteTransactionRepository";
@@ -374,6 +377,7 @@ export class SyncService {
       loans,
       investments,
       goals,
+      merchantAliases,
     ] = await Promise.all([
       RemoteEventRepository.list(),
       RemoteTransactionRepository.list(),
@@ -389,6 +393,7 @@ export class SyncService {
       RemoteFinancialIntelligenceRepository.listLoans(),
       RemoteFinancialIntelligenceRepository.listInvestments(),
       RemoteFinancialIntelligenceRepository.listGoals(),
+      RemoteMerchantAliasRepository.list(),
     ]);
 
     pendingQueueItems.forEach((item) => {
@@ -421,6 +426,7 @@ export class SyncService {
       LocalTransactionRepository.clear(),
       LocalCategoryRepository.clear(),
       LocalMerchantRepository.clear(),
+      LocalMerchantAliasRepository.clear(),
       LocalBudgetRepository.clear(),
       LocalRuleRepository.clear(),
       LocalCurrencyRepository.clear(),
@@ -462,6 +468,9 @@ export class SyncService {
         LocalInvestmentRepository.upsert(investment)
       ),
       ...goals.map((goal) => LocalGoalRepository.upsert(goal)),
+      ...merchantAliases.map((alias) =>
+        LocalMerchantAliasRepository.upsert(alias)
+      ),
     ]);
 
     await Promise.all(
@@ -482,6 +491,7 @@ export class SyncService {
       investments: investments.length,
       liabilities: liabilities.length,
       loans: loans.length,
+      merchantAliases: merchantAliases.length,
       merchants: merchants.length,
       rules: rules.length,
       transactions: transactions.length,
@@ -562,6 +572,18 @@ export class SyncService {
 
       if (item.operation === "update_merchant") {
         await this.processUpdateMerchant(item);
+        await SyncQueueRepository.setStatus(item.id, "synced");
+        return;
+      }
+
+      if (item.operation === "create_merchant_alias") {
+        await this.processCreateMerchantAlias(item);
+        await SyncQueueRepository.setStatus(item.id, "synced");
+        return;
+      }
+
+      if (item.operation === "delete_merchant_alias") {
+        await this.processDeleteMerchantAlias(item);
         await SyncQueueRepository.setStatus(item.id, "synced");
         return;
       }
@@ -823,6 +845,48 @@ export class SyncService {
     );
 
     await LocalMerchantRepository.upsert(merchant);
+  }
+
+  private static async processDeleteMerchantAlias(item: SyncQueueItem) {
+    if (!isDeleteResourceSyncPayload(item.payload)) {
+      throw new Error("Invalid merchant alias delete payload.");
+    }
+
+    await RemoteMerchantAliasRepository.delete(item.payload.id);
+    await LocalMerchantAliasRepository.delete(item.payload.id);
+  }
+
+  private static async processCreateMerchantAlias(item: SyncQueueItem) {
+    if (
+      !isCreateResourceSyncPayload<CreateMerchantAliasSyncPayload>(
+        item.payload
+      )
+    ) {
+      throw new Error("Invalid merchant alias create payload.");
+    }
+
+    try {
+      const alias = await RemoteMerchantAliasRepository.create(
+        item.payload.localId,
+        item.payload.resource.merchant_id,
+        item.payload.resource.alias
+      );
+
+      await LocalMerchantAliasRepository.upsert(alias);
+    } catch (error) {
+      // The alias may already exist for this merchant (unique constraint
+      // 23505); that means another device learned it first — success.
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error as { code?: string }).code === "23505"
+      ) {
+        return;
+      }
+
+      throw error;
+    }
   }
 
   private static async processCreateAsset(item: SyncQueueItem) {
