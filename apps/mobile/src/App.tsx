@@ -20,7 +20,7 @@ import { useOfflineStore } from "./stores/offlineStore";
 import { useSyncStore } from "./stores/syncStore";
 import type { RootStackParamList } from "./types/navigation";
 
-const APP_CANVAS_COLOR = "#f8fafc";
+const APP_CANVAS_COLOR = "#ffffff";
 
 void SystemUI.setBackgroundColorAsync(APP_CANVAS_COLOR);
 
@@ -165,7 +165,7 @@ export default function App() {
       onStateChange={syncActiveRoute}
       ref={navigationRef}
     >
-      <StatusBar style="auto" />
+      <StatusBar style="dark" />
       <View style={styles.appShell}>
         <View style={styles.navigator}>
           <AppNavigator />

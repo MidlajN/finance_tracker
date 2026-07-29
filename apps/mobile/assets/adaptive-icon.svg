@@ -1,0 +1,13 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Transparent ground; Android supplies the background layer. Motif kept
+       inside the central safe zone (~66%) so any mask shape works. -->
+  <path
+    d="M 314 664 C 424 655 496 615 565 549 C 634 483 679 431 732 379"
+    stroke="#ffffff"
+    stroke-width="42"
+    stroke-linecap="round"
+  />
+  <circle cx="744" cy="368" r="55" fill="#0f172a" />
+  <circle cx="744" cy="368" r="42" fill="#ffffff" />
+  <circle cx="744" cy="368" r="19" fill="#0f172a" />
+</svg>

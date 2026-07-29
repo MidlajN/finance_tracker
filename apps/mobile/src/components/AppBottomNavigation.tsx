@@ -8,6 +8,7 @@ import {
 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { premiumTheme } from "../theme/premiumTheme";
 import type { RootStackParamList } from "../types/navigation";
 
 export type AppBottomNavigationRoute =
@@ -65,8 +66,16 @@ export function AppBottomNavigation({
   onNavigate,
 }: AppBottomNavigationProps) {
   return (
-    <View style={styles.bottomNav}>
-      {items.map((item) => {
+    <View>
+      {/* Cross-platform upward shadow: RN shadow props are iOS only and
+          Android elevation cannot cast upward. Each rim is the bar's own
+          silhouette expanded outward (radius grows by the offset), so the
+          halo hugs the rounded corners exactly. Two rims fake the blur
+          falloff. */}
+      <View pointerEvents="none" style={styles.navHaloOuter} />
+      <View pointerEvents="none" style={styles.navHaloInner} />
+      <View style={styles.bottomNav}>
+        {items.map((item) => {
         const Icon = item.Icon;
         const active = item.route === activeRoute;
 
@@ -77,16 +86,22 @@ export function AppBottomNavigation({
             style={styles.navItem}
           >
             <Icon
-              color={active ? "#000000" : "#9aa0aa"}
-              size={24}
-              strokeWidth={active ? 2.7 : 2.2}
+              color={
+                active
+                  ? premiumTheme.colors.ink
+                  : premiumTheme.colors.muted
+              }
+              size={22}
+              strokeWidth={active ? 2.5 : 2}
             />
             <Text style={[styles.navLabel, active && styles.navLabelActive]}>
               {item.label}
             </Text>
+            <View style={[styles.navDot, active && styles.navDotActive]} />
           </Pressable>
         );
-      })}
+        })}
+      </View>
     </View>
   );
 }
@@ -119,33 +134,64 @@ const styles = StyleSheet.create({
   bottomNav: {
     alignItems: "center",
     backgroundColor: "#ffffff",
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+    // Full border minus the bottom edge so the rounded top corners are
+    // stroked and read against the white screen behind them.
+    borderBottomWidth: 0,
+    borderColor: premiumTheme.colors.border,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-around",
-    minHeight: 86,
+    minHeight: 80,
     paddingBottom: 10,
-    paddingHorizontal: 14,
-    shadowColor: "#111827",
-    shadowOffset: {
-      height: -8,
-      width: 0,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 24,
+    paddingHorizontal: 10,
+    paddingTop: 8,
+  },
+  navHaloInner: {
+    backgroundColor: "rgba(16, 24, 40, 0.025)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    bottom: 0,
+    left: -2,
+    position: "absolute",
+    right: -2,
+    top: -2,
+  },
+  navHaloOuter: {
+    backgroundColor: "rgba(16, 24, 40, 0.018)",
+    borderTopLeftRadius: 31,
+    borderTopRightRadius: 31,
+    bottom: 0,
+    left: -5,
+    position: "absolute",
+    right: -5,
+    top: -5,
+  },
+  navDot: {
+    backgroundColor: "transparent",
+    borderRadius: 2,
+    height: 4,
+    width: 4,
+  },
+  navDotActive: {
+    backgroundColor: premiumTheme.colors.ink,
   },
   navItem: {
     alignItems: "center",
+    borderRadius: 22,
     flex: 1,
-    gap: 5,
+    gap: 3,
     justifyContent: "center",
+    minHeight: 54,
   },
   navLabel: {
-    color: "#9aa0aa",
-    fontSize: 12,
-    fontWeight: "800",
+    color: premiumTheme.colors.muted,
+    fontSize: 11,
+    fontWeight: "600",
   },
   navLabelActive: {
-    color: "#000000",
+    color: premiumTheme.colors.ink,
+    fontWeight: "700",
   },
 });

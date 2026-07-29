@@ -1,18 +1,16 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
+import { AnalyticsScreen } from "../screens/AnalyticsScreen";
+import { BudgetsScreen } from "../screens/BudgetsScreen";
+import { CategoriesScreen } from "../screens/CategoriesScreen";
 import { DashboardScreen } from "../screens/DashboardScreen";
-import {
-  AnalyticsScreen,
-  BudgetsScreen,
-  CategoriesScreen,
-  EventReviewScreen,
-  EventsScreen,
-  FinancialIntelligenceScreen,
-  MerchantsScreen,
-  ReportsScreen,
-  TransactionsScreen,
-} from "../screens/FinanceScreens";
+import { EventReviewScreen } from "../screens/EventReviewScreen";
+import { EventsScreen } from "../screens/EventsScreen";
+import { FinancialIntelligenceScreen } from "../screens/FinancialIntelligenceScreen";
 import { LoginScreen } from "../screens/LoginScreen";
+import { MerchantsScreen } from "../screens/MerchantsScreen";
+import { ReportsScreen } from "../screens/ReportsScreen";
+import { TransactionsScreen } from "../screens/TransactionsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { useAuthStore } from "../stores/authStore";
 import type { RootStackParamList } from "../types/navigation";
@@ -26,12 +24,17 @@ export function AppNavigator() {
     <Stack.Navigator
       screenOptions={{
         contentStyle: {
-          backgroundColor: "#f8fafc",
+          backgroundColor: "#ffffff",
         },
         headerStyle: {
-          backgroundColor: "#f8fafc",
+          backgroundColor: "#ffffff",
         },
         headerShadowVisible: false,
+        headerTintColor: "#0f172a",
+        headerTitleStyle: {
+          fontSize: 20,
+          fontWeight: "800",
+        },
       }}
     >
       {session ? (
@@ -49,7 +52,15 @@ export function AppNavigator() {
           <Stack.Screen
             name="Events"
             component={EventsScreen}
-            options={{ title: "Add transaction" }}
+            options={{
+              contentStyle: {
+                backgroundColor: "#ffffff",
+              },
+              headerStyle: {
+                backgroundColor: "#ffffff",
+              },
+              title: "Add transaction",
+            }}
           />
           <Stack.Screen
             name="EventReview"

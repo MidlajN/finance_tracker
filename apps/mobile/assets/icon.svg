@@ -1,0 +1,17 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Ink ground -->
+  <rect width="1024" height="1024" fill="#0f172a" />
+
+  <!-- The calm cumulative curve -->
+  <path
+    d="M 200 724 C 352 712 452 656 548 564 C 644 472 706 400 780 328"
+    stroke="#ffffff"
+    stroke-width="58"
+    stroke-linecap="round"
+  />
+
+  <!-- Endpoint marker: ink gap, white dot, ink core -->
+  <circle cx="796" cy="312" r="76" fill="#0f172a" />
+  <circle cx="796" cy="312" r="58" fill="#ffffff" />
+  <circle cx="796" cy="312" r="26" fill="#0f172a" />
+</svg>

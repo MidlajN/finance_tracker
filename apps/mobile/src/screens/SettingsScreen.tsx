@@ -40,6 +40,7 @@ import { useAuthStore } from "../stores/authStore";
 import { useNotificationStore } from "../stores/notificationStore";
 import { useOfflineStore } from "../stores/offlineStore";
 import { useSyncStore } from "../stores/syncStore";
+import { premiumHairline, premiumTheme } from "../theme/premiumTheme";
 import type { RootStackParamList } from "../types/navigation";
 
 type SettingsScreenProps = NativeStackScreenProps<RootStackParamList, "Settings">;
@@ -176,7 +177,11 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
             </Text>
           </View>
           <View style={styles.profileSecurityBadge}>
-            <ShieldCheck color="#a7f3d0" size={21} strokeWidth={2.3} />
+            <ShieldCheck
+              color={premiumTheme.colors.success}
+              size={21}
+              strokeWidth={2.3}
+            />
           </View>
         </View>
 
@@ -565,38 +570,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 13,
-    minHeight: 78,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    minHeight: 68,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   actionRowDivider: {
-    borderTopColor: "#eef2f7",
-    borderTopWidth: 1,
+    borderTopColor: premiumTheme.colors.divider,
+    borderTopWidth: premiumHairline,
   },
   avatar: {
     alignItems: "center",
-    backgroundColor: "#ffffff",
+    backgroundColor: premiumTheme.colors.accentSoft,
     borderRadius: 999,
     height: 54,
     justifyContent: "center",
     width: 54,
   },
   avatarText: {
-    color: "#4338ca",
+    color: premiumTheme.colors.accent,
     fontSize: 19,
     fontWeight: "900",
   },
   container: {
-    backgroundColor: "#f8fafc",
-    gap: 18,
-    padding: 16,
+    backgroundColor: premiumTheme.colors.canvas,
+    gap: 20,
+    padding: 20,
     paddingBottom: 32,
   },
   disabled: {
     opacity: 0.58,
   },
   diagnosticValue: {
-    backgroundColor: "#f8fafc",
+    backgroundColor: premiumTheme.colors.field,
     borderRadius: 13,
     flexBasis: "47%",
     flexGrow: 1,
@@ -651,7 +656,7 @@ const styles = StyleSheet.create({
     width: 42,
   },
   metricDivider: {
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: premiumTheme.colors.divider,
     height: 44,
     width: 1,
   },
@@ -663,37 +668,32 @@ const styles = StyleSheet.create({
     width: 30,
   },
   metricLabel: {
-    color: "#aeb9ca",
+    color: premiumTheme.colors.secondary,
     fontSize: 11,
     fontWeight: "700",
   },
   metricValue: {
-    color: "#ffffff",
+    color: premiumTheme.colors.ink,
     fontSize: 15,
     fontWeight: "900",
   },
   profileCard: {
-    backgroundColor: "#0f172a",
-    borderColor: "#1e293b",
-    borderRadius: 22,
-    borderWidth: 1,
+    backgroundColor: premiumTheme.colors.elevated,
+    borderRadius: premiumTheme.radius.surface,
     overflow: "hidden",
-    shadowColor: "#111827",
-    shadowOffset: { height: 10, width: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 24,
+    ...premiumTheme.shadow.raised,
   },
   profileCopy: {
     flex: 1,
     minWidth: 0,
   },
   profileEmail: {
-    color: "#b8c2d1",
+    color: premiumTheme.colors.secondary,
     fontSize: 13,
     marginTop: 4,
   },
   profileGlow: {
-    backgroundColor: "rgba(109, 74, 255, 0.2)",
+    backgroundColor: "rgba(109, 74, 255, 0.08)",
     borderRadius: 999,
     height: 150,
     position: "absolute",
@@ -708,24 +708,22 @@ const styles = StyleSheet.create({
   },
   profileMetrics: {
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.035)",
-    borderTopColor: "rgba(255, 255, 255, 0.1)",
-    borderTopWidth: 1,
+    backgroundColor: premiumTheme.colors.canvas,
+    borderTopColor: premiumTheme.colors.divider,
+    borderTopWidth: premiumHairline,
     flexDirection: "row",
     paddingHorizontal: 8,
     paddingVertical: 13,
   },
   profileName: {
-    color: "#ffffff",
+    color: premiumTheme.colors.ink,
     fontSize: 19,
     fontWeight: "900",
   },
   profileSecurityBadge: {
     alignItems: "center",
-    backgroundColor: "rgba(16, 185, 129, 0.16)",
-    borderColor: "rgba(167, 243, 208, 0.18)",
+    backgroundColor: premiumTheme.colors.successSoft,
     borderRadius: 14,
-    borderWidth: 1,
     height: 40,
     justifyContent: "center",
     width: 40,
@@ -743,12 +741,12 @@ const styles = StyleSheet.create({
   rowIcon: {
     alignItems: "center",
     borderRadius: 14,
-    height: 44,
+    height: 40,
     justifyContent: "center",
-    width: 44,
+    width: 40,
   },
   rowPressed: {
-    backgroundColor: "#f8fafc",
+    backgroundColor: premiumTheme.colors.field,
   },
   rowSubtitle: {
     color: "#64748b",
@@ -765,19 +763,14 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   sectionCard: {
-    backgroundColor: "#ffffff",
-    borderColor: "#eef2f7",
-    borderRadius: 20,
-    borderWidth: 1,
+    backgroundColor: premiumTheme.colors.elevated,
+    borderRadius: premiumTheme.radius.section,
     overflow: "hidden",
-    shadowColor: "#111827",
-    shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.035,
-    shadowRadius: 20,
+    ...premiumTheme.shadow.floating,
   },
   sectionLabel: {
-    color: "#64748b",
-    fontSize: 12,
+    color: premiumTheme.colors.secondary,
+    fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.7,
     paddingHorizontal: 4,
@@ -786,9 +779,7 @@ const styles = StyleSheet.create({
   securityCard: {
     alignItems: "center",
     backgroundColor: "#f2f5ff",
-    borderColor: "#e3e9ff",
-    borderRadius: 20,
-    borderWidth: 1,
+    borderRadius: premiumTheme.radius.section,
     flexDirection: "row",
     gap: 13,
     padding: 17,
@@ -817,10 +808,8 @@ const styles = StyleSheet.create({
   },
   signOutButton: {
     alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderColor: "#fee2e2",
+    backgroundColor: premiumTheme.colors.dangerSoft,
     borderRadius: 17,
-    borderWidth: 1,
     flexDirection: "row",
     gap: 9,
     justifyContent: "center",

@@ -4,12 +4,17 @@
     "slug": "finance-tracker",
     "scheme": "financetracker",
     "version": "1.0.0",
-    "backgroundColor": "#f8fafc",
+    "backgroundColor": "#ffffff",
     "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
     "platforms": ["android"],
     "plugins": ["./plugins/withAndroidReleaseSigning.cjs"],
     "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0f172a",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
       "package": "com.financeplatform.mobile",
       "versionCode": 1
     },
