@@ -18,6 +18,7 @@ import type {
   ExchangeRateLike,
   FinancialEventInput,
   Json,
+  NotificationParseMiss,
 } from "@finance/shared-types";
 import type {
   SyncOperation,
@@ -26,7 +27,7 @@ import type {
 } from "@finance/shared-api";
 
 const DATABASE_NAME = "finance-platform.db";
-const SCHEMA_VERSION = "4";
+const SCHEMA_VERSION = "5";
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -167,6 +168,18 @@ export async function initializeLocalDatabase() {
 
     create index if not exists idx_cached_merchant_aliases_merchant
       on cached_merchant_aliases(merchant_id);
+
+    create table if not exists notification_parse_misses (
+      id text primary key not null,
+      package_name text,
+      title text,
+      body_preview text,
+      reason text not null,
+      captured_at text not null
+    );
+
+    create index if not exists idx_notification_parse_misses_captured
+      on notification_parse_misses(captured_at);
 
     create table if not exists cached_budgets (
       id text primary key not null,
@@ -719,6 +732,71 @@ export class LocalMerchantRepository {
     const database = await getLocalDatabase();
 
     await database.runAsync("delete from cached_merchants;");
+  }
+}
+
+export class LocalNotificationMissRepository {
+  static async list(limit = 50) {
+    const database = await getLocalDatabase();
+
+    return database.getAllAsync<NotificationParseMiss>(
+      `
+        select *
+        from notification_parse_misses
+        order by captured_at desc
+        limit ?;
+      `,
+      [limit]
+    );
+  }
+
+  static async record(miss: NotificationParseMiss) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      `
+        insert into notification_parse_misses (
+          id,
+          package_name,
+          title,
+          body_preview,
+          reason,
+          captured_at
+        )
+        values (?, ?, ?, ?, ?, ?)
+        on conflict(id) do update set
+          reason = excluded.reason,
+          captured_at = excluded.captured_at;
+      `,
+      [
+        miss.id,
+        miss.package_name,
+        miss.title,
+        miss.body_preview,
+        miss.reason,
+        miss.captured_at,
+      ]
+    );
+
+    await database.runAsync(
+      `
+        delete from notification_parse_misses
+        where id not in (
+          select id
+          from notification_parse_misses
+          order by captured_at desc
+          limit 50
+        );
+      `
+    );
+  }
+
+  static async clear() {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      "delete from notification_parse_misses;"
+    );
   }
 }
 

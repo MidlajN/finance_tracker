@@ -1,6 +1,9 @@
 import type { EventSubscription } from "expo-modules-core";
 import { create } from "zustand";
 
+import type { NotificationParseMiss } from "@finance/shared-types";
+
+import { LocalNotificationMissRepository } from "../repositories/LocalDatabaseRepository";
 import {
   type NativeFinancialEventNotificationAction,
   NotificationService,
@@ -17,12 +20,15 @@ interface NotificationState {
   diagnostics: NativeNotificationDiagnostics | null;
   lastParsedNotification: ParsedNotificationResult | null;
   listening: boolean;
+  parseMisses: NotificationParseMiss[];
   reviewEventId: string | null;
   actionSubscription: EventSubscription | null;
   subscription: EventSubscription | null;
+  clearParseMisses: () => Promise<void>;
   consumeReviewEventId: () => void;
   openSettings: () => Promise<void>;
   refreshDiagnostics: () => Promise<void>;
+  refreshParseMisses: () => Promise<void>;
   sendTestNotification: () => Promise<boolean>;
   startListening: () => void;
   stopListening: () => void;
@@ -34,9 +40,21 @@ export const useNotificationStore = create<NotificationState>(
     diagnostics: null,
     lastParsedNotification: null,
     listening: false,
+    parseMisses: [],
     reviewEventId: null,
     actionSubscription: null,
     subscription: null,
+
+    async clearParseMisses() {
+      await LocalNotificationMissRepository.clear();
+      set({ parseMisses: [] });
+    },
+
+    async refreshParseMisses() {
+      const parseMisses =
+        await LocalNotificationMissRepository.list();
+      set({ parseMisses });
+    },
 
     consumeReviewEventId() {
       set({
@@ -175,9 +193,12 @@ async function processCapturedNotification(
     return;
   }
 
-  const result = NotificationService.parseNotification(payload);
+  const { failure, result } =
+    NotificationService.explainNotification(payload);
+
   if (!result) {
     completedCaptureIds.add(payload.captureId);
+    await recordParseMiss(payload, failure);
     await NotificationService.markCaptureProcessed(
       payload.captureId,
       null,
@@ -202,6 +223,11 @@ async function processCapturedNotification(
     "pending_review"
   );
 
+  // The native preview is keyed by captureId, which changes when the
+  // source app reposts its notification. Dismiss it and key the review
+  // notification by event id so recaptures replace instead of stack.
+  await NotificationService.dismissNotification(payload.captureId);
+
   if (persisted.event.status !== "confirmed") {
     const accountId = getEventAccountId(persisted.event.metadata);
     const accountName = accountId
@@ -218,7 +244,7 @@ async function processCapturedNotification(
       merchantName:
         persisted.event.merchant_name_raw ??
         result.event.merchantName,
-      notificationKey: payload.captureId,
+      notificationKey: persisted.event.id,
     });
   }
 
@@ -229,6 +255,26 @@ async function processCapturedNotification(
   set({
     error: null,
     lastParsedNotification: result,
+  });
+}
+
+async function recordParseMiss(
+  payload: NativeNotificationPayload,
+  failure: string | null
+) {
+  // Blocked sources include personal chats/SMS — record only that
+  // something was dropped, never the content.
+  const blocked = failure === "blocked_source";
+
+  await LocalNotificationMissRepository.record({
+    id: payload.captureId,
+    package_name: payload.packageName ?? null,
+    title: blocked ? null : payload.title ?? null,
+    body_preview: blocked
+      ? null
+      : payload.text?.replace(/\s+/g, " ").trim().slice(0, 140) ?? null,
+    reason: failure ?? "unparsed",
+    captured_at: payload.postedAt ?? new Date().toISOString(),
   });
 }
 

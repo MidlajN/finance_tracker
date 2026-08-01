@@ -123,6 +123,15 @@ export interface CachedMerchantAlias
     id: string;
 }
 
+export interface NotificationParseMiss {
+    id: string;
+    package_name: string | null;
+    title: string | null;
+    body_preview: string | null;
+    reason: string;
+    captured_at: string;
+}
+
 export interface FinancialEventInput {
     amount: number;
     confidence?: number;

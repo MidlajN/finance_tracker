@@ -1,0 +1,26 @@
+[
+    {
+        "merged": "com.financeplatform.notifications.finance-notification-listener-release-28:/drawable-ldpi-v4/ic_call_decline.png",
+        "source": "com.financeplatform.notifications.finance-notification-listener-core-1.13.1-2:/drawable-ldpi-v4/ic_call_decline.png"
+    },
+    {
+        "merged": "com.financeplatform.notifications.finance-notification-listener-release-28:/drawable-ldpi-v4/ic_call_answer_video_low.png",
+        "source": "com.financeplatform.notifications.finance-notification-listener-core-1.13.1-2:/drawable-ldpi-v4/ic_call_answer_video_low.png"
+    },
+    {
+        "merged": "com.financeplatform.notifications.finance-notification-listener-release-28:/drawable-ldpi-v4/ic_call_answer_video.png",
+        "source": "com.financeplatform.notifications.finance-notification-listener-core-1.13.1-2:/drawable-ldpi-v4/ic_call_answer_video.png"
+    },
+    {
+        "merged": "com.financeplatform.notifications.finance-notification-listener-release-28:/drawable-ldpi-v4/ic_call_decline_low.png",
+        "source": "com.financeplatform.notifications.finance-notification-listener-core-1.13.1-2:/drawable-ldpi-v4/ic_call_decline_low.png"
+    },
+    {
+        "merged": "com.financeplatform.notifications.finance-notification-listener-release-28:/drawable-ldpi-v4/ic_call_answer.png",
+        "source": "com.financeplatform.notifications.finance-notification-listener-core-1.13.1-2:/drawable-ldpi-v4/ic_call_answer.png"
+    },
+    {
+        "merged": "com.financeplatform.notifications.finance-notification-listener-release-28:/drawable-ldpi-v4/ic_call_answer_low.png",
+        "source": "com.financeplatform.notifications.finance-notification-listener-core-1.13.1-2:/drawable-ldpi-v4/ic_call_answer_low.png"
+    }
+]

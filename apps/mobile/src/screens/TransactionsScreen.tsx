@@ -306,6 +306,7 @@ function PendingEventRow({
   showDivider: boolean;
 }) {
   const isCredit = event.direction === "credit";
+  const isLowConfidence = (event.confidence ?? 1) < 0.5;
 
   return (
     <Pressable
@@ -323,9 +324,19 @@ function PendingEventRow({
       </View>
 
       <View style={styles.pendingReviewCopy}>
-        <Text numberOfLines={1} style={styles.pendingReviewMerchant}>
-          {event.merchant_name_raw ?? "Unknown merchant"}
-        </Text>
+        <View style={styles.pendingReviewTitleRow}>
+          <Text
+            numberOfLines={1}
+            style={[styles.pendingReviewMerchant, styles.pendingReviewMerchantShrink]}
+          >
+            {event.merchant_name_raw ?? "Unknown merchant"}
+          </Text>
+          {isLowConfidence ? (
+            <View style={styles.pendingReviewFlag}>
+              <Text style={styles.pendingReviewFlagText}>Low confidence</Text>
+            </View>
+          ) : null}
+        </View>
         <Text numberOfLines={1} style={styles.pendingReviewMeta}>
           {isCredit ? "Income" : "Expense"}
           {accountName ? ` · ${accountName}` : " · Account unassigned"}
@@ -388,6 +399,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 3,
   },
+  pendingReviewFlag: {
+    backgroundColor: "#fef3c7",
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  pendingReviewFlagText: {
+    color: "#b45309",
+    fontSize: 10,
+    fontWeight: "700",
+  },
   pendingReviewHeader: {
     alignItems: "flex-start",
     flexDirection: "row",
@@ -406,6 +428,9 @@ const styles = StyleSheet.create({
     color: "#0f172a",
     fontSize: 14,
     fontWeight: "900",
+  },
+  pendingReviewMerchantShrink: {
+    flexShrink: 1,
   },
   pendingReviewMeta: {
     color: "#64748b",
@@ -439,6 +464,11 @@ const styles = StyleSheet.create({
     color: "#0f172a",
     fontSize: 16,
     fontWeight: "900",
+  },
+  pendingReviewTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
   },
   pendingReviewTrailing: {
     alignItems: "center",

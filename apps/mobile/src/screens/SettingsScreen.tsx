@@ -35,6 +35,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import type { NotificationParseMiss } from "@finance/shared-types";
+
 import { FinancialDataExportService } from "../services/FinancialDataExportService";
 import { useAuthStore } from "../stores/authStore";
 import { useNotificationStore } from "../stores/notificationStore";
@@ -68,6 +70,13 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
   const sendTestNotification = useNotificationStore(
     (state) => state.sendTestNotification
   );
+  const parseMisses = useNotificationStore((state) => state.parseMisses);
+  const refreshParseMisses = useNotificationStore(
+    (state) => state.refreshParseMisses
+  );
+  const clearParseMisses = useNotificationStore(
+    (state) => state.clearParseMisses
+  );
   const accounts = useOfflineStore((state) => state.accounts);
   const budgets = useOfflineStore((state) => state.budgets);
   const categories = useOfflineStore((state) => state.categories);
@@ -87,7 +96,8 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
   useFocusEffect(
     useCallback(() => {
       void refreshNotificationDiagnostics();
-    }, [refreshNotificationDiagnostics])
+      void refreshParseMisses();
+    }, [refreshNotificationDiagnostics, refreshParseMisses])
   );
 
   const email = session?.user.email ?? "Signed-in account";
@@ -301,6 +311,10 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
           }
           title="Send test alert"
         />
+        <ParseMissCard
+          misses={parseMisses}
+          onClear={() => void clearParseMisses()}
+        />
       </SettingsSection>
 
       <SettingsSection label="About">
@@ -341,6 +355,59 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
         </Text>
       </Pressable>
     </ScrollView>
+  );
+}
+
+const parseMissReasonLabels: Record<string, string> = {
+  blocked_source: "Blocked source",
+  invalid_date: "Unreadable date",
+  missing_amount: "No amount found",
+  missing_direction: "No debit/credit wording",
+  promotional: "Looked promotional",
+  unparsed: "Not recognized",
+};
+
+function ParseMissCard({
+  misses,
+  onClear,
+}: {
+  misses: NotificationParseMiss[];
+  onClear: () => void;
+}) {
+  if (misses.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.parseMissCard}>
+      <View style={styles.parseMissHeader}>
+        <View style={styles.rowCopy}>
+          <Text style={styles.rowTitle}>Skipped notifications</Text>
+          <Text style={styles.rowSubtitle}>
+            Recent captures that were not turned into transactions.
+          </Text>
+        </View>
+        <Pressable onPress={onClear} style={styles.parseMissClear}>
+          <Text style={styles.parseMissClearText}>Clear</Text>
+        </Pressable>
+      </View>
+
+      {misses.slice(0, 5).map((miss) => (
+        <View key={miss.id} style={styles.parseMissRow}>
+          <Text numberOfLines={1} style={styles.parseMissPackage}>
+            {miss.package_name ?? "Unknown app"}
+          </Text>
+          <Text style={styles.parseMissReason}>
+            {parseMissReasonLabels[miss.reason] ?? miss.reason}
+          </Text>
+          {miss.body_preview ? (
+            <Text numberOfLines={2} style={styles.parseMissPreview}>
+              {miss.body_preview}
+            </Text>
+          ) : null}
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -700,6 +767,49 @@ const styles = StyleSheet.create({
     right: -48,
     top: -72,
     width: 150,
+  },
+  parseMissCard: {
+    borderTopColor: premiumTheme.colors.divider,
+    borderTopWidth: premiumHairline,
+    gap: 12,
+    padding: 16,
+  },
+  parseMissClear: {
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: premiumTheme.radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  parseMissClearText: {
+    color: premiumTheme.colors.ink,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  parseMissHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  parseMissPackage: {
+    color: premiumTheme.colors.ink,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  parseMissPreview: {
+    color: "#94a3b8",
+    fontSize: 11,
+    marginTop: 2,
+  },
+  parseMissReason: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 1,
+  },
+  parseMissRow: {
+    borderTopColor: premiumTheme.colors.divider,
+    borderTopWidth: premiumHairline,
+    paddingTop: 10,
   },
   profileMetric: {
     alignItems: "center",

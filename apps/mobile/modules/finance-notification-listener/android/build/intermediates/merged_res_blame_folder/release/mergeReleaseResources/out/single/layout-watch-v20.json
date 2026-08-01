@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "com.financeplatform.notifications.finance-notification-listener-release-28:/layout-watch-v20/abc_alert_dialog_button_bar_material.xml",
+        "source": "com.financeplatform.notifications.finance-notification-listener-appcompat-1.7.0-0:/layout-watch-v20/abc_alert_dialog_button_bar_material.xml"
+    },
+    {
+        "merged": "com.financeplatform.notifications.finance-notification-listener-release-28:/layout-watch-v20/abc_alert_dialog_title_material.xml",
+        "source": "com.financeplatform.notifications.finance-notification-listener-appcompat-1.7.0-0:/layout-watch-v20/abc_alert_dialog_title_material.xml"
+    }
+]

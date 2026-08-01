@@ -1,16 +1,23 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { MotiView } from "moti";
 import {
+  ArrowDown,
+  ArrowUp,
   CalendarDays,
   ChartNoAxesCombined,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   IndianRupee,
+  ReceiptText,
   TrendingDown,
   TrendingUp,
   Wallet,
+  X,
 } from "lucide-react-native";
 import {
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,7 +26,16 @@ import {
   View,
 } from "react-native";
 import { LineChart } from "react-native-chart-kit";
-import Svg, { Circle } from "react-native-svg";
+import Svg, {
+  Circle,
+  Defs,
+  G,
+  LinearGradient,
+  Path,
+  Rect,
+  Stop,
+  Text as SvgText,
+} from "react-native-svg";
 
 import type {
   AnalyticsGroup,
@@ -29,14 +45,33 @@ import type {
 
 import { MobileDashboardService } from "../services/MobileDashboardService";
 import { useOfflineStore } from "../stores/offlineStore";
+import { financeStyles } from "../components/finance/financeStyles";
 import { premiumHairline, premiumTheme } from "../theme/premiumTheme";
-import { formatMonthRange, formatPercent } from "../utils/financeFormat";
+import {
+  formatMonthRange,
+  formatPercent,
+  getCalendarDays,
+  isCurrentMonth,
+  isFutureLocalDay,
+  isSameLocalDay,
+} from "../utils/financeFormat";
 import {
   type FinanceScreenIcon,
   getTransactionIcon,
 } from "../utils/financeVisuals";
 
-type AnalyticsRange = "month" | "3m" | "6m" | "all";
+type AnalyticsRange = "month" | "3m" | "6m" | "ytd" | "1y" | "all" | "custom";
+
+interface AnalyticsCustomRange {
+  end: Date;
+  start: Date;
+}
+
+interface AnalyticsChartSeries {
+  expense: number[];
+  income: number[];
+  labels: string[];
+}
 
 const analyticsRangeOptions = [
   {
@@ -52,6 +87,14 @@ const analyticsRangeOptions = [
     value: "6m",
   },
   {
+    label: "YTD",
+    value: "ytd",
+  },
+  {
+    label: "1Y",
+    value: "1y",
+  },
+  {
     label: "All",
     value: "all",
   },
@@ -60,12 +103,23 @@ const analyticsRangeOptions = [
   value: AnalyticsRange;
 }[];
 
+const analyticsRangeMonthOffsets: Partial<Record<AnalyticsRange, number>> = {
+  "1y": 11,
+  "3m": 2,
+  "6m": 5,
+  month: 0,
+};
+
 
 export function AnalyticsScreen() {
   const { width } = useWindowDimensions();
   const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>("month");
   const [anchorOffset, setAnchorOffset] = useState(0);
   const [periodOpen, setPeriodOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customRange, setCustomRange] = useState<AnalyticsCustomRange | null>(
+    null
+  );
   const transactions = useOfflineStore((state) => state.transactions);
   const periodOptions = useMemo(() => {
     const now = new Date();
@@ -92,21 +146,361 @@ export function AnalyticsScreen() {
       filterTransactionsForAnalyticsRange(
         transactions,
         analyticsRange,
-        anchorDate
+        anchorDate,
+        customRange
       ),
-    [analyticsRange, anchorDate, transactions]
+    [analyticsRange, anchorDate, customRange, transactions]
   );
   const analytics = useMemo(
     () => MobileDashboardService.getAnalytics(filteredTransactions),
     [filteredTransactions]
   );
-  const visibleCashFlow = analytics.cashFlow.slice(-6);
+  const spendComparison = useMemo(() => {
+    if (
+      analyticsRange === "all" ||
+      (analyticsRange === "custom" && !customRange)
+    ) {
+      return null;
+    }
+
+    let prevStart: Date;
+    let prevEnd: Date;
+    let label: string;
+
+    if (analyticsRange === "custom" && customRange) {
+      const start = new Date(
+        customRange.start.getFullYear(),
+        customRange.start.getMonth(),
+        customRange.start.getDate()
+      );
+      const end = new Date(
+        customRange.end.getFullYear(),
+        customRange.end.getMonth(),
+        customRange.end.getDate(),
+        23,
+        59,
+        59,
+        999
+      );
+
+      prevEnd = new Date(start.getTime() - 1);
+      prevStart = new Date(
+        prevEnd.getTime() - (end.getTime() - start.getTime())
+      );
+      label = "vs previous period";
+    } else {
+      const months =
+        analyticsRange === "ytd"
+          ? anchorDate.getMonth() + 1
+          : (analyticsRangeMonthOffsets[analyticsRange] ?? 0) + 1;
+      const start = new Date(
+        anchorDate.getFullYear(),
+        anchorDate.getMonth() - months + 1,
+        1
+      );
+
+      prevStart = new Date(start.getFullYear(), start.getMonth() - months, 1);
+      prevEnd = new Date(
+        start.getFullYear(),
+        start.getMonth(),
+        0,
+        23,
+        59,
+        59,
+        999
+      );
+      label =
+        analyticsRange === "month"
+          ? `vs ${prevStart.toLocaleDateString("en-IN", { month: "long" })}`
+          : "vs previous period";
+    }
+
+    const previousExpenses = transactions.reduce((total, transaction) => {
+      if (transaction.transaction_type !== "expense") {
+        return total;
+      }
+
+      const occurredAt = new Date(transaction.occurred_at);
+
+      return occurredAt >= prevStart && occurredAt <= prevEnd
+        ? total + transaction.amount
+        : total;
+    }, 0);
+
+    if (previousExpenses <= 0) {
+      return null;
+    }
+
+    return {
+      changePercent:
+        ((analytics.totalExpenses - previousExpenses) / previousExpenses) *
+        100,
+      label,
+    };
+  }, [
+    analytics.totalExpenses,
+    analyticsRange,
+    anchorDate,
+    customRange,
+    transactions,
+  ]);
+  const visibleCashFlow = useMemo(() => {
+    const periods = getAnalyticsMonthPeriods(
+      analyticsRange,
+      anchorDate,
+      customRange
+    );
+
+    if (!periods) {
+      return analytics.cashFlow.slice(-12);
+    }
+
+    const byPeriod = new Map(
+      analytics.cashFlow.map((point) => [point.period, point])
+    );
+    const window = periods.map(
+      (period) => byPeriod.get(period) ?? emptyTrendPointForPeriod(period)
+    );
+
+    return window.length > 12 ? window.slice(-12) : window;
+  }, [analytics.cashFlow, analyticsRange, anchorDate, customRange]);
+  const rangeBounds = useMemo(() => {
+    const now = new Date();
+    const todayEnd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23,
+      59,
+      59,
+      999
+    );
+
+    if (analyticsRange === "custom") {
+      if (!customRange) {
+        return null;
+      }
+
+      const start = new Date(
+        customRange.start.getFullYear(),
+        customRange.start.getMonth(),
+        customRange.start.getDate()
+      );
+      const end = new Date(
+        customRange.end.getFullYear(),
+        customRange.end.getMonth(),
+        customRange.end.getDate(),
+        23,
+        59,
+        59,
+        999
+      );
+
+      return { end: end < todayEnd ? end : todayEnd, start };
+    }
+
+    if (analyticsRange === "all") {
+      let earliest = Number.POSITIVE_INFINITY;
+
+      transactions.forEach((transaction) => {
+        const time = new Date(transaction.occurred_at).getTime();
+
+        if (Number.isFinite(time)) {
+          earliest = Math.min(earliest, time);
+        }
+      });
+
+      if (!Number.isFinite(earliest)) {
+        return null;
+      }
+
+      const earliestDate = new Date(earliest);
+
+      return {
+        end: todayEnd,
+        start: new Date(
+          earliestDate.getFullYear(),
+          earliestDate.getMonth(),
+          earliestDate.getDate()
+        ),
+      };
+    }
+
+    const months =
+      analyticsRange === "ytd"
+        ? anchorDate.getMonth() + 1
+        : (analyticsRangeMonthOffsets[analyticsRange] ?? 0) + 1;
+    const start = new Date(
+      anchorDate.getFullYear(),
+      anchorDate.getMonth() - months + 1,
+      1
+    );
+    const end = new Date(
+      anchorDate.getFullYear(),
+      anchorDate.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    );
+
+    return { end: end < todayEnd ? end : todayEnd, start };
+  }, [analyticsRange, anchorDate, customRange, transactions]);
+  const chartSeries = useMemo<AnalyticsChartSeries>(() => {
+    const isDaily =
+      rangeBounds !== null &&
+      (analyticsRange === "month" ||
+        (analyticsRange === "custom" &&
+          (rangeBounds.end.getTime() - rangeBounds.start.getTime()) /
+            86400000 <=
+            45));
+
+    if (rangeBounds && isDaily) {
+      const dayTotals = new Map<
+        string,
+        { expense: number; income: number }
+      >();
+
+      filteredTransactions.forEach((transaction) => {
+        if (
+          transaction.transaction_type !== "expense" &&
+          transaction.transaction_type !== "income"
+        ) {
+          return;
+        }
+
+        const key = transaction.occurred_at.slice(0, 10);
+        const entry = dayTotals.get(key) ?? { expense: 0, income: 0 };
+
+        if (transaction.transaction_type === "expense") {
+          entry.expense += transaction.amount;
+        } else {
+          entry.income += transaction.amount;
+        }
+
+        dayTotals.set(key, entry);
+      });
+
+      const labels: string[] = [];
+      const income: number[] = [];
+      const expense: number[] = [];
+      const cursor = new Date(rangeBounds.start);
+      let cumulativeIncome = 0;
+      let cumulativeExpense = 0;
+      let index = 0;
+
+      while (cursor <= rangeBounds.end && labels.length < 120) {
+        const key = `${cursor.getFullYear()}-${String(
+          cursor.getMonth() + 1
+        ).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+        const entry = dayTotals.get(key);
+
+        cumulativeIncome += entry?.income ?? 0;
+        cumulativeExpense += entry?.expense ?? 0;
+        labels.push(
+          index % 7 === 0
+            ? `${cursor.getDate()} ${cursor.toLocaleDateString("en-IN", {
+                month: "short",
+              })}`
+            : ""
+        );
+        income.push(cumulativeIncome);
+        expense.push(cumulativeExpense);
+        cursor.setDate(cursor.getDate() + 1);
+        index += 1;
+      }
+
+      if (labels.length === 1) {
+        labels.unshift("");
+        income.unshift(0);
+        expense.unshift(0);
+      }
+
+      return { expense, income, labels };
+    }
+
+    const points = getCashFlowChartPoints(visibleCashFlow);
+
+    return {
+      expense: points.map((point) => point.expenses),
+      income: points.map((point) => point.income),
+      labels: points.map((point, index) =>
+        points.length > 8 && index % 2 === 1
+          ? ""
+          : formatShortPeriod(point.period)
+      ),
+    };
+  }, [analyticsRange, filteredTransactions, rangeBounds, visibleCashFlow]);
+  const spendStats = useMemo(() => {
+    if (!rangeBounds) {
+      return null;
+    }
+
+    const dayCount = Math.max(
+      1,
+      Math.floor(
+        (rangeBounds.end.getTime() - rangeBounds.start.getTime()) / 86400000
+      ) + 1
+    );
+    const dayTotals = new Map<string, number>();
+
+    filteredTransactions.forEach((transaction) => {
+      if (transaction.transaction_type !== "expense") {
+        return;
+      }
+
+      const key = transaction.occurred_at.slice(0, 10);
+
+      dayTotals.set(key, (dayTotals.get(key) ?? 0) + transaction.amount);
+    });
+
+    let highestKey: string | null = null;
+    let highestAmount = 0;
+
+    dayTotals.forEach((amount, key) => {
+      if (amount > highestAmount) {
+        highestAmount = amount;
+        highestKey = key;
+      }
+    });
+
+    return {
+      avgPerDay: analytics.totalExpenses / dayCount,
+      dayCount,
+      highest: highestKey
+        ? {
+            amount: highestAmount,
+            label: new Date(highestKey).toLocaleDateString("en-IN", {
+              day: "numeric",
+              month: "short",
+            }),
+          }
+        : null,
+    };
+  }, [analytics.totalExpenses, filteredTransactions, rangeBounds]);
+  const summaryTitle =
+    analyticsRange === "month"
+      ? anchorOffset === 0
+        ? "This Month"
+        : anchorDate.toLocaleDateString("en-IN", {
+            month: "long",
+            year: "numeric",
+          })
+      : analyticsRange === "3m"
+        ? "Last 3 Months"
+        : analyticsRange === "6m"
+          ? "Last 6 Months"
+          : analyticsRange === "ytd"
+            ? "Year to Date"
+            : analyticsRange === "1y"
+              ? "Last 12 Months"
+              : analyticsRange === "custom"
+                ? "Custom Range"
+                : "All Time";
   const visibleCategories = analytics.categoryAnalytics
     .filter((group) => group.expenses > 0)
     .slice(0, 6);
-  const latestComparison =
-    analytics.monthlyComparisons[analytics.monthlyComparisons.length - 1] ??
-    null;
   const chartWidth = Math.max(280, width - 72);
   const pieSize = Math.min(124, Math.max(104, width * 0.29));
   const highestCategory = visibleCategories[0] ?? null;
@@ -117,7 +511,7 @@ export function AnalyticsScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.analyticsContainer}>
-      <View style={styles.analyticsHeaderRow}>
+      <View style={styles.analyticsHeaderCard}>
         <View style={styles.analyticsPeriodWrap}>
           {periodOpen ? (
             <Pressable
@@ -125,30 +519,73 @@ export function AnalyticsScreen() {
               style={styles.analyticsPeriodBackdrop}
             />
           ) : null}
-          <Pressable
-            disabled={analyticsRange === "all"}
-            onPress={() => setPeriodOpen((open) => !open)}
-            style={({ pressed }) => [
-              styles.analyticsDatePill,
-              pressed && styles.analyticsPressed,
-            ]}
-          >
-            <CalendarDays
-              color={premiumTheme.colors.ink}
-              size={15}
-              strokeWidth={2.2}
-            />
-            <Text numberOfLines={1} style={styles.analyticsDateText}>
-              {formatAnalyticsRange(analyticsRange, anchorDate)}
-            </Text>
-            {analyticsRange !== "all" ? (
-              <ChevronDown
-                color={premiumTheme.colors.secondary}
-                size={14}
-                strokeWidth={2.4}
+          <View style={styles.analyticsHeaderTop}>
+            <Pressable
+              disabled={analyticsRange === "all"}
+              onPress={() => {
+                if (analyticsRange === "custom") {
+                  setCustomOpen(true);
+                  return;
+                }
+
+                setPeriodOpen((open) => !open);
+              }}
+              style={({ pressed }) => [
+                styles.analyticsDateRow,
+                pressed && styles.analyticsPressed,
+              ]}
+            >
+              <View style={styles.analyticsDateIconTile}>
+                <CalendarDays
+                  color={premiumTheme.colors.ink}
+                  size={16}
+                  strokeWidth={2.2}
+                />
+              </View>
+              <Text numberOfLines={1} style={styles.analyticsDateText}>
+                {formatAnalyticsRange(analyticsRange, anchorDate, customRange)}
+              </Text>
+              {analyticsRange !== "all" ? (
+                <ChevronDown
+                  color={premiumTheme.colors.secondary}
+                  size={15}
+                  strokeWidth={2.4}
+                />
+              ) : null}
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                setPeriodOpen(false);
+                setCustomOpen(true);
+              }}
+              style={({ pressed }) => [
+                styles.analyticsCustomButton,
+                analyticsRange === "custom" &&
+                  styles.analyticsCustomButtonActive,
+                pressed && styles.analyticsPressed,
+              ]}
+            >
+              <CalendarDays
+                color={
+                  analyticsRange === "custom"
+                    ? "#ffffff"
+                    : premiumTheme.colors.ink
+                }
+                size={13}
+                strokeWidth={2.3}
               />
-            ) : null}
-          </Pressable>
+              <Text
+                style={[
+                  styles.analyticsCustomText,
+                  analyticsRange === "custom" &&
+                    styles.analyticsCustomTextActive,
+                ]}
+              >
+                Custom
+              </Text>
+            </Pressable>
+          </View>
 
           {periodOpen ? (
             <MotiView
@@ -202,83 +639,196 @@ export function AnalyticsScreen() {
         </View>
 
         <View style={styles.analyticsRangeSelector}>
-          {analyticsRangeOptions.map((option) => (
-            <Pressable
-              key={option.value}
-              onPress={() => {
-                setAnalyticsRange(option.value);
+          {analyticsRangeOptions.map((option, index) => (
+            <Fragment key={option.value}>
+              {index > 0 ? (
+                <View style={styles.analyticsRangeDivider} />
+              ) : null}
+              <Pressable
+                onPress={() => {
+                  setAnalyticsRange(option.value);
 
-                if (option.value === "all") {
-                  setPeriodOpen(false);
-                }
-              }}
-              style={[
-                styles.analyticsRangeButton,
-                analyticsRange === option.value &&
-                  styles.analyticsRangeButtonActive,
-              ]}
-            >
-              <Text
+                  if (option.value === "all") {
+                    setPeriodOpen(false);
+                  }
+                }}
                 style={[
-                  styles.analyticsRangeText,
+                  styles.analyticsRangeButton,
                   analyticsRange === option.value &&
-                    styles.analyticsRangeTextActive,
+                    styles.analyticsRangeButtonActive,
                 ]}
               >
-                {option.label}
-              </Text>
-            </Pressable>
+                <Text
+                  style={[
+                    styles.analyticsRangeText,
+                    analyticsRange === option.value &&
+                      styles.analyticsRangeTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            </Fragment>
           ))}
         </View>
       </View>
 
-      <View style={styles.analyticsMetricRow}>
-        <AnalyticsMetricCard
-          Icon={ChartNoAxesCombined}
-          accent="#7c3aed"
-          background="#f5f3ff"
-          label="Total Spend"
-          trend={formatAnalyticsTrend(
-            latestComparison?.expensesChangePercentage,
-            "expense"
-          )}
-          value={analytics.totalExpenses}
+      {customOpen ? (
+        <AnalyticsCustomRangeModal
+          initialRange={customRange}
+          onApply={(range) => {
+            setCustomRange(range);
+            setAnalyticsRange("custom");
+            setCustomOpen(false);
+          }}
+          onClose={() => setCustomOpen(false)}
         />
-        <AnalyticsMetricCard
-          Icon={Wallet}
-          accent="#16a34a"
-          background="#ecfdf5"
-          label="Total Income"
-          trend={formatAnalyticsTrend(
-            latestComparison?.incomeChangePercentage,
-            "income"
-          )}
-          value={analytics.totalIncome}
-        />
-        <AnalyticsMetricCard
-          Icon={IndianRupee}
-          accent="#f59e0b"
-          background="#fffbeb"
-          label="Net Savings"
-          trend={formatAnalyticsTrend(
-            latestComparison?.netChangePercentage,
-            "income"
-          )}
-          value={analytics.netBalance}
-        />
+      ) : null}
+
+      <View style={styles.analyticsSummaryCard}>
+        <View style={styles.analyticsSummaryTopWrap}>
+          <AnalyticsSummaryWave />
+          <View style={styles.analyticsSummaryTop}>
+            <View style={styles.analyticsSummaryCopy}>
+              <Text style={styles.analyticsSummaryTitle}>{summaryTitle}</Text>
+              <Text style={styles.analyticsSummaryAmount}>
+                {MobileDashboardService.getFormattedBalance(
+                  analytics.totalExpenses
+                )}
+              </Text>
+              <Text style={styles.analyticsSummarySub}>spent</Text>
+              {spendComparison ? (
+                <View style={styles.analyticsSummaryDeltaRow}>
+                  {spendComparison.changePercent <= 0 ? (
+                    <ArrowDown color="#16a34a" size={14} strokeWidth={2.5} />
+                  ) : (
+                    <ArrowUp color="#dc2626" size={14} strokeWidth={2.5} />
+                  )}
+                  <Text
+                    style={[
+                      styles.analyticsSummaryDeltaText,
+                      spendComparison.changePercent <= 0
+                        ? styles.analyticsSummaryDeltaGood
+                        : styles.analyticsSummaryDeltaBad,
+                    ]}
+                  >
+                    {Math.abs(spendComparison.changePercent).toFixed(0)}%
+                  </Text>
+                  <Text
+                    style={[
+                      styles.analyticsSummaryDeltaLabel,
+                      spendComparison.changePercent <= 0
+                        ? styles.analyticsSummaryDeltaGood
+                        : styles.analyticsSummaryDeltaBad,
+                    ]}
+                  >
+                    {spendComparison.label}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.analyticsSummaryIconTile}>
+              <ChartNoAxesCombined
+                color="#6d5ae6"
+                size={20}
+                strokeWidth={2.2}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.analyticsSummaryStats}>
+          <View pointerEvents="none" style={styles.analyticsSummaryStatsBg}>
+            <Svg height="100%" preserveAspectRatio="none" width="100%">
+              <Defs>
+                <LinearGradient
+                  id="analyticsStatsBg"
+                  x1="0"
+                  x2="0"
+                  y1="0"
+                  y2="1"
+                >
+                  <Stop offset="0" stopColor="#7c6ce8" stopOpacity="0.04" />
+                  <Stop offset="1" stopColor="#7c6ce8" stopOpacity="0.09" />
+                </LinearGradient>
+              </Defs>
+              <Rect fill="url(#analyticsStatsBg)" height="100%" width="100%" />
+            </Svg>
+          </View>
+          <AnalyticsSummaryStat
+            accent="#16a34a"
+            Icon={Wallet}
+            label="Income"
+            tinted
+            value={MobileDashboardService.getFormattedBalance(
+              analytics.totalIncome
+            )}
+          />
+          <View style={styles.analyticsSummaryStatDivider} />
+          <AnalyticsSummaryStat
+            accent="#d97706"
+            Icon={IndianRupee}
+            label="Net Saving"
+            tinted
+            value={MobileDashboardService.getFormattedBalance(
+              analytics.netBalance
+            )}
+          />
+          <View style={styles.analyticsSummaryStatDivider} />
+          <AnalyticsSummaryStat
+            accent="#64748b"
+            Icon={ReceiptText}
+            label="Transactions"
+            tinted
+            value={`${filteredTransactions.length}`}
+          />
+        </View>
       </View>
 
       <View style={styles.analyticsChartCard}>
         <View style={styles.analyticsCardHeader}>
           <Text style={styles.analyticsSectionTitle}>
-            Income vs Expense Trend
+            Income vs Expense
           </Text>
           <View style={styles.analyticsLegendRow}>
-            <AnalyticsLegendDot color="#0f172a" label="Income" />
-            <AnalyticsLegendDot color="#94a3b8" label="Expense" />
+            <AnalyticsLegendDot color="#16a34a" label="Income" />
+            <AnalyticsLegendDot color="#0f172a" label="Expense" />
           </View>
         </View>
-        <CashFlowLineChart points={visibleCashFlow} width={chartWidth} />
+        <CashFlowLineChart series={chartSeries} width={chartWidth} />
+        {spendStats ? (
+          <View style={styles.analyticsChartStats}>
+            <AnalyticsSummaryStat
+              Icon={TrendingUp}
+              label="Avg. per day"
+              round
+              value={MobileDashboardService.getFormattedBalance(
+                spendStats.avgPerDay
+              )}
+            />
+            <View style={styles.analyticsSummaryStatDivider} />
+            <AnalyticsSummaryStat
+              Icon={CalendarDays}
+              label="Highest day"
+              round
+              sub={spendStats.highest?.label}
+              value={
+                spendStats.highest
+                  ? MobileDashboardService.getFormattedBalance(
+                      spendStats.highest.amount
+                    )
+                  : "—"
+              }
+            />
+            <View style={styles.analyticsSummaryStatDivider} />
+            <AnalyticsSummaryStat
+              Icon={ReceiptText}
+              label="Total days"
+              round
+              value={`${spendStats.dayCount}`}
+            />
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.analyticsCategoryCard}>
@@ -345,65 +895,99 @@ export function AnalyticsScreen() {
   );
 }
 
-function AnalyticsMetricCard({
-  accent,
-  background,
+function AnalyticsSummaryWave() {
+  return (
+    <View pointerEvents="none" style={styles.analyticsSummaryWaveWrap}>
+      <Svg height="100%" preserveAspectRatio="none" width="100%">
+        <Defs>
+          <LinearGradient id="analyticsHeroBg" x1="0" x2="0" y1="0" y2="1">
+            <Stop offset="0" stopColor="#7c6ce8" stopOpacity="0" />
+            <Stop offset="1" stopColor="#7c6ce8" stopOpacity="0.05" />
+          </LinearGradient>
+        </Defs>
+        <Rect fill="url(#analyticsHeroBg)" height="100%" width="100%" />
+      </Svg>
+      <Svg
+        height={72}
+        style={styles.analyticsSummaryWave}
+        viewBox="0 0 240 72"
+        width={244}
+      >
+        <Defs>
+          <LinearGradient id="analyticsWaveBack" x1="0" x2="1" y1="0" y2="1">
+            <Stop offset="0" stopColor="#7c6ce8" stopOpacity="0" />
+            <Stop offset="0.45" stopColor="#7c6ce8" stopOpacity="0.015" />
+            <Stop offset="1" stopColor="#7c6ce8" stopOpacity="0.1" />
+          </LinearGradient>
+          <LinearGradient id="analyticsWaveFront" x1="0" x2="1" y1="0" y2="1">
+            <Stop offset="0" stopColor="#7c6ce8" stopOpacity="0" />
+            <Stop offset="0.5" stopColor="#7c6ce8" stopOpacity="0.03" />
+            <Stop offset="1" stopColor="#7c6ce8" stopOpacity="0.14" />
+          </LinearGradient>
+        </Defs>
+        <Path
+          d="M0 72 C44 70 76 46 114 48 C154 50 190 24 240 18 L240 72 Z"
+          fill="url(#analyticsWaveBack)"
+        />
+        <Path
+          d="M0 72 C52 71 96 58 138 52 C178 46 210 38 240 34 L240 72 Z"
+          fill="url(#analyticsWaveFront)"
+        />
+      </Svg>
+    </View>
+  );
+}
+
+function AnalyticsSummaryStat({
+  accent = premiumTheme.colors.ink,
   Icon,
   label,
-  trend,
+  round = false,
+  sub,
+  tinted = false,
   value,
 }: {
-  accent: string;
-  background: string;
+  accent?: string;
   Icon: FinanceScreenIcon;
   label: string;
-  trend: AnalyticsTrendDisplay;
-  value: number;
+  round?: boolean;
+  sub?: string;
+  tinted?: boolean;
+  value: string;
 }) {
-  const TrendIcon = trend.direction === "down" ? TrendingDown : TrendingUp;
-
   return (
-    <View style={styles.analyticsMetricCard}>
-      <View style={styles.analyticsMetricHeader}>
-        <Text numberOfLines={1} style={styles.analyticsMetricLabel}>
+    <View style={styles.analyticsSummaryStat}>
+      <View
+        style={[
+          styles.analyticsSummaryStatIcon,
+          round && styles.analyticsSummaryStatIconRound,
+          tinted && styles.analyticsSummaryStatIconFilled,
+          tinted && { backgroundColor: `${accent}1a` },
+        ]}
+      >
+        <Icon
+          color={accent}
+          size={tinted ? 15 : round ? 17 : 15}
+          strokeWidth={2.3}
+        />
+      </View>
+      <View style={styles.analyticsSummaryStatCopy}>
+        <Text numberOfLines={1} style={styles.analyticsSummaryStatLabel}>
           {label}
         </Text>
-        <View
-          style={[
-            styles.analyticsMetricIcon,
-            {
-              backgroundColor: background,
-            },
-          ]}
-        >
-          <Icon color={accent} size={17} strokeWidth={2.4} />
-        </View>
-      </View>
-      <Text
-        adjustsFontSizeToFit
-        minimumFontScale={0.72}
-        numberOfLines={1}
-        style={styles.analyticsMetricValue}
-      >
-        {MobileDashboardService.getFormattedBalance(value)}
-      </Text>
-      <View style={styles.analyticsTrendRow}>
-        <TrendIcon
-          color={trend.color}
-          size={13}
-          strokeWidth={2.6}
-        />
         <Text
+          adjustsFontSizeToFit
+          minimumFontScale={0.72}
           numberOfLines={1}
-          style={[
-            styles.analyticsTrendText,
-            {
-              color: trend.color,
-            },
-          ]}
+          style={styles.analyticsSummaryStatValue}
         >
-          {trend.label}
+          {value}
         </Text>
+        {sub ? (
+          <Text numberOfLines={1} style={styles.analyticsSummaryStatSub}>
+            {sub}
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -432,13 +1016,16 @@ function AnalyticsLegendDot({
 }
 
 function CashFlowLineChart({
-  points,
+  series,
   width,
 }: {
-  points: AnalyticsTrendPoint[];
+  series: AnalyticsChartSeries;
   width: number;
 }) {
-  const chartPoints = getCashFlowChartPoints(points);
+  const lastIndex = series.expense.length - 1;
+  const lastIncome = series.income[lastIndex];
+  const lastExpense = series.expense[lastIndex];
+  const endValuesEqual = lastIncome === lastExpense;
 
   return (
     <View style={styles.analyticsLineChartWrap}>
@@ -449,25 +1036,30 @@ function CashFlowLineChart({
           backgroundGradientFromOpacity: 0,
           backgroundGradientTo: "#ffffff",
           backgroundGradientToOpacity: 0,
-          color: (opacity = 1) => `rgba(56, 86, 246, ${opacity})`,
+          color: (opacity = 1) => `rgba(15, 23, 42, ${opacity})`,
           decimalPlaces: 0,
+          fillShadowGradient: "#0f172a",
+          fillShadowGradientOpacity: 0.07,
           labelColor: () => "#667085",
           propsForBackgroundLines: {
-            stroke: "#e5e7eb",
-            strokeDasharray: "4 5",
+            stroke: "#eef0f4",
+            strokeDasharray: "",
+          },
+          propsForDots: {
+            r: "0",
           },
         }}
         data={{
-          labels: chartPoints.map((point) => formatShortPeriod(point.period)),
+          labels: series.labels,
           datasets: [
             {
-              color: () => "#0f172a",
-              data: chartPoints.map((point) => point.income),
+              color: () => "#16a34a",
+              data: series.income,
               strokeWidth: 2.5,
             },
             {
-              color: () => "#94a3b8",
-              data: chartPoints.map((point) => point.expenses),
+              color: () => "#0f172a",
+              data: series.expense,
               strokeWidth: 2.5,
             },
           ],
@@ -475,13 +1067,63 @@ function CashFlowLineChart({
         formatYLabel={(value) => formatCompactAmount(Number(value))}
         fromZero
         height={220}
+        renderDotContent={({
+          index,
+          indexData,
+          x,
+          y,
+        }: {
+          index: number;
+          indexData: number;
+          x: number;
+          y: number;
+        }) => {
+          if (index !== lastIndex) {
+            return null;
+          }
+
+          // Two datasets share this callback; the point's value tells them
+          // apart. Equal endpoints collapse to one ink badge (drawn twice
+          // at identical coordinates).
+          const isIncome = !endValuesEqual && indexData === lastIncome;
+          const label = `₹${Math.round(indexData).toLocaleString("en-IN")}`;
+          const badgeWidth = label.length * 6.4 + 14;
+
+          return (
+            <G key={isIncome ? "income-badge" : "expense-badge"}>
+              <Circle
+                cx={x}
+                cy={y}
+                fill={isIncome ? "#16a34a" : "#0f172a"}
+                r={4.5}
+              />
+              <Rect
+                fill={isIncome ? "#16a34a" : "#0f172a"}
+                height={20}
+                rx={6}
+                width={badgeWidth}
+                x={x - badgeWidth - 9}
+                y={y - 10}
+              />
+              <SvgText
+                fill="#ffffff"
+                fontSize={10}
+                fontWeight="700"
+                textAnchor="middle"
+                x={x - 9 - badgeWidth / 2}
+                y={y + 3.5}
+              >
+                {label}
+              </SvgText>
+            </G>
+          );
+        }}
         segments={4}
         style={styles.analyticsLineChart}
         width={width}
-        withDots={false}
         withInnerLines
         withOuterLines={false}
-        withShadow={false}
+        withShadow
         withVerticalLines={false}
       />
     </View>
@@ -649,34 +1291,6 @@ function AnalyticsInsightCard({
   );
 }
 
-interface AnalyticsTrendDisplay {
-  color: string;
-  direction: "down" | "up";
-  label: string;
-}
-
-function formatAnalyticsTrend(
-  value: number | null | undefined,
-  tone: "expense" | "income"
-): AnalyticsTrendDisplay {
-  if (value === null || value === undefined || !Number.isFinite(value)) {
-    return {
-      color: "#64748b",
-      direction: "up",
-      label: "No comparison",
-    };
-  }
-
-  const direction = value < 0 ? "down" : "up";
-  const isFavorable = tone === "expense" ? value <= 0 : value >= 0;
-
-  return {
-    color: isFavorable ? "#10b981" : "#f43f5e",
-    direction,
-    label: `${Math.abs(value).toFixed(1)}% vs prev`,
-  };
-}
-
 function getDonutSegments(
   categories: AnalyticsGroup[],
   total: number,
@@ -698,6 +1312,49 @@ function getDonutSegments(
 
     return segment;
   });
+}
+
+function getAnalyticsMonthPeriods(
+  range: AnalyticsRange,
+  anchor: Date,
+  customRange: AnalyticsCustomRange | null
+) {
+  if (range === "all" || (range === "custom" && !customRange)) {
+    return null;
+  }
+
+  const start =
+    range === "custom" && customRange
+      ? new Date(
+          customRange.start.getFullYear(),
+          customRange.start.getMonth(),
+          1
+        )
+      : range === "ytd"
+        ? new Date(anchor.getFullYear(), 0, 1)
+        : new Date(
+            anchor.getFullYear(),
+            anchor.getMonth() - (analyticsRangeMonthOffsets[range] ?? 0),
+            1
+          );
+  const end =
+    range === "custom" && customRange
+      ? new Date(customRange.end.getFullYear(), customRange.end.getMonth(), 1)
+      : new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const periods: string[] = [];
+  const cursor = new Date(start);
+
+  while (cursor <= end && periods.length < 24) {
+    periods.push(
+      `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(
+        2,
+        "0"
+      )}`
+    );
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return periods;
 }
 
 function getCashFlowChartPoints(points: AnalyticsTrendPoint[]) {
@@ -742,27 +1399,51 @@ function emptyTrendPointForPeriod(period: string): AnalyticsTrendPoint {
 function filterTransactionsForAnalyticsRange(
   transactions: CachedTransaction[],
   range: AnalyticsRange,
-  anchor: Date
+  anchor: Date,
+  customRange: AnalyticsCustomRange | null
 ) {
   if (range === "all") {
     return transactions;
   }
 
-  const monthOffset = range === "month" ? 0 : range === "3m" ? 2 : 5;
-  const start = new Date(
-    anchor.getFullYear(),
-    anchor.getMonth() - monthOffset,
-    1
-  );
-  const end = new Date(
-    anchor.getFullYear(),
-    anchor.getMonth() + 1,
-    0,
-    23,
-    59,
-    59,
-    999
-  );
+  if (range === "custom" && !customRange) {
+    return transactions;
+  }
+
+  const start =
+    range === "custom" && customRange
+      ? new Date(
+          customRange.start.getFullYear(),
+          customRange.start.getMonth(),
+          customRange.start.getDate()
+        )
+      : range === "ytd"
+        ? new Date(anchor.getFullYear(), 0, 1)
+        : new Date(
+            anchor.getFullYear(),
+            anchor.getMonth() - (analyticsRangeMonthOffsets[range] ?? 0),
+            1
+          );
+  const end =
+    range === "custom" && customRange
+      ? new Date(
+          customRange.end.getFullYear(),
+          customRange.end.getMonth(),
+          customRange.end.getDate(),
+          23,
+          59,
+          59,
+          999
+        )
+      : new Date(
+          anchor.getFullYear(),
+          anchor.getMonth() + 1,
+          0,
+          23,
+          59,
+          59,
+          999
+        );
 
   return transactions.filter((transaction) => {
     const occurredAt = new Date(transaction.occurred_at);
@@ -775,9 +1456,19 @@ function filterTransactionsForAnalyticsRange(
   });
 }
 
-function formatAnalyticsRange(range: AnalyticsRange, anchor: Date) {
+function formatAnalyticsRange(
+  range: AnalyticsRange,
+  anchor: Date,
+  customRange: AnalyticsCustomRange | null
+) {
   if (range === "all") {
     return "All transactions";
+  }
+
+  if (range === "custom") {
+    return customRange
+      ? formatCustomRange(customRange)
+      : "Custom range";
   }
 
   if (range === "month") {
@@ -790,11 +1481,40 @@ function formatAnalyticsRange(range: AnalyticsRange, anchor: Date) {
     0
   );
 
+  if (range === "ytd") {
+    return `1 Jan - ${anchorEnd.getDate()} ${anchorEnd.toLocaleDateString(
+      "en-IN",
+      {
+        month: "short",
+        year: "numeric",
+      }
+    )}`;
+  }
+
   return formatRollingRange(anchorEnd, range);
 }
 
+function formatCustomRange({ end, start }: AnalyticsCustomRange) {
+  if (start.getFullYear() === end.getFullYear()) {
+    return `${start.getDate()} ${start.toLocaleDateString("en-IN", {
+      month: "short",
+    })} - ${end.getDate()} ${end.toLocaleDateString("en-IN", {
+      month: "short",
+      year: "numeric",
+    })}`;
+  }
+
+  return `${start.getDate()} ${start.toLocaleDateString("en-IN", {
+    month: "short",
+    year: "2-digit",
+  })} - ${end.getDate()} ${end.toLocaleDateString("en-IN", {
+    month: "short",
+    year: "2-digit",
+  })}`;
+}
+
 function formatRollingRange(date: Date, range: AnalyticsRange) {
-  const monthOffset = range === "3m" ? 2 : 5;
+  const monthOffset = analyticsRangeMonthOffsets[range] ?? 0;
   const start = new Date(date.getFullYear(), date.getMonth() - monthOffset, 1);
 
   if (start.getFullYear() === date.getFullYear()) {
@@ -825,14 +1545,22 @@ function formatShortPeriod(value: string) {
 
 function formatCompactAmount(value: number) {
   if (value >= 100000) {
-    return `${Math.round(value / 100000)}L`;
+    return `${trimTrailingZero(value / 100000)}L`;
   }
 
   if (value >= 1000) {
-    return `${Math.round(value / 1000)}k`;
+    return `${trimTrailingZero(value / 1000)}k`;
   }
 
   return value.toFixed(0);
+}
+
+function trimTrailingZero(value: number) {
+  const rounded = Math.round(value * 10) / 10;
+
+  return Number.isInteger(rounded)
+    ? `${rounded}`
+    : rounded.toFixed(1);
 }
 
 function getAnalyticsCategoryColor(index: number) {
@@ -845,6 +1573,194 @@ function getAnalyticsCategoryColor(index: number) {
     "#67c7f7",
     "#cbd5e1",
   ][index % 7];
+}
+
+function AnalyticsCustomRangeModal({
+  initialRange,
+  onApply,
+  onClose,
+}: {
+  initialRange: AnalyticsCustomRange | null;
+  onApply: (range: AnalyticsCustomRange) => void;
+  onClose: () => void;
+}) {
+  const [draftStart, setDraftStart] = useState<Date | null>(
+    initialRange?.start ?? null
+  );
+  const [draftEnd, setDraftEnd] = useState<Date | null>(
+    initialRange?.end ?? null
+  );
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const seed = initialRange?.end ?? new Date();
+
+    return new Date(seed.getFullYear(), seed.getMonth(), 1);
+  });
+  const calendarDays = useMemo(
+    () => getCalendarDays(monthCursor),
+    [monthCursor]
+  );
+
+  function selectDay(date: Date) {
+    if (!draftStart || draftEnd) {
+      setDraftStart(date);
+      setDraftEnd(null);
+      return;
+    }
+
+    if (date < draftStart) {
+      setDraftStart(date);
+      return;
+    }
+
+    setDraftEnd(date);
+  }
+
+  const helperText = !draftStart
+    ? "Pick a start date."
+    : !draftEnd
+      ? "Pick an end date."
+      : formatCustomRange({ end: draftEnd, start: draftStart });
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={financeStyles.modalBackdrop}>
+        <Pressable onPress={onClose} style={financeStyles.modalDismissLayer} />
+        <MotiView
+          animate={{ opacity: 1, translateY: 0 }}
+          from={{ opacity: 0, translateY: 24 }}
+          style={styles.analyticsPickerPanel}
+          transition={{
+            damping: 18,
+            mass: 0.8,
+            stiffness: 180,
+            type: "spring",
+          }}
+        >
+          <View style={styles.analyticsPickerHeader}>
+            <View>
+              <Text style={financeStyles.merchantPickerTitle}>
+                Custom range
+              </Text>
+              <Text style={financeStyles.merchantPickerSubtitle}>
+                {helperText}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} style={financeStyles.modalCloseButton}>
+              <X color="#0f172a" size={20} strokeWidth={2.4} />
+            </Pressable>
+          </View>
+
+          <View style={styles.analyticsPickerMonthRow}>
+            <Pressable
+              onPress={() =>
+                setMonthCursor(
+                  new Date(
+                    monthCursor.getFullYear(),
+                    monthCursor.getMonth() - 1,
+                    1
+                  )
+                )
+              }
+              style={styles.analyticsPickerNavButton}
+            >
+              <ChevronLeft color="#0f172a" size={19} strokeWidth={2.5} />
+            </Pressable>
+            <Text style={styles.analyticsPickerMonth}>
+              {monthCursor.toLocaleDateString("en-IN", {
+                month: "long",
+                year: "numeric",
+              })}
+            </Text>
+            <Pressable
+              disabled={isCurrentMonth(monthCursor)}
+              onPress={() =>
+                setMonthCursor(
+                  new Date(
+                    monthCursor.getFullYear(),
+                    monthCursor.getMonth() + 1,
+                    1
+                  )
+                )
+              }
+              style={[
+                styles.analyticsPickerNavButton,
+                isCurrentMonth(monthCursor) &&
+                  styles.analyticsPickerNavButtonDisabled,
+              ]}
+            >
+              <ChevronRight color="#0f172a" size={19} strokeWidth={2.5} />
+            </Pressable>
+          </View>
+
+          <View style={styles.analyticsPickerGrid}>
+            {["S", "M", "T", "W", "T", "F", "S"].map((label, index) => (
+              <Text
+                key={`${label}-${index}`}
+                style={styles.analyticsPickerWeekday}
+              >
+                {label}
+              </Text>
+            ))}
+            {calendarDays.map((date, index) => {
+              const isEdge = date
+                ? (draftStart !== null && isSameLocalDay(date, draftStart)) ||
+                  (draftEnd !== null && isSameLocalDay(date, draftEnd))
+                : false;
+              const inRange =
+                date && draftStart && draftEnd
+                  ? date > draftStart && date < draftEnd
+                  : false;
+              const future = date ? isFutureLocalDay(date) : false;
+
+              return (
+                <View
+                  key={date?.toISOString() ?? `blank-${index}`}
+                  style={styles.analyticsPickerCell}
+                >
+                  {date ? (
+                    <Pressable
+                      disabled={future}
+                      onPress={() => selectDay(date)}
+                      style={[
+                        styles.analyticsPickerDay,
+                        inRange && styles.analyticsPickerDayInRange,
+                        isEdge && styles.analyticsPickerDaySelected,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.analyticsPickerDayText,
+                          future && styles.analyticsPickerDayTextDisabled,
+                          isEdge && styles.analyticsPickerDayTextSelected,
+                        ]}
+                      >
+                        {date.getDate()}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+
+          <Pressable
+            disabled={!draftStart || !draftEnd}
+            onPress={() => {
+              if (draftStart && draftEnd) {
+                onApply({ end: draftEnd, start: draftStart });
+              }
+            }}
+            style={[
+              styles.analyticsPickerApply,
+              (!draftStart || !draftEnd) && styles.analyticsPickerApplyDisabled,
+            ]}
+          >
+            <Text style={styles.analyticsPickerApplyText}>Apply range</Text>
+          </Pressable>
+        </MotiView>
+      </View>
+    </Modal>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -923,31 +1839,69 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 28,
   },
-  analyticsDatePill: {
+  analyticsCustomButton: {
     alignItems: "center",
     backgroundColor: "#ffffff",
     borderColor: premiumTheme.colors.border,
-    borderRadius: premiumTheme.radius.pill,
+    borderRadius: 11,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 6,
+    gap: 5,
+    minHeight: 32,
+    paddingHorizontal: 11,
+  },
+  analyticsCustomButtonActive: {
+    backgroundColor: premiumTheme.colors.ink,
+    borderColor: premiumTheme.colors.ink,
+  },
+  analyticsCustomText: {
+    color: premiumTheme.colors.ink,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  analyticsCustomTextActive: {
+    color: "#ffffff",
+  },
+  analyticsDateIconTile: {
+    alignItems: "center",
+    backgroundColor: "#e9ebf1",
+    borderRadius: 10,
+    height: 34,
     justifyContent: "center",
-    minHeight: 40,
-    paddingHorizontal: 10,
-    ...premiumTheme.shadow.soft,
+    width: 34,
+  },
+  analyticsDateRow: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: 10,
+    minWidth: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   analyticsDateText: {
     color: "#0f172a",
     flexShrink: 1,
-    fontSize: 12,
+    fontSize: 15,
     fontVariant: ["tabular-nums"],
-    fontWeight: "700",
+    fontWeight: "800",
   },
-  analyticsHeaderRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
+  analyticsHeaderCard: {
+    backgroundColor: "#ffffff",
+    borderColor: premiumTheme.colors.border,
+    borderRadius: 18,
+    borderWidth: 1,
     zIndex: 30,
+    ...premiumTheme.shadow.soft,
+  },
+  analyticsHeaderTop: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderTopLeftRadius: 17,
+    borderTopRightRadius: 17,
+    flexDirection: "row",
+    gap: 8,
+    paddingRight: 12,
   },
   analyticsPeriodBackdrop: {
     bottom: -1000,
@@ -962,11 +1916,11 @@ const styles = StyleSheet.create({
     borderColor: premiumTheme.colors.border,
     borderRadius: 14,
     borderWidth: 1,
-    left: 0,
+    left: 12,
     minWidth: 176,
     paddingVertical: 6,
     position: "absolute",
-    top: 50,
+    top: 52,
     zIndex: 30,
     ...premiumTheme.shadow.soft,
   },
@@ -991,8 +1945,100 @@ const styles = StyleSheet.create({
     maxHeight: 264,
   },
   analyticsPeriodWrap: {
-    flex: 1,
     zIndex: 30,
+  },
+  analyticsPickerApply: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.ink,
+    borderRadius: 15,
+    justifyContent: "center",
+    minHeight: 48,
+  },
+  analyticsPickerApplyDisabled: {
+    opacity: 0.4,
+  },
+  analyticsPickerApplyText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  analyticsPickerCell: {
+    alignItems: "center",
+    flexBasis: "14.285%",
+    height: 42,
+    justifyContent: "center",
+  },
+  analyticsPickerDay: {
+    alignItems: "center",
+    borderRadius: 16,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  analyticsPickerDayInRange: {
+    backgroundColor: premiumTheme.colors.field,
+  },
+  analyticsPickerDaySelected: {
+    backgroundColor: premiumTheme.colors.ink,
+  },
+  analyticsPickerDayText: {
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  analyticsPickerDayTextDisabled: {
+    color: "#cbd5e1",
+  },
+  analyticsPickerDayTextSelected: {
+    color: "#ffffff",
+  },
+  analyticsPickerGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  analyticsPickerHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  analyticsPickerMonth: {
+    color: "#0f172a",
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  analyticsPickerMonthRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  analyticsPickerNavButton: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 14,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  analyticsPickerNavButtonDisabled: {
+    opacity: 0.35,
+  },
+  analyticsPickerPanel: {
+    backgroundColor: "#ffffff",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    gap: 18,
+    padding: 18,
+    paddingBottom: 30,
+  },
+  analyticsPickerWeekday: {
+    color: "#94a3b8",
+    flexBasis: "14.285%",
+    fontSize: 11,
+    fontWeight: "800",
+    paddingVertical: 7,
+    textAlign: "center",
   },
   analyticsPressed: {
     opacity: 0.85,
@@ -1098,62 +2144,199 @@ const styles = StyleSheet.create({
     marginLeft: -4,
     overflow: "hidden",
   },
-  analyticsMetricCard: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 18,
-    flex: 1,
-    gap: 7,
-    minHeight: 102,
-    minWidth: 0,
-    paddingHorizontal: 11,
-    paddingVertical: 12,
-  },
-  analyticsMetricHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 6,
-    justifyContent: "space-between",
-  },
-  analyticsMetricIcon: {
-    alignItems: "center",
-    borderRadius: 15,
-    height: 30,
-    justifyContent: "center",
-    width: 30,
-  },
-  analyticsMetricLabel: {
-    color: "#64748b",
-    flex: 1,
-    fontSize: 11,
-    fontWeight: "800",
-    minWidth: 0,
-  },
-  analyticsMetricRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  analyticsMetricValue: {
+  analyticsSummaryAmount: {
     color: "#0f172a",
-    fontSize: 17,
-    fontWeight: "900",
+    fontSize: 30,
+    fontVariant: ["tabular-nums"],
+    fontWeight: "800",
+    letterSpacing: -0.5,
+    marginTop: 6,
+  },
+  analyticsSummaryCard: {
+    backgroundColor: "#ffffff",
+    borderColor: premiumTheme.colors.border,
+    borderRadius: 18,
+    borderWidth: 1,
+    ...premiumTheme.shadow.soft,
+  },
+  analyticsSummaryCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  analyticsSummaryDeltaBad: {
+    color: "#dc2626",
+  },
+  analyticsSummaryDeltaGood: {
+    color: "#16a34a",
+  },
+  analyticsSummaryDeltaLabel: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  analyticsSummaryDeltaRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    marginTop: 10,
+  },
+  analyticsSummaryDeltaText: {
+    fontSize: 12,
+    fontVariant: ["tabular-nums"],
+    fontWeight: "700",
+  },
+  analyticsSummaryIconTile: {
+    alignItems: "center",
+    backgroundColor: "#ece9fb",
+    borderRadius: 999,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  analyticsSummaryStat: {
+    alignItems: "flex-start",
+    flex: 1,
+    flexDirection: "row",
+    gap: 8,
+    minWidth: 0,
+  },
+  analyticsSummaryStatCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  analyticsSummaryStatDivider: {
+    alignSelf: "stretch",
+    backgroundColor: premiumTheme.colors.border,
+    marginVertical: 2,
+    width: premiumHairline,
+  },
+  analyticsSummaryStatIcon: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: premiumTheme.colors.border,
+    borderRadius: 9,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
+  analyticsSummaryStatIconFilled: {
+    borderRadius: 8,
+    borderWidth: 0,
+    height: 28,
+    width: 28,
+  },
+  analyticsSummaryStatIconRound: {
+    backgroundColor: "#e9ebf1",
+    borderRadius: 10,
+    borderWidth: 0,
+    height: 38,
+    width: 38,
+  },
+  analyticsChartStats: {
+    backgroundColor: premiumTheme.colors.field,
+    borderTopColor: premiumTheme.colors.border,
+    borderTopWidth: premiumHairline,
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: -14,
+    marginHorizontal: -14,
+    marginTop: 2,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  analyticsSummaryStatSub: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  analyticsSummaryStatLabel: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  analyticsSummaryStats: {
+    borderBottomLeftRadius: 17,
+    borderBottomRightRadius: 17,
+    borderTopColor: premiumTheme.colors.border,
+    borderTopWidth: premiumHairline,
+    flexDirection: "row",
+    gap: 12,
+    overflow: "hidden",
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  analyticsSummaryStatsBg: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  analyticsSummaryStatValue: {
+    color: "#0f172a",
+    fontSize: 14,
+    fontVariant: ["tabular-nums"],
+    fontWeight: "800",
+  },
+  analyticsSummarySub: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  analyticsSummaryTitle: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  analyticsSummaryTop: {
+    flexDirection: "row",
+    gap: 12,
+    padding: 16,
+  },
+  analyticsSummaryTopWrap: {
+    borderTopLeftRadius: 17,
+    borderTopRightRadius: 17,
+    overflow: "hidden",
+  },
+  analyticsSummaryWave: {
+    bottom: 0,
+    position: "absolute",
+    right: 0,
+  },
+  analyticsSummaryWaveWrap: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
   analyticsRangeButton: {
     alignItems: "center",
-    borderRadius: premiumTheme.radius.pill,
+    borderRadius: 11,
     flex: 1,
     justifyContent: "center",
-    minHeight: 32,
+    minHeight: 30,
   },
   analyticsRangeButtonActive: {
     backgroundColor: premiumTheme.colors.ink,
   },
+  analyticsRangeDivider: {
+    alignSelf: "center",
+    backgroundColor: premiumTheme.colors.border,
+    height: 14,
+    width: premiumHairline,
+  },
   analyticsRangeSelector: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: premiumTheme.radius.pill,
-    flex: 1.15,
+    alignItems: "center",
+    borderTopColor: premiumTheme.colors.border,
+    borderTopWidth: premiumHairline,
     flexDirection: "row",
-    gap: 2,
-    padding: 4,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
   },
   analyticsRangeText: {
     color: "#64748b",
@@ -1169,17 +2352,5 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: "900",
-  },
-  analyticsTrendRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 4,
-    minWidth: 0,
-  },
-  analyticsTrendText: {
-    flex: 1,
-    fontSize: 10,
-    fontWeight: "900",
-    minWidth: 0,
   },
 });

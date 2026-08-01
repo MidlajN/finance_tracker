@@ -191,6 +191,23 @@ Invalid notifications should not continue through the pipeline.
 
 They should be recorded for diagnostics if appropriate.
 
+## Promotional-spam guard (implemented in `@finance/parser`)
+
+Offer/loan spam often contains transaction verbs ("credited") and amounts, so the parser applies a two-tier guard:
+
+**Hard reject** (parser returns `null`) — patterns with zero legitimate overlap:
+
+- `upto` / `up to` immediately before the extracted amount (offers approximate amounts; real alerts state them exactly).
+- Pure offer language: `pre-approved`, `avail now`, `apply now`.
+
+**Confidence penalty** (event still created, flagged in review) — signals that also appear in genuine alerts:
+
+- Promo-adjacent words (`congratulations`, `offer`, `win`, `won`): −0.20. Real scratch-card cashback credits use these.
+- URL in the text: −0.15. Real bank alerts carry dispute/fraud-report links.
+- No account hint: −0.10. UPI app pushes (e.g. "You paid ₹150 to Ramesh") legitimately lack account digits.
+
+Base confidence is 0.72; floor is 0.20. Events with confidence below 0.50 show a "Low confidence" badge in the pending-reviews list.
+
 ---
 
 # Stage 4 — Deduplication

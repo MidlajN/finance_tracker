@@ -15,8 +15,9 @@ import {
   type NativeNotificationPayload,
 } from "finance-notification-listener";
 import {
-  parseNotificationPayload,
+  explainNotificationParse,
   parsedNotificationToEventInput,
+  type NotificationParseFailure,
 } from "@finance/parser";
 
 import type {
@@ -124,17 +125,29 @@ export class NotificationService {
   static parseNotification(
     payload: NativeNotificationPayload
   ): ParsedNotificationResult | null {
-    const parsed = parseNotificationPayload(
+    return NotificationService.explainNotification(payload).result;
+  }
+
+  static explainNotification(payload: NativeNotificationPayload): {
+    failure: NotificationParseFailure | null;
+    result: ParsedNotificationResult | null;
+  } {
+    // Source trust (blocked/unknown/trusted) is enforced inside the
+    // parser itself.
+    const outcome = explainNotificationParse(
       toRawNotificationPayload(payload)
     );
 
-    if (!parsed) {
-      return null;
+    if (!outcome.event) {
+      return { failure: outcome.failure, result: null };
     }
 
     return {
-      event: parsed,
-      financialEvent: parsedNotificationToEventInput(parsed)
+      failure: null,
+      result: {
+        event: outcome.event,
+        financialEvent: parsedNotificationToEventInput(outcome.event),
+      },
     };
   }
 
@@ -187,3 +200,4 @@ function formatNotificationAmount(amount: number, currency: string) {
 
 export type { NativeFinancialEventNotificationAction };
 export type { NativeNotificationDiagnostics, NativeNotificationPayload };
+export type { NotificationParseFailure };

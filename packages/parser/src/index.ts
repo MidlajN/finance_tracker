@@ -306,31 +306,231 @@ export function parseBackupPayload(
     };
 }
 
+// Known financial apps whose notifications we parse directly.
+const TRUSTED_FINANCIAL_PACKAGES = new Set([
+    // UPI / wallets
+    "com.google.android.apps.nbu.paisa.user", // Google Pay
+    "com.phonepe.app",
+    "net.one97.paytm",
+    "in.org.npci.upiapp", // BHIM
+    "com.dreamplug.androidapp", // CRED
+    "in.amazon.mShop.android.shopping", // Amazon Pay
+    "com.mobikwik_new",
+    "com.freecharge.android",
+    // Banks
+    "com.sbi.lotusintouch", // SBI YONO
+    "com.snapwork.hdfc",
+    "com.csam.icici.bank.imobile",
+    "com.axis.mobile",
+    "com.msf.kbank.mobile", // Kotak
+    "com.baroda.mconnectplus",
+    "com.canarabank.mobility",
+    "com.fss.pnbpsp",
+    "com.fss.unbipsp", // Union Bank
+]);
+
+// SMS apps are conduits: trust them only when the sender header looks
+// like a DLT-registered ID ("AX-SBIINB", "VM-HDFCBK-S").
+const SMS_APP_PACKAGES = new Set([
+    "com.google.android.apps.messaging",
+    "com.samsung.android.messaging",
+    "com.android.mms",
+    "com.oneplus.mms",
+    "com.miui.smsextra",
+]);
+
+// Chat/social apps: mentions of money here are conversation, never a
+// bank alert.
+const BLOCKED_PACKAGES = new Set([
+    "com.whatsapp",
+    "com.whatsapp.w4b",
+    "org.telegram.messenger",
+    "com.instagram.android",
+    "com.facebook.katana",
+    "com.facebook.orca",
+]);
+
+// DLT header shape; the optional route suffix marks P = promotional.
+const DLT_SENDER_PATTERN =
+    /^[a-z]{2}-[a-z0-9]{4,9}(?:-([a-z]))?$/i;
+
+export type NotificationSourceTrust =
+    | "blocked"
+    | "trusted"
+    | "unknown";
+
+// The trusted set cannot enumerate every bank app, so an unrecognized
+// package is "unknown" (parsed at reduced confidence), not dropped —
+// only sources that are never bank alerts are blocked outright.
+export function getNotificationSourceTrust({
+    packageName,
+    title,
+}: {
+    packageName?: string | null;
+    title?: string | null;
+}): NotificationSourceTrust {
+    const pkg = packageName?.trim().toLowerCase() ?? "";
+
+    if (!pkg || BLOCKED_PACKAGES.has(pkg)) {
+        return "blocked";
+    }
+
+    if (TRUSTED_FINANCIAL_PACKAGES.has(pkg)) {
+        return "trusted";
+    }
+
+    if (SMS_APP_PACKAGES.has(pkg)) {
+        const senderMatch = title
+            ?.trim()
+            .match(DLT_SENDER_PATTERN);
+
+        return senderMatch &&
+            senderMatch[1]?.toLowerCase() !== "p"
+            ? "trusted"
+            : "blocked";
+    }
+
+    return "unknown";
+}
+
 const AMOUNT_PATTERN =
     /(?:₹|rs\.?|inr)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)|([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:₹|rs\.?|inr)/i;
+
+// Bank SMS often omit the currency marker ("debited by 50.00"); accept
+// a bare number only when glued to a transaction verb.
+const VERB_AMOUNT_PATTERN =
+    /\b(?:debited|credited)\s+(?:by|with|for)\s+([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i;
+
+// An amount preceded by balance/limit wording is account state, not the
+// transaction ("Avl Bal Rs.5,000") — never book it as the amount.
+const BALANCE_CONTEXT_PATTERN =
+    /\b(?:bal|balance|limit)\b\s*(?:is|:|-|\.)?\s*$/i;
 
 const DEBIT_PATTERN =
     /\b(debited|debit|spent|paid|sent|purchase|withdrawn|charged)\b/i;
 
 const CREDIT_PATTERN =
-    /\b(credited|credit(?!\s+(?:card|limit)\b)|received|refund|deposited|salary)\b/i;
+    /\b(credited|credit(?!\s+(?:card|limit|score)\b)|received|refund|deposited|salary)\b/i;
 
 const INCOMING_PAYMENT_PATTERN =
     /\b(?:paid|sent)\s+you\b|\byou\s+(?:received|got)\b/i;
 
-function parseAmount(text: string) {
-    const match = text.match(AMOUNT_PATTERN);
+// Pure offer language — never appears in an alert for a completed
+// transaction, so matching it rejects the notification outright.
+const PROMO_REJECT_PATTERN =
+    /\b(?:pre-?approved|avail\s+now|apply\s+now)\b/i;
 
-    if (!match) {
-        return null;
+// Autopay/mandate reminders describe a future movement; the bank sends
+// a separate alert when the money actually moves.
+const FUTURE_TENSE_PATTERN =
+    /\bwill\s+be\s+(?:debited|credited)\b/i;
+
+// Words that also appear in genuine credits (e.g. scratch-card
+// cashback), so they only lower confidence instead of rejecting.
+const PROMO_HINT_PATTERN =
+    /\b(?:congratulations?|offer|win|won)\b/i;
+
+const URL_PATTERN = /(?:https?:\/\/|www\.)\S+/i;
+
+const APPROXIMATE_AMOUNT_PATTERN =
+    /\b(?:upto|up\s+to)\s*$/i;
+
+const BASE_CONFIDENCE = 0.72;
+
+const CONFIDENCE_FLOOR = 0.2;
+
+function parseAmount(text: string) {
+    // The verb-anchored amount is the transaction by definition; prefer
+    // it so a currency-marked balance can never shadow a bare amount.
+    const verbMatch = text.match(VERB_AMOUNT_PATTERN);
+
+    if (verbMatch?.index !== undefined) {
+        const amount = Number(
+            verbMatch[1].replaceAll(",", "")
+        );
+
+        if (Number.isFinite(amount) && amount > 0) {
+            return { amount, index: verbMatch.index };
+        }
     }
 
-    const value = match[1] ?? match[2];
-    const amount = Number(value.replaceAll(",", ""));
+    const currencyPattern = new RegExp(
+        AMOUNT_PATTERN.source,
+        "gi"
+    );
+    let match: RegExpExecArray | null;
 
-    return Number.isFinite(amount) && amount > 0
-        ? amount
-        : null;
+    while ((match = currencyPattern.exec(text)) !== null) {
+        const value = match[1] ?? match[2];
+        const amount = Number(value.replaceAll(",", ""));
+
+        if (!Number.isFinite(amount) || amount <= 0) {
+            continue;
+        }
+
+        if (
+            BALANCE_CONTEXT_PATTERN.test(
+                text.slice(
+                    Math.max(0, match.index - 24),
+                    match.index
+                )
+            )
+        ) {
+            continue;
+        }
+
+        return { amount, index: match.index };
+    }
+
+    return null;
+}
+
+function isPromotionalNotification(
+    text: string,
+    amountIndex: number
+) {
+    if (PROMO_REJECT_PATTERN.test(text)) {
+        return true;
+    }
+
+    if (FUTURE_TENSE_PATTERN.test(text)) {
+        return true;
+    }
+
+    // "loan of upto Rs.10,00,000" — offers approximate the amount,
+    // real transaction alerts state it exactly.
+    return APPROXIMATE_AMOUNT_PATTERN.test(
+        text.slice(0, amountIndex)
+    );
+}
+
+function scoreConfidence(
+    text: string,
+    accountHint: ParsedAccountHint | null,
+    sourceTrust: NotificationSourceTrust
+) {
+    let confidence = BASE_CONFIDENCE;
+
+    if (sourceTrust === "unknown") {
+        confidence -= 0.2;
+    }
+
+    if (PROMO_HINT_PATTERN.test(text)) {
+        confidence -= 0.2;
+    }
+
+    if (URL_PATTERN.test(text)) {
+        confidence -= 0.15;
+    }
+
+    if (!accountHint) {
+        confidence -= 0.1;
+    }
+
+    return Math.max(
+        CONFIDENCE_FLOOR,
+        Math.round(confidence * 100) / 100
+    );
 }
 
 function parseNotificationDirection(text: string) {
@@ -367,16 +567,29 @@ function parseOccurredAt(
         return null;
     }
 
-    const match = text.match(
-        /\b(?:on|dated?)\s+(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})\b/i
+    const numericMatch = text.match(
+        /\b(?:on|dated?)(?:\s+date)?\s+(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})\b/i
     );
+    const monthNameMatch = numericMatch
+        ? null
+        : text.match(
+              /\b(?:on|dated?)(?:\s+date)?\s+(\d{1,2})[-\s]?([A-Za-z]{3,9})[-\s]?(\d{2}|\d{4})\b/i
+          );
+    const match = numericMatch ?? monthNameMatch;
 
     if (!match) {
         return postedDate;
     }
 
     const day = Number(match[1]);
-    const month = Number(match[2]);
+    const month = numericMatch
+        ? Number(match[2])
+        : parseMonthName(match[2]);
+
+    if (month === null) {
+        return postedDate;
+    }
+
     const parsedYear = Number(match[3]);
     const year = parsedYear < 100
         ? 2000 + parsedYear
@@ -400,6 +613,29 @@ function parseOccurredAt(
     }
 
     return occurredAt;
+}
+
+const MONTH_NAMES = [
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "may",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "oct",
+    "nov",
+    "dec",
+];
+
+function parseMonthName(value: string) {
+    const index = MONTH_NAMES.indexOf(
+        value.slice(0, 3).toLowerCase()
+    );
+
+    return index === -1 ? null : index + 1;
 }
 
 function cleanAccountProvider(value: string) {
@@ -458,6 +694,21 @@ function parseAccountHint(text: string): ParsedAccountHint | null {
 
     if (accountMatch) {
         return buildAccountHint("bank", accountMatch);
+    }
+
+    // "A/C X7160" — bank SMS style without a your/my prefix, digits
+    // optionally masked by x/*.
+    const bareAccountMatch = text.match(
+        /\b(?:a\/c|acct|account)\.?\s*(?:no\.?\s*)?[x*]*(\d{4,})\b/i
+    );
+
+    if (bareAccountMatch?.[1]) {
+        return {
+            accountType: "bank",
+            last4: bareAccountMatch[1].slice(-4),
+            providerName: null,
+            rawLabel: bareAccountMatch[0].trim(),
+        };
     }
 
     const walletMatch = text.match(
@@ -524,7 +775,7 @@ function parseMerchantName(
         if (merchantMatch?.[1]) {
             return merchantMatch[1]
                 .replace(
-                    /\b(on|using|via|ref|reference|trxn|txn|transaction|report)\b.*$/i,
+                    /\b(on|using|via|refno|ref|reference|trxn|txn|transaction|report|if)\b.*$/i,
                     ""
                 )
                 .trim();
@@ -535,9 +786,41 @@ function parseMerchantName(
         payload.packageName;
 }
 
+export type NotificationParseFailure =
+    | "blocked_source"
+    | "invalid_date"
+    | "missing_amount"
+    | "missing_direction"
+    | "promotional";
+
+export interface NotificationParseResult {
+    event: ParsedFinancialEvent | null;
+    failure: NotificationParseFailure | null;
+    sourceTrust: NotificationSourceTrust;
+}
+
 export function parseNotificationPayload(
     payload: RawNotificationPayload
 ): ParsedFinancialEvent | null {
+    return explainNotificationParse(payload).event;
+}
+
+export function explainNotificationParse(
+    payload: RawNotificationPayload
+): NotificationParseResult {
+    const sourceTrust = getNotificationSourceTrust({
+        packageName: payload.packageName,
+        title: payload.title,
+    });
+
+    if (sourceTrust === "blocked") {
+        return {
+            event: null,
+            failure: "blocked_source",
+            sourceTrust,
+        };
+    }
+
     const rawText = [
         payload.title,
         payload.text,
@@ -546,12 +829,31 @@ export function parseNotificationPayload(
         .filter(Boolean)
         .join(" ");
 
-    const amount = parseAmount(rawText);
+    const parsedAmount = parseAmount(rawText);
     const direction =
         parseNotificationDirection(rawText);
 
-    if (!amount || !direction) {
-        return null;
+    if (!parsedAmount || !direction) {
+        return {
+            event: null,
+            failure: parsedAmount
+                ? "missing_direction"
+                : "missing_amount",
+            sourceTrust,
+        };
+    }
+
+    if (
+        isPromotionalNotification(
+            rawText,
+            parsedAmount.index
+        )
+    ) {
+        return {
+            event: null,
+            failure: "promotional",
+            sourceTrust,
+        };
     }
 
     const occurredAt = parseOccurredAt(
@@ -560,16 +862,22 @@ export function parseNotificationPayload(
     );
 
     if (!occurredAt) {
-        return null;
+        return {
+            event: null,
+            failure: "invalid_date",
+            sourceTrust,
+        };
     }
 
-    return {
+    const accountHint = parseAccountHint(rawText);
+
+    const event: ParsedFinancialEvent = {
         source: "android_notification",
         captureId: payload.captureId ?? null,
         packageName: payload.packageName,
         merchantName:
             parseMerchantName(payload),
-        amount,
+        amount: parsedAmount.amount,
         currency: "INR",
         direction,
         occurredAt:
@@ -577,9 +885,19 @@ export function parseNotificationPayload(
         reference:
             parseTransactionReference(rawText) ??
             payload.id,
-        accountHint: parseAccountHint(rawText),
-        confidence: 0.72,
+        accountHint,
+        confidence: scoreConfidence(
+            rawText,
+            accountHint,
+            sourceTrust
+        ),
         rawPayload: JSON.stringify(payload),
+    };
+
+    return {
+        event,
+        failure: null,
+        sourceTrust,
     };
 }
 
