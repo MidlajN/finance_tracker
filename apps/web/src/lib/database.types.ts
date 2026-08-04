@@ -17,31 +17,40 @@ export type Database = {
       budgets: {
         Row: {
           amount: number
+          auto_renew: boolean
           category_id: string
           created_at: string
           currency: string
+          ends_on: string | null
           id: string
-          month_start: string
+          period: string
+          starts_on: string
           updated_at: string
           user_id: string
         }
         Insert: {
           amount: number
+          auto_renew?: boolean
           category_id: string
           created_at?: string
           currency?: string
+          ends_on?: string | null
           id?: string
-          month_start: string
+          period?: string
+          starts_on: string
           updated_at?: string
           user_id: string
         }
         Update: {
           amount?: number
+          auto_renew?: boolean
           category_id?: string
           created_at?: string
           currency?: string
+          ends_on?: string | null
           id?: string
-          month_start?: string
+          period?: string
+          starts_on?: string
           updated_at?: string
           user_id?: string
         }

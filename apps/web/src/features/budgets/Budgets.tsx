@@ -115,7 +115,7 @@ function BudgetForm({
     const [month, setMonth] =
         useState(
             toMonthInput(
-                budget?.budget.month_start ??
+                budget?.budget.starts_on ??
                     monthStart
             )
         );
@@ -166,7 +166,7 @@ function BudgetForm({
             const payload = {
                 category_id:
                     categoryId,
-                month_start:
+                starts_on:
                     toMonthStart(month),
                 amount: parsedAmount,
                 currency: "INR",

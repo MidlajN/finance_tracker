@@ -1,12 +1,25 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ChevronRight, Plus, Search, Store } from "lucide-react-native";
+import { MotiView } from "moti";
 import {
+  BadgeCheck,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Plus,
+  Search,
+  Store,
+  X,
+} from "lucide-react-native";
+import {
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -16,17 +29,24 @@ import type {
   TransactionType,
 } from "@finance/shared-types";
 
+import { TransactionEditModal } from "../components/finance/TransactionEditModal";
 import { MobileDashboardService } from "../services/MobileDashboardService";
 import { useOfflineStore } from "../stores/offlineStore";
-import { premiumHairline, premiumTheme } from "../theme/premiumTheme";
+import {
+  premiumHairline,
+  premiumSurface,
+  premiumTheme,
+} from "../theme/premiumTheme";
 import type { RootStackParamList } from "../types/navigation";
 import {
   formatSignedTransactionAmount,
-  formatTransactionTime,
+  formatTransactionListTimestamp,
   getEventAccountId,
+  getFrequentCategoryIds,
   getSignedTransactionAmount,
   getTransactionMerchantDisplay,
   groupTransactionsByRecency,
+  startOfDay,
   titleCase,
 } from "../utils/financeFormat";
 import { getTransactionIcon } from "../utils/financeVisuals";
@@ -36,14 +56,103 @@ type TransactionsScreenProps = NativeStackScreenProps<
   "Transactions"
 >;
 
-type TransactionFilter = "all" | "income" | "expense" | "transfer";
+type TransactionFilter = "all" | "income" | "expense";
+
+type TransactionDateFilter =
+  | "all"
+  | "today"
+  | "week"
+  | "month"
+  | "lastMonth"
+  | "threeMonths";
+
+const DATE_FILTER_OPTIONS: {
+  label: string;
+  value: TransactionDateFilter;
+}[] = [
+  { label: "All time", value: "all" },
+  { label: "Today", value: "today" },
+  { label: "Last 7 days", value: "week" },
+  { label: "This month", value: "month" },
+  { label: "Last month", value: "lastMonth" },
+  { label: "Last 3 months", value: "threeMonths" },
+];
+
+function getDateFilterBounds(
+  filter: TransactionDateFilter
+): { end: Date; start: Date } | null {
+  if (filter === "all") return null;
+
+  const now = new Date();
+  const today = startOfDay(now);
+  const dayAfterToday = new Date(today);
+  dayAfterToday.setDate(today.getDate() + 1);
+
+  if (filter === "today") {
+    return { end: dayAfterToday, start: today };
+  }
+
+  if (filter === "week") {
+    const start = new Date(today);
+    start.setDate(today.getDate() - 6);
+    return { end: dayAfterToday, start };
+  }
+
+  if (filter === "month") {
+    return {
+      end: dayAfterToday,
+      start: new Date(now.getFullYear(), now.getMonth(), 1),
+    };
+  }
+
+  if (filter === "lastMonth") {
+    return {
+      end: new Date(now.getFullYear(), now.getMonth(), 1),
+      start: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+    };
+  }
+
+  return {
+    end: dayAfterToday,
+    start: new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()),
+  };
+}
 
 export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
   const accounts = useOfflineStore((state) => state.accounts);
+  const categories = useOfflineStore((state) => state.categories);
   const events = useOfflineStore((state) => state.events);
   const transactions = useOfflineStore((state) => state.transactions);
+  const updateTransaction = useOfflineStore(
+    (state) => state.updateTransaction
+  );
+  const deleteTransaction = useOfflineStore(
+    (state) => state.deleteTransaction
+  );
   const [filter, setFilter] = useState<TransactionFilter>("all");
+  const [dateFilter, setDateFilter] = useState<TransactionDateFilter>("all");
+  const [dateFilterMenuAnchor, setDateFilterMenuAnchor] = useState<{
+    right: number;
+    top: number;
+  } | null>(null);
+  const dateFilterButtonRef = useRef<View>(null);
+  const windowDimensions = useWindowDimensions();
+
+  function openDateFilterMenu() {
+    dateFilterButtonRef.current?.measureInWindow((x, y, width, height) => {
+      setDateFilterMenuAnchor({
+        right: Math.max(windowDimensions.width - (x + width), 12),
+        top: y + height + 8,
+      });
+    });
+  }
   const [searchQuery, setSearchQuery] = useState("");
+  const [editingTransaction, setEditingTransaction] =
+    useState<CachedTransaction | null>(null);
+  const frequentCategoryIds = useMemo(
+    () => getFrequentCategoryIds(transactions),
+    [transactions]
+  );
   const accountNamesById = useMemo(
     () => new Map(accounts.map((account) => [account.id, account.name])),
     [accounts]
@@ -60,14 +169,24 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         ),
     [events]
   );
-  const filteredTransactions = useMemo(
-    () =>
-      transactions.filter((transaction) => {
+  const filteredTransactions = useMemo(() => {
+    const dateBounds = getDateFilterBounds(dateFilter);
+
+    return transactions.filter((transaction) => {
         const normalizedQuery = searchQuery.trim().toLowerCase();
         const matchesFilter =
           filter === "all" || transaction.transaction_type === filter;
 
         if (!matchesFilter) return false;
+
+        if (dateBounds) {
+          const occurredAt = new Date(transaction.occurred_at);
+
+          if (occurredAt < dateBounds.start || occurredAt >= dateBounds.end) {
+            return false;
+          }
+        }
+
         if (!normalizedQuery) return true;
 
         const searchableText = [
@@ -86,13 +205,31 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
           .toLowerCase();
 
         return searchableText.includes(normalizedQuery);
-      }),
-    [accountNamesById, filter, searchQuery, transactions]
-  );
-  const groupedTransactions = useMemo(
-    () => groupTransactionsByRecency(filteredTransactions),
-    [filteredTransactions]
-  );
+      });
+  }, [accountNamesById, dateFilter, filter, searchQuery, transactions]);
+  // Recency headings ("Today", "Earlier This Week") only make sense against
+  // the full history. With a date range applied they turn redundant or
+  // misleading, so the range shows one flat list instead.
+  const groupedTransactions = useMemo(() => {
+    if (dateFilter === "all") {
+      return groupTransactionsByRecency(filteredTransactions);
+    }
+
+    if (filteredTransactions.length === 0) return [];
+
+    return [
+      {
+        label: "",
+        transactions: filteredTransactions
+          .slice()
+          .sort(
+            (first, second) =>
+              new Date(second.occurred_at).getTime() -
+              new Date(first.occurred_at).getTime()
+          ),
+      },
+    ];
+  }, [dateFilter, filteredTransactions]);
 
   return (
     <View style={styles.screen}>
@@ -101,39 +238,106 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         style={styles.screenScroll}
       >
         <View style={styles.transactionSearchBar}>
-          <Search color="#7b818c" size={22} strokeWidth={2.2} />
+          <Search
+            color={premiumTheme.colors.secondary}
+            size={20}
+            strokeWidth={2.2}
+          />
           <TextInput
             onChangeText={setSearchQuery}
             placeholder="Search transactions"
-            placeholderTextColor="#9aa0aa"
+            placeholderTextColor={premiumTheme.colors.muted}
             style={styles.transactionSearchInput}
             value={searchQuery}
           />
         </View>
 
-        <View style={styles.transactionFilterBar}>
-          {(["all", "income", "expense", "transfer"] as const).map(
-            (item) => (
-              <Pressable
-                key={item}
-                onPress={() => setFilter(item)}
-                style={[
-                  styles.transactionFilterButton,
-                  filter === item && styles.transactionFilterButtonActive,
-                ]}
-              >
-                <Text
+        <View style={styles.transactionFilterRow}>
+          <View style={styles.transactionFilterBar}>
+            {(["all", "income", "expense"] as const).map(
+              (item) => (
+                <Pressable
+                  key={item}
+                  onPress={() => setFilter(item)}
                   style={[
-                    styles.transactionFilterText,
-                    filter === item && styles.transactionFilterTextActive,
+                    styles.transactionFilterButton,
+                    filter === item && styles.transactionFilterButtonActive,
                   ]}
                 >
-                  {titleCase(item)}
-                </Text>
-              </Pressable>
-            )
-          )}
+                  <Text
+                    style={[
+                      styles.transactionFilterText,
+                      filter === item && styles.transactionFilterTextActive,
+                    ]}
+                  >
+                    {titleCase(item)}
+                  </Text>
+                </Pressable>
+              )
+            )}
+          </View>
+
+          <Pressable
+            accessibilityHint="Filters transactions by date range"
+            accessibilityRole="button"
+            onPress={openDateFilterMenu}
+            ref={dateFilterButtonRef}
+            style={({ pressed }) => [
+              styles.dateFilterButton,
+              dateFilter !== "all" && styles.dateFilterButtonActive,
+              pressed && styles.dateFilterButtonPressed,
+            ]}
+          >
+            <CalendarDays
+              color={
+                dateFilter !== "all"
+                  ? "#ffffff"
+                  : premiumTheme.colors.secondary
+              }
+              size={16}
+              strokeWidth={2.3}
+            />
+            <ChevronDown
+              color={
+                dateFilter !== "all"
+                  ? "#ffffff"
+                  : premiumTheme.colors.secondary
+              }
+              size={14}
+              strokeWidth={2.5}
+            />
+          </Pressable>
         </View>
+
+        {dateFilter !== "all" ? (
+          <View style={styles.dateFilterSummary}>
+            <Pressable
+              accessibilityHint="Removes the date filter"
+              accessibilityRole="button"
+              hitSlop={6}
+              onPress={() => setDateFilter("all")}
+              style={({ pressed }) => [
+                styles.dateFilterChip,
+                pressed && styles.dateFilterChipPressed,
+              ]}
+            >
+              <Text style={styles.dateFilterChipText}>
+                {
+                  DATE_FILTER_OPTIONS.find(
+                    (option) => option.value === dateFilter
+                  )?.label
+                }
+              </Text>
+              <View style={styles.dateFilterChipClose}>
+                <X
+                  color={premiumTheme.colors.secondary}
+                  size={11}
+                  strokeWidth={2.8}
+                />
+              </View>
+            </Pressable>
+          </View>
+        ) : null}
 
         {pendingEvents.length > 0 ? (
           <View style={styles.pendingReviewSection}>
@@ -151,52 +355,59 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
               </View>
             </View>
 
-            <View style={styles.pendingReviewCard}>
-              {pendingEvents.map((event, index) => {
-                const accountId = getEventAccountId(event.metadata);
+            <View style={styles.listCard}>
+              <View style={styles.listCardInner}>
+                {pendingEvents.map((event, index) => {
+                  const accountId = getEventAccountId(event.metadata);
 
-                return (
-                  <PendingEventRow
-                    accountName={
-                      accountId
-                        ? accountNamesById.get(accountId) ?? null
-                        : null
-                    }
-                    event={event}
-                    key={event.id}
-                    onPress={() =>
-                      navigation.navigate("EventReview", {
-                        eventId: event.id,
-                      })
-                    }
-                    showDivider={index < pendingEvents.length - 1}
-                  />
-                );
-              })}
+                  return (
+                    <PendingEventRow
+                      accountName={
+                        accountId
+                          ? accountNamesById.get(accountId) ?? null
+                          : null
+                      }
+                      event={event}
+                      key={event.id}
+                      onPress={() =>
+                        navigation.navigate("EventReview", {
+                          eventId: event.id,
+                        })
+                      }
+                      showDivider={index < pendingEvents.length - 1}
+                    />
+                  );
+                })}
+              </View>
             </View>
           </View>
         ) : null}
 
         {groupedTransactions.map((group) => (
-          <View key={group.label} style={styles.transactionGroup}>
-            <Text style={styles.transactionGroupTitle}>{group.label}</Text>
-            <View style={styles.transactionGroupCard}>
-              {group.transactions.map((transaction, index) => (
-                <TransactionListRow
-                  accountName={
-                    transaction.account_id
-                      ? accountNamesById.get(transaction.account_id) ?? null
-                      : null
-                  }
-                  key={transaction.id}
-                  amount={transaction.amount}
-                  categoryName={transaction.category?.name ?? "Uncategorized"}
-                  occurredAt={transaction.occurred_at}
-                  showDivider={index < group.transactions.length - 1}
-                  transaction={transaction}
-                  type={transaction.transaction_type}
-                />
-              ))}
+          <View key={group.label || "filtered"} style={styles.transactionGroup}>
+            {group.label ? (
+              <Text style={styles.transactionGroupTitle}>{group.label}</Text>
+            ) : null}
+            <View style={styles.listCard}>
+              <View style={styles.listCardInner}>
+                {group.transactions.map((transaction, index) => (
+                  <TransactionListRow
+                    accountName={
+                      transaction.account_id
+                        ? accountNamesById.get(transaction.account_id) ?? null
+                        : null
+                    }
+                    key={transaction.id}
+                    amount={transaction.amount}
+                    categoryName={transaction.category?.name ?? "Uncategorized"}
+                    occurredAt={transaction.occurred_at}
+                    onPress={() => setEditingTransaction(transaction)}
+                    showDivider={index < group.transactions.length - 1}
+                    transaction={transaction}
+                    type={transaction.transaction_type}
+                  />
+                ))}
+              </View>
             </View>
           </View>
         ))}
@@ -204,17 +415,21 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         {groupedTransactions.length === 0 && pendingEvents.length === 0 && (
           <View style={styles.transactionsEmptyCard}>
             <Text style={styles.transactionsEmptyTitle}>
-              {searchQuery.trim() ? "No matching transactions" : "No transactions yet"}
+              {searchQuery.trim() || dateFilter !== "all" || filter !== "all"
+                ? "No matching transactions"
+                : "No transactions yet"}
             </Text>
             <Text style={styles.transactionsEmptyText}>
-              {searchQuery.trim()
-                ? "Try a different merchant, category, amount, or date."
+              {searchQuery.trim() || dateFilter !== "all" || filter !== "all"
+                ? "Try widening the filters or a different search."
                 : "Add your first transaction to see it here."}
             </Text>
           </View>
         )}
 
-        <Text style={styles.transactionsEndText}>No more transactions</Text>
+        {groupedTransactions.length > 0 ? (
+          <Text style={styles.transactionsEndText}>End of transactions</Text>
+        ) : null}
       </ScrollView>
 
       <Pressable
@@ -223,6 +438,103 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
       >
         <Plus color="#ffffff" size={23} strokeWidth={2.8} />
       </Pressable>
+
+      <Modal
+        animationType="none"
+        onRequestClose={() => setDateFilterMenuAnchor(null)}
+        transparent
+        visible={dateFilterMenuAnchor !== null}
+      >
+        <Pressable
+          onPress={() => setDateFilterMenuAnchor(null)}
+          style={styles.dateFilterMenuBackdrop}
+        >
+          {dateFilterMenuAnchor ? (
+            <MotiView
+              animate={{ opacity: 1, scale: 1, translateY: 0 }}
+              from={{ opacity: 0, scale: 0.96, translateY: -6 }}
+              style={[
+                styles.dateFilterMenu,
+                {
+                  right: dateFilterMenuAnchor.right,
+                  top: dateFilterMenuAnchor.top,
+                },
+              ]}
+              transition={{
+                damping: 20,
+                mass: 0.6,
+                stiffness: 260,
+                type: "spring",
+              }}
+            >
+              <Text style={styles.dateFilterMenuLabel}>Date range</Text>
+              {DATE_FILTER_OPTIONS.map((option) => {
+                const selected = option.value === dateFilter;
+
+                return (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => {
+                      setDateFilter(option.value);
+                      setDateFilterMenuAnchor(null);
+                    }}
+                    style={({ pressed }) => [
+                      styles.dateFilterOption,
+                      selected && styles.dateFilterOptionSelected,
+                      pressed && styles.dateFilterOptionPressed,
+                    ]}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.dateFilterOptionText,
+                        selected && styles.dateFilterOptionTextSelected,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    {selected ? (
+                      <Check
+                        color={premiumTheme.colors.ink}
+                        size={15}
+                        strokeWidth={2.8}
+                      />
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </MotiView>
+          ) : null}
+        </Pressable>
+      </Modal>
+
+      {editingTransaction ? (
+        <TransactionEditModal
+          accounts={accounts}
+          categories={categories}
+          frequentCategoryIds={frequentCategoryIds}
+          onAddAccount={() =>
+            navigation.navigate("FinancialIntelligence", {
+              initialResource: "account",
+            })
+          }
+          onClose={() => setEditingTransaction(null)}
+          onDelete={() =>
+            deleteTransaction(
+              editingTransaction.id,
+              editingTransaction.event_id
+            )
+          }
+          onManageCategories={() => {
+            setEditingTransaction(null);
+            navigation.navigate("Categories");
+          }}
+          onSave={(updates) =>
+            updateTransaction(editingTransaction.id, updates)
+          }
+          transaction={editingTransaction}
+        />
+      ) : null}
     </View>
   );
 }
@@ -232,6 +544,7 @@ function TransactionListRow({
   amount,
   categoryName,
   occurredAt,
+  onPress,
   showDivider,
   transaction,
   type,
@@ -240,6 +553,7 @@ function TransactionListRow({
   amount: number;
   categoryName: string;
   occurredAt: string;
+  onPress: () => void;
   showDivider: boolean;
   transaction: CachedTransaction;
   type: TransactionType;
@@ -247,13 +561,19 @@ function TransactionListRow({
   const icon = getTransactionIcon(categoryName, type);
   const Icon = icon.Icon;
   const signedAmount = getSignedTransactionAmount(amount, type);
-  const merchantDisplay = getTransactionMerchantDisplay(transaction);
+  const merchantDisplay = getTransactionMerchantDisplay(
+    transaction,
+    transaction.category?.name ?? titleCase(type)
+  );
 
   return (
-    <View
-      style={[
+    <Pressable
+      accessibilityHint="Opens this transaction for editing"
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
         styles.transactionListRow,
-        showDivider && styles.transactionListRowDivider,
+        pressed && styles.transactionListRowPressed,
       ]}
     >
       <View
@@ -268,29 +588,39 @@ function TransactionListRow({
       </View>
 
       <View style={styles.transactionListDetails}>
-        <Text numberOfLines={1} style={styles.transactionListTitle}>
-          {merchantDisplay.name}
-        </Text>
-        {merchantDisplay.registered && (
-          <Text style={styles.transactionMerchantBadge}>Matched merchant</Text>
-        )}
+        <View style={styles.transactionListTitleRow}>
+          <Text numberOfLines={1} style={styles.transactionListTitle}>
+            {merchantDisplay.name}
+          </Text>
+          {merchantDisplay.registered && (
+            <BadgeCheck
+              color={premiumTheme.colors.success}
+              size={14}
+              strokeWidth={2.4}
+            />
+          )}
+        </View>
         <Text numberOfLines={1} style={styles.transactionListCategory}>
           {accountName ? `${categoryName} · ${accountName}` : categoryName}
         </Text>
+      </View>
+
+      <View style={styles.transactionListTrailing}>
+        <Text
+          style={[
+            styles.transactionListAmount,
+            signedAmount > 0 && styles.transactionListAmountIncome,
+          ]}
+        >
+          {formatSignedTransactionAmount(signedAmount)}
+        </Text>
         <Text style={styles.transactionListTime}>
-          {formatTransactionTime(occurredAt)}
+          {formatTransactionListTimestamp(occurredAt)}
         </Text>
       </View>
 
-      <Text
-        style={[
-          styles.transactionListAmount,
-          signedAmount > 0 && styles.transactionListAmountIncome,
-        ]}
-      >
-        {formatSignedTransactionAmount(signedAmount)}
-      </Text>
-    </View>
+      {showDivider ? <View style={styles.rowDivider} /> : null}
+    </Pressable>
   );
 }
 
@@ -315,12 +645,11 @@ function PendingEventRow({
       onPress={onPress}
       style={({ pressed }) => [
         styles.pendingReviewRow,
-        showDivider && styles.pendingReviewRowDivider,
         pressed && styles.pendingReviewRowPressed,
       ]}
     >
       <View style={styles.pendingReviewIcon}>
-        <Store color="#0f172a" size={19} strokeWidth={2.3} />
+        <Store color={premiumTheme.colors.ink} size={19} strokeWidth={2.3} />
       </View>
 
       <View style={styles.pendingReviewCopy}>
@@ -341,40 +670,154 @@ function PendingEventRow({
           {isCredit ? "Income" : "Expense"}
           {accountName ? ` · ${accountName}` : " · Account unassigned"}
         </Text>
-        <Text style={styles.pendingReviewDate}>
-          {formatTransactionTime(event.occurred_at)}
-        </Text>
       </View>
 
       <View style={styles.pendingReviewTrailing}>
-        <Text
-          style={[
-            styles.pendingReviewAmount,
-            isCredit && styles.pendingReviewAmountIncome,
-          ]}
-        >
-          {MobileDashboardService.getFormattedBalance(event.amount)}
+        <View style={styles.pendingReviewAmountRow}>
+          <Text
+            style={[
+              styles.pendingReviewAmount,
+              isCredit && styles.pendingReviewAmountIncome,
+            ]}
+          >
+            {MobileDashboardService.getFormattedBalance(event.amount)}
+          </Text>
+          <ChevronRight
+            color={premiumTheme.colors.muted}
+            size={16}
+            strokeWidth={2.4}
+          />
+        </View>
+        <Text style={styles.pendingReviewDate}>
+          {formatTransactionListTimestamp(event.occurred_at)}
         </Text>
-        <ChevronRight color="#94a3b8" size={17} strokeWidth={2.4} />
       </View>
+
+      {showDivider ? <View style={styles.rowDivider} /> : null}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  pendingReviewAmount: {
-    color: "#0f172a",
+  dateFilterButton: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 14,
+    flexDirection: "row",
+    gap: 3,
+    justifyContent: "center",
+    minHeight: 42,
+    paddingHorizontal: 13,
+  },
+  dateFilterButtonActive: {
+    backgroundColor: premiumTheme.colors.ink,
+  },
+  dateFilterButtonPressed: {
+    opacity: 0.85,
+  },
+  dateFilterChip: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 7,
+    minHeight: 32,
+    paddingLeft: 13,
+    paddingRight: 6,
+    ...premiumSurface,
+    ...premiumTheme.shadow.soft,
+  },
+  dateFilterChipClose: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 999,
+    height: 20,
+    justifyContent: "center",
+    width: 20,
+  },
+  dateFilterChipPressed: {
+    backgroundColor: premiumTheme.colors.field,
+  },
+  dateFilterChipText: {
+    color: premiumTheme.colors.ink,
+    fontSize: 12.5,
+    fontWeight: "700",
+  },
+  dateFilterMenu: {
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    padding: 6,
+    position: "absolute",
+    width: 216,
+    ...premiumSurface,
+    ...premiumTheme.shadow.raised,
+  },
+  dateFilterMenuBackdrop: {
+    flex: 1,
+  },
+  dateFilterMenuLabel: {
+    color: premiumTheme.colors.muted,
+    fontSize: 10.5,
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginBottom: 4,
+    marginTop: 6,
+    paddingHorizontal: 10,
+    textTransform: "uppercase",
+  },
+  dateFilterOption: {
+    alignItems: "center",
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    minHeight: 42,
+    paddingHorizontal: 10,
+  },
+  dateFilterOptionPressed: {
+    backgroundColor: premiumTheme.colors.field,
+  },
+  dateFilterOptionSelected: {
+    backgroundColor: premiumTheme.colors.field,
+  },
+  dateFilterOptionText: {
+    color: premiumTheme.colors.ink,
+    flex: 1,
     fontSize: 13,
-    fontWeight: "900",
+    fontWeight: "600",
+    lineHeight: 18,
   },
-  pendingReviewAmountIncome: {
-    color: "#16a34a",
+  dateFilterOptionTextSelected: {
+    fontWeight: "700",
   },
-  pendingReviewCard: {
-    backgroundColor: premiumTheme.colors.elevated,
+  dateFilterSummary: {
+    alignItems: "center",
+    flexDirection: "row",
+    marginTop: -6,
+  },
+  listCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: premiumTheme.radius.section,
+    ...premiumSurface,
+    ...premiumTheme.shadow.soft,
+  },
+  listCardInner: {
     borderRadius: premiumTheme.radius.section,
     overflow: "hidden",
-    ...premiumTheme.shadow.floating,
+  },
+  pendingReviewAmount: {
+    color: premiumTheme.colors.ink,
+    fontSize: 14,
+    fontVariant: ["tabular-nums"],
+    fontWeight: "800",
+  },
+  pendingReviewAmountIncome: {
+    color: premiumTheme.colors.success,
+  },
+  pendingReviewAmountRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 2,
   },
   pendingReviewCopy: {
     flex: 1,
@@ -382,21 +825,22 @@ const styles = StyleSheet.create({
   },
   pendingReviewCount: {
     alignItems: "center",
-    backgroundColor: "#0f172a",
+    backgroundColor: premiumTheme.colors.ink,
     borderRadius: 999,
     justifyContent: "center",
-    minHeight: 27,
-    minWidth: 27,
+    minHeight: 26,
+    minWidth: 26,
     paddingHorizontal: 8,
   },
   pendingReviewCountText: {
     color: "#ffffff",
     fontSize: 12,
-    fontWeight: "900",
+    fontWeight: "800",
   },
   pendingReviewDate: {
-    color: "#7b818c",
+    color: premiumTheme.colors.muted,
     fontSize: 11,
+    fontWeight: "600",
     marginTop: 3,
   },
   pendingReviewFlag: {
@@ -418,52 +862,50 @@ const styles = StyleSheet.create({
   },
   pendingReviewIcon: {
     alignItems: "center",
-    backgroundColor: "#f1f5f9",
-    borderRadius: 18,
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 15,
     height: 42,
     justifyContent: "center",
     width: 42,
   },
   pendingReviewMerchant: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "900",
+    color: premiumTheme.colors.ink,
+    fontSize: 14.5,
+    fontWeight: "700",
+    letterSpacing: -0.2,
   },
   pendingReviewMerchantShrink: {
     flexShrink: 1,
   },
   pendingReviewMeta: {
-    color: "#64748b",
+    color: premiumTheme.colors.secondary,
     fontSize: 12,
-    fontWeight: "700",
-    marginTop: 2,
+    fontWeight: "600",
+    marginTop: 3,
   },
   pendingReviewRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 11,
-    minHeight: 74,
+    gap: 12,
+    minHeight: 68,
     paddingHorizontal: 14,
-  },
-  pendingReviewRowDivider: {
-    borderBottomColor: premiumTheme.colors.divider,
-    borderBottomWidth: premiumHairline,
   },
   pendingReviewRowPressed: {
     backgroundColor: premiumTheme.colors.field,
   },
   pendingReviewSection: {
-    gap: 9,
+    gap: 10,
   },
   pendingReviewSubtitle: {
-    color: "#64748b",
-    fontSize: 12,
+    color: premiumTheme.colors.secondary,
+    fontSize: 12.5,
     marginTop: 3,
   },
   pendingReviewTitle: {
-    color: "#0f172a",
-    fontSize: 16,
-    fontWeight: "900",
+    color: premiumTheme.colors.ink,
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: -0.3,
   },
   pendingReviewTitleRow: {
     alignItems: "center",
@@ -471,10 +913,16 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   pendingReviewTrailing: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 3,
+    alignItems: "flex-end",
     marginLeft: 4,
+  },
+  rowDivider: {
+    backgroundColor: premiumTheme.colors.divider,
+    bottom: 0,
+    height: premiumHairline,
+    left: 68,
+    position: "absolute",
+    right: 0,
   },
   screen: {
     backgroundColor: premiumTheme.colors.canvas,
@@ -487,9 +935,9 @@ const styles = StyleSheet.create({
   transactionFab: {
     alignItems: "center",
     backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 25,
+    borderRadius: 27,
     bottom: 20,
-    height: 50,
+    height: 54,
     justifyContent: "center",
     position: "absolute",
     right: 20,
@@ -498,62 +946,71 @@ const styles = StyleSheet.create({
       height: 10,
       width: 0,
     },
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-    width: 50,
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    width: 54,
   },
   transactionFilterBar: {
     backgroundColor: premiumTheme.colors.field,
-    borderRadius: 18,
+    borderRadius: 14,
+    flex: 1,
     flexDirection: "row",
     gap: 4,
-    padding: 6,
+    padding: 4,
   },
   transactionFilterButton: {
     alignItems: "center",
-    borderRadius: 13,
+    borderColor: "transparent",
+    borderRadius: 10,
+    borderWidth: 1,
     flex: 1,
     justifyContent: "center",
     minHeight: 34,
   },
   transactionFilterButtonActive: {
-    backgroundColor: "#0f172a",
+    backgroundColor: "#ffffff",
+    borderColor: premiumTheme.colors.border,
+    ...premiumTheme.shadow.soft,
+  },
+  transactionFilterRow: {
+    alignItems: "stretch",
+    flexDirection: "row",
+    gap: 8,
   },
   transactionFilterText: {
-    color: "#6b7280",
-    fontSize: 12,
-    fontWeight: "800",
+    color: premiumTheme.colors.secondary,
+    fontSize: 12.5,
+    fontWeight: "700",
   },
   transactionFilterTextActive: {
-    color: "#ffffff",
+    color: premiumTheme.colors.ink,
   },
   transactionGroup: {
-    gap: 9,
-  },
-  transactionGroupCard: {
-    backgroundColor: premiumTheme.colors.elevated,
-    borderRadius: premiumTheme.radius.section,
-    overflow: "hidden",
-    ...premiumTheme.shadow.floating,
+    gap: 10,
   },
   transactionGroupTitle: {
-    color: "#0f172a",
-    fontSize: 16,
-    fontWeight: "900",
+    color: premiumTheme.colors.secondary,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.9,
+    paddingLeft: 2,
+    textTransform: "uppercase",
   },
   transactionListAmount: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "900",
-    marginLeft: 6,
+    color: premiumTheme.colors.ink,
+    fontSize: 14.5,
+    fontVariant: ["tabular-nums"],
+    fontWeight: "800",
+    letterSpacing: -0.2,
   },
   transactionListAmountIncome: {
-    color: "#16a34a",
+    color: premiumTheme.colors.success,
   },
   transactionListCategory: {
-    color: "#6b7280",
+    color: premiumTheme.colors.secondary,
     fontSize: 12,
-    marginTop: 2,
+    fontWeight: "600",
+    marginTop: 3,
   },
   transactionListDetails: {
     flex: 1,
@@ -561,7 +1018,7 @@ const styles = StyleSheet.create({
   },
   transactionListIcon: {
     alignItems: "center",
-    borderRadius: 18,
+    borderRadius: 15,
     height: 42,
     justifyContent: "center",
     width: 42,
@@ -569,79 +1026,83 @@ const styles = StyleSheet.create({
   transactionListRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 11,
-    minHeight: 70,
+    gap: 12,
+    minHeight: 66,
     paddingHorizontal: 14,
   },
-  transactionListRowDivider: {
-    borderBottomColor: premiumTheme.colors.divider,
-    borderBottomWidth: premiumHairline,
+  transactionListRowPressed: {
+    backgroundColor: premiumTheme.colors.field,
   },
   transactionListTime: {
-    color: "#7b818c",
-    fontSize: 12,
+    color: premiumTheme.colors.muted,
+    fontSize: 11,
+    fontWeight: "600",
     marginTop: 3,
   },
   transactionListTitle: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "900",
+    color: premiumTheme.colors.ink,
+    flexShrink: 1,
+    fontSize: 14.5,
+    fontWeight: "700",
+    letterSpacing: -0.2,
   },
-  transactionMerchantBadge: {
-    alignSelf: "flex-start",
-    backgroundColor: "#dcfce7",
-    borderRadius: 999,
-    color: "#16a34a",
-    fontSize: 10,
-    fontWeight: "900",
-    marginTop: 3,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+  transactionListTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 5,
+  },
+  transactionListTrailing: {
+    alignItems: "flex-end",
+    marginLeft: 4,
   },
   transactionSearchBar: {
     alignItems: "center",
     backgroundColor: premiumTheme.colors.field,
-    borderRadius: 16,
+    borderRadius: 14,
     flexDirection: "row",
     gap: 10,
     minHeight: 48,
     paddingHorizontal: 14,
   },
   transactionSearchInput: {
-    color: "#9aa0aa",
+    color: premiumTheme.colors.ink,
     flex: 1,
     fontSize: 15,
-    fontWeight: "600",
+    fontWeight: "500",
     minHeight: 48,
     paddingVertical: 0,
   },
   transactionsEmptyCard: {
     alignItems: "center",
-    backgroundColor: premiumTheme.colors.elevated,
+    backgroundColor: "#ffffff",
     borderRadius: premiumTheme.radius.section,
-    padding: 22,
-    ...premiumTheme.shadow.floating,
+    padding: 24,
+    ...premiumSurface,
+    ...premiumTheme.shadow.soft,
   },
   transactionsEmptyText: {
-    color: "#7b818c",
-    fontSize: 14,
+    color: premiumTheme.colors.secondary,
+    fontSize: 13.5,
+    lineHeight: 19,
     marginTop: 6,
     textAlign: "center",
   },
   transactionsEmptyTitle: {
-    color: "#0f172a",
+    color: premiumTheme.colors.ink,
     fontSize: 16,
-    fontWeight: "900",
+    fontWeight: "800",
+    letterSpacing: -0.3,
   },
   transactionsEndText: {
-    color: "#8b929d",
+    color: premiumTheme.colors.muted,
     fontSize: 12,
+    fontWeight: "600",
     textAlign: "center",
   },
   transactionsListContainer: {
     backgroundColor: premiumTheme.colors.canvas,
     gap: 18,
     padding: 20,
-    paddingBottom: 90,
+    paddingBottom: 96,
   },
 });

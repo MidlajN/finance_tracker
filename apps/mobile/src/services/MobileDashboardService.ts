@@ -4,7 +4,6 @@ import {
   buildFinancialIntelligenceOverview,
   buildFinancialAnalytics,
   buildFinancialReport,
-  getCurrentMonthStart,
 } from "@finance/finance-core";
 import { parseFinancialEventsCsv } from "@finance/parser";
 import { API_RESOURCES } from "@finance/shared-api";
@@ -39,11 +38,7 @@ export class MobileDashboardService {
     budgets: BudgetLike[],
     transactions: TransactionLike[]
   ) {
-    return buildBudgetOverview(
-      budgets,
-      transactions,
-      getCurrentMonthStart()
-    );
+    return buildBudgetOverview(budgets, transactions, new Date());
   }
 
   static getReport(

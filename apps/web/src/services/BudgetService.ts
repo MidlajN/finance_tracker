@@ -41,9 +41,7 @@ export class BudgetService {
             budgets,
             transactions,
         ] = await Promise.all([
-            BudgetRepository.listForMonth(
-                monthStart
-            ),
+            BudgetRepository.list(),
             TransactionRepository.list(),
         ]);
 

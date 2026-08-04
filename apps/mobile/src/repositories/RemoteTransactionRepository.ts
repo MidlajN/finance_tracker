@@ -4,6 +4,7 @@ import type {
   CategoryReference,
   MerchantReference,
 } from "@finance/shared-types";
+import type { TransactionUpdates } from "@finance/shared-api";
 
 import { supabase } from "../lib/supabase";
 
@@ -68,5 +69,28 @@ export class RemoteTransactionRepository {
     return ((data ?? []) as RemoteTransactionRow[]).map(
       toCachedTransaction
     );
+  }
+
+  static async update(
+    transactionId: string,
+    updates: TransactionUpdates
+  ) {
+    const { data, error } = await supabase
+      .from("transactions")
+      .update(updates)
+      .eq("id", transactionId)
+      .select(`
+        *,
+        event:financial_events(*),
+        merchant:merchants(*),
+        category:categories(*)
+      `)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return toCachedTransaction(data as RemoteTransactionRow);
   }
 }

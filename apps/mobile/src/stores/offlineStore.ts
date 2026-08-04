@@ -1,4 +1,7 @@
-import type { SyncQueueItem } from "@finance/shared-api";
+import type {
+  SyncQueueItem,
+  TransactionUpdates,
+} from "@finance/shared-api";
 import type {
   AccountLike,
   AssetLike,
@@ -56,7 +59,8 @@ interface OfflineState {
   initialize: () => Promise<void>;
   createFinancialEvent: (
     event: FinancialEventInput,
-    source: string
+    source: string,
+    options?: { confirm?: boolean }
   ) => Promise<void>;
   confirmFinancialEvent: (eventId: string) => Promise<void>;
   createAccount: (account: AccountLike) => Promise<void>;
@@ -69,6 +73,14 @@ interface OfflineState {
   createGoal: (goal: GoalLike) => Promise<void>;
   createMerchant: (merchant: MerchantLike) => Promise<void>;
   deleteFinancialEvent: (eventId: string) => Promise<void>;
+  deleteTransaction: (
+    transactionId: string,
+    eventId: string
+  ) => Promise<void>;
+  updateTransaction: (
+    transactionId: string,
+    updates: TransactionUpdates
+  ) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
   deleteAsset: (id: string) => Promise<void>;
   deleteLiability: (id: string) => Promise<void>;
@@ -142,9 +154,21 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     await get().refresh();
   },
 
-  async createFinancialEvent(event, source) {
+  async createFinancialEvent(event, source, options) {
     try {
-      await OfflineStorageService.persistFinancialEvent(event, source);
+      const persisted = await OfflineStorageService.persistFinancialEvent(
+        event,
+        source
+      );
+
+      // Manual entries carry no parser uncertainty — the review gate
+      // exists for captured notifications, so skip it when asked.
+      if (options?.confirm && persisted.event.status === "pending") {
+        await OfflineStorageService.confirmFinancialEvent(
+          persisted.event.id
+        );
+      }
+
       await get().refresh();
     } catch (error) {
       set({
@@ -153,6 +177,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
             ? error.message
             : "Unable to save Financial Event.",
       });
+      throw error;
     }
   },
 
@@ -197,6 +222,79 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
             ? error.message
             : "Unable to delete Financial Event.",
       });
+    }
+  },
+
+  async updateTransaction(transactionId, updates) {
+    try {
+      const current = get().transactions.find(
+        (transaction) => transaction.id === transactionId
+      );
+
+      if (!current) {
+        throw new Error("Transaction not found.");
+      }
+
+      const category = updates.category_id
+        ? get().categories.find(
+            (candidate) => candidate.id === updates.category_id
+          ) ?? null
+        : null;
+      const next: CachedTransaction = {
+        ...current,
+        account_id:
+          updates.account_id !== undefined
+            ? updates.account_id
+            : current.account_id,
+        amount: updates.amount ?? current.amount,
+        category_id:
+          updates.category_id !== undefined
+            ? updates.category_id
+            : current.category_id,
+        category:
+          updates.category_id !== undefined
+            ? category
+              ? {
+                  color: category.color,
+                  icon: category.icon,
+                  id: category.id,
+                  name: category.name,
+                }
+              : null
+            : current.category,
+        notes: updates.notes !== undefined ? updates.notes : current.notes,
+        occurred_at: updates.occurred_at ?? current.occurred_at,
+        transaction_type:
+          (updates.transaction_type as CachedTransaction["transaction_type"]) ??
+          current.transaction_type,
+        updated_at: new Date().toISOString(),
+      };
+
+      await OfflineStorageService.updateTransaction(next, updates);
+      await get().refresh();
+    } catch (error) {
+      set({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to update the transaction.",
+      });
+      throw error;
+    }
+  },
+
+  async deleteTransaction(transactionId, eventId) {
+    try {
+      await OfflineStorageService.deleteTransaction(transactionId, eventId);
+      await get().refresh();
+    } catch (error) {
+      set({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to delete the transaction.",
+      });
+      throw error;
     }
   },
 

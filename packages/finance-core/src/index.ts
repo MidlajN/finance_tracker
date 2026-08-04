@@ -9,6 +9,7 @@ import {
 import type {
     BudgetInput,
     BudgetLike,
+    BudgetPeriod,
     AccountBalance,
     AccountLike,
     AccountType,
@@ -653,10 +654,18 @@ export function buildDashboardData<
     };
 }
 
+export interface BudgetWindow {
+    // Inclusive ISO start date and exclusive ISO end date of the period
+    // the budget is currently measuring.
+    start: string;
+    end: string;
+}
+
 export interface BudgetProgress<
     TBudget extends BudgetLike = BudgetLike,
 > {
     budget: TBudget;
+    window: BudgetWindow;
     spent: number;
     remaining: number;
     percentage: number;
@@ -689,6 +698,198 @@ export function isTransactionInMonth<
         occurredAt >= monthStart &&
         occurredAt <
             getNextMonthStart(monthStart)
+    );
+}
+
+const BUDGET_PERIOD_MONTHS: Record<
+    Exclude<BudgetPeriod, "weekly">,
+    number
+> = {
+    monthly: 1,
+    quarterly: 3,
+    yearly: 12,
+};
+
+function parseIsoDate(value: string) {
+    const [year, month, day] = value
+        .slice(0, 10)
+        .split("-")
+        .map(Number);
+
+    return new Date(year, month - 1, day);
+}
+
+function toIsoDate(date: Date) {
+    return `${date.getFullYear()}-${String(
+        date.getMonth() + 1
+    ).padStart(2, "0")}-${String(
+        date.getDate()
+    ).padStart(2, "0")}`;
+}
+
+// Calendar-day difference immune to DST offsets.
+function daysBetween(start: Date, end: Date) {
+    return Math.round(
+        (Date.UTC(
+            end.getFullYear(),
+            end.getMonth(),
+            end.getDate()
+        ) -
+            Date.UTC(
+                start.getFullYear(),
+                start.getMonth(),
+                start.getDate()
+            )) /
+            86400000
+    );
+}
+
+// Anchored month stepping: keeps the anchor's day-of-month, clamped to
+// the target month's length (Jan 31 + 1 month = Feb 28/29).
+function addMonthsClamped(
+    date: Date,
+    months: number
+) {
+    const target = new Date(
+        date.getFullYear(),
+        date.getMonth() + months,
+        1
+    );
+    const daysInTarget = new Date(
+        target.getFullYear(),
+        target.getMonth() + 1,
+        0
+    ).getDate();
+
+    return new Date(
+        target.getFullYear(),
+        target.getMonth(),
+        Math.min(date.getDate(), daysInTarget)
+    );
+}
+
+// A budget row is a standing template. The window it is currently
+// measuring is derived deterministically from starts_on: periods repeat
+// back-to-back and the window containing the reference date wins. Returns
+// null when the budget is not active on that date (not started yet, past
+// ends_on, or a non-renewing budget past its first period). Legacy rows
+// without the template fields behave exactly like the old monthly
+// budgets: monthly period anchored on their original month.
+export function getBudgetWindow(
+    budget: BudgetLike,
+    referenceDate: Date = new Date()
+): BudgetWindow | null {
+    const period: BudgetPeriod =
+        budget.period ?? "monthly";
+    const autoRenew =
+        budget.auto_renew ?? true;
+    const startsOn =
+        budget.starts_on ??
+        getCurrentMonthStart(referenceDate);
+    const anchor = parseIsoDate(startsOn);
+    const reference = parseIsoDate(
+        toIsoDate(referenceDate)
+    );
+
+    if (reference < anchor) {
+        return null;
+    }
+
+    if (
+        budget.ends_on &&
+        toIsoDate(reference) >
+            budget.ends_on.slice(0, 10)
+    ) {
+        return null;
+    }
+
+    let index: number;
+    let windowStart: Date;
+    let windowEnd: Date;
+
+    if (period === "weekly") {
+        index = Math.floor(
+            daysBetween(anchor, reference) / 7
+        );
+        windowStart = new Date(
+            anchor.getFullYear(),
+            anchor.getMonth(),
+            anchor.getDate() + index * 7
+        );
+        windowEnd = new Date(
+            windowStart.getFullYear(),
+            windowStart.getMonth(),
+            windowStart.getDate() + 7
+        );
+    } else {
+        const step =
+            BUDGET_PERIOD_MONTHS[period];
+        const diffMonths =
+            (reference.getFullYear() -
+                anchor.getFullYear()) *
+                12 +
+            (reference.getMonth() -
+                anchor.getMonth());
+
+        index = Math.floor(
+            diffMonths / step
+        );
+        windowStart = addMonthsClamped(
+            anchor,
+            index * step
+        );
+
+        // Day-of-month overshoot: an anchor late in the month can place
+        // the computed start after the reference (Jan 31 anchor, Mar 1
+        // reference). Step one window back.
+        if (windowStart > reference) {
+            index -= 1;
+            windowStart = addMonthsClamped(
+                anchor,
+                index * step
+            );
+        }
+
+        windowEnd = addMonthsClamped(
+            anchor,
+            (index + 1) * step
+        );
+    }
+
+    if (!autoRenew && index > 0) {
+        return null;
+    }
+
+    return {
+        start: toIsoDate(windowStart),
+        end: toIsoDate(windowEnd),
+    };
+}
+
+export function isBudgetActiveOn(
+    budget: BudgetLike,
+    referenceDate: Date = new Date()
+) {
+    return (
+        getBudgetWindow(
+            budget,
+            referenceDate
+        ) !== null
+    );
+}
+
+export function isTransactionInWindow<
+    TTransaction extends TransactionLike,
+>(
+    transaction: TTransaction,
+    window: BudgetWindow
+) {
+    const occurredAt =
+        transaction.occurred_at.slice(0, 10);
+
+    return (
+        occurredAt >= window.start &&
+        occurredAt < window.end
     );
 }
 
@@ -725,13 +926,36 @@ export function validateBudget(
     }
 
     if (
-        typeof budget.month_start ===
+        typeof budget.starts_on ===
             "string" &&
-        !/^\d{4}-\d{2}-01$/.test(
-            budget.month_start
+        !/^\d{4}-\d{2}-\d{2}$/.test(
+            budget.starts_on
         )
     ) {
-        throw new Error("Budget month is invalid.");
+        throw new Error("Budget start date is invalid.");
+    }
+
+    if (
+        budget.period !== undefined &&
+        !(
+            budget.period in
+                BUDGET_PERIOD_MONTHS
+        ) &&
+        budget.period !== "weekly"
+    ) {
+        throw new Error("Budget period is invalid.");
+    }
+
+    if (
+        typeof budget.ends_on ===
+            "string" &&
+        typeof budget.starts_on ===
+            "string" &&
+        budget.ends_on < budget.starts_on
+    ) {
+        throw new Error(
+            "Budget end date must be on or after the start date."
+        );
     }
 }
 
@@ -741,31 +965,47 @@ export function buildBudgetOverview<
 >(
     budgets: TBudget[],
     transactions: TTransaction[],
-    monthStart = getCurrentMonthStart()
+    referenceDate: Date | string = new Date()
 ): BudgetOverview<TBudget> {
-    const monthlyBudgets =
-        budgets.filter((budget) =>
-            (budget.month_start ?? monthStart)
-                .slice(0, 10) === monthStart
-        );
-    const monthlyExpenses =
-        transactions.filter(
-            (transaction) =>
-                transaction.transaction_type ===
-                    "expense" &&
-                isTransactionInMonth(
-                    transaction,
-                    monthStart
-                )
-        );
+    const reference =
+        typeof referenceDate === "string"
+            ? parseIsoDate(referenceDate)
+            : referenceDate;
+    const monthStart =
+        getCurrentMonthStart(reference);
 
-    const progress = monthlyBudgets.map((budget) => {
-        const spent =
-            monthlyExpenses
+    // Each active template measures its own current window; spend is
+    // always re-derived from transactions, so progress resets on period
+    // rollover without any stored state.
+    const activeBudgets = budgets.flatMap(
+        (budget) => {
+            const window = getBudgetWindow(
+                budget,
+                reference
+            );
+
+            return window
+                ? [{ budget, window }]
+                : [];
+        }
+    );
+    const expenses = transactions.filter(
+        (transaction) =>
+            transaction.transaction_type ===
+            "expense"
+    );
+
+    const progress = activeBudgets.map(
+        ({ budget, window }) => {
+            const spent = expenses
                 .filter(
                     (transaction) =>
                         transaction.category_id ===
-                        budget.category_id
+                            budget.category_id &&
+                        isTransactionInWindow(
+                            transaction,
+                            window
+                        )
                 )
                 .reduce(
                     (total, transaction) =>
@@ -774,24 +1014,30 @@ export function buildBudgetOverview<
                     0
                 );
 
-        const percentage =
-            budget.amount > 0
-                ? (spent / budget.amount) *
-                  100
-                : 0;
+            const percentage =
+                budget.amount > 0
+                    ? (spent /
+                          budget.amount) *
+                      100
+                    : 0;
 
-        return {
-            budget,
-            spent,
-            remaining: budget.amount - spent,
-            percentage,
-            status:
-                getBudgetStatus(percentage),
-        };
-    });
+            return {
+                budget,
+                window,
+                spent,
+                remaining:
+                    budget.amount - spent,
+                percentage,
+                status:
+                    getBudgetStatus(
+                        percentage
+                    ),
+            };
+        }
+    );
 
-    const totalBudgeted = monthlyBudgets.reduce(
-        (total, budget) =>
+    const totalBudgeted = activeBudgets.reduce(
+        (total, { budget }) =>
             total + budget.amount,
         0
     );

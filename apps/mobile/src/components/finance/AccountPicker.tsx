@@ -49,6 +49,18 @@ export function AccountPickerField({
     .sort((first, second) => first.name.localeCompare(second.name));
   const quickAccounts = availableAccounts.slice(0, 3);
 
+  // Keep a selection made from the full picker visible in the quick row.
+  if (
+    selectedAccount &&
+    !quickAccounts.some((account) => account.id === selectedAccount.id)
+  ) {
+    if (quickAccounts.length === 0) {
+      quickAccounts.push(selectedAccount);
+    } else {
+      quickAccounts[quickAccounts.length - 1] = selectedAccount;
+    }
+  }
+
   function select(accountId: string | null) {
     setVisible(false);
     onSelect(accountId);

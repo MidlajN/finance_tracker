@@ -184,6 +184,27 @@ export function formatTransactionTime(value: string) {
   });
 }
 
+// List rows: time-of-day only reads as recency for today/yesterday. Older
+// entries show the calendar date instead (with year once it differs).
+export function formatTransactionListTimestamp(value: string) {
+  const date = new Date(value);
+  const now = new Date();
+  const day = startOfDay(date).getTime();
+  const today = startOfDay(now);
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  if (day === today.getTime() || day === yesterday.getTime()) {
+    return formatTransactionTime(value);
+  }
+
+  return date.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    ...(date.getFullYear() !== now.getFullYear() && { year: "numeric" }),
+  });
+}
+
 export function getSignedTransactionAmount(
   amount: number,
   type: TransactionType
@@ -204,7 +225,8 @@ export function formatSignedTransactionAmount(amount: number) {
 }
 
 export function getTransactionMerchantDisplay(
-  transaction: CachedTransaction
+  transaction: CachedTransaction,
+  fallbackName?: string | null
 ) {
   const registeredName = transaction.merchant?.name?.trim();
   const rawName = transaction.event?.merchant_name_raw?.trim();
@@ -224,7 +246,7 @@ export function getTransactionMerchantDisplay(
   }
 
   return {
-    name: "Unknown merchant",
+    name: fallbackName?.trim() || "Unknown merchant",
     registered: false,
   };
 }

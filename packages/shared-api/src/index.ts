@@ -83,6 +83,20 @@ export interface DeleteFinancialEventSyncPayload {
     eventId: string;
 }
 
+export interface TransactionUpdates {
+    account_id?: string | null;
+    amount?: number;
+    category_id?: string | null;
+    notes?: string | null;
+    occurred_at?: string;
+    transaction_type?: string;
+}
+
+export interface UpdateTransactionSyncPayload {
+    transactionId: string;
+    updates: TransactionUpdates;
+}
+
 export interface ConfirmFinancialEventSyncPayload {
     eventId: string;
 }

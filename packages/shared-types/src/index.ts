@@ -244,11 +244,20 @@ export interface CachedTransaction
     updated_at: string;
 }
 
+export type BudgetPeriod =
+    | "weekly"
+    | "monthly"
+    | "quarterly"
+    | "yearly";
+
 export interface BudgetLike {
     id?: string;
     amount: number;
     category_id: string | null;
-    month_start?: string;
+    period?: BudgetPeriod;
+    auto_renew?: boolean;
+    starts_on?: string;
+    ends_on?: string | null;
     category?: CategoryReference | null;
 }
 
@@ -442,7 +451,10 @@ export interface FinancialIntelligenceOverview {
 export interface BudgetInput {
     amount?: number;
     category_id?: string | null;
-    month_start?: string;
+    period?: BudgetPeriod;
+    auto_renew?: boolean;
+    starts_on?: string;
+    ends_on?: string | null;
 }
 
 export type ReportPeriod = "monthly" | "yearly";

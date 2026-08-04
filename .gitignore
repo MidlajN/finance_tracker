@@ -35,3 +35,6 @@ dist-ssr
 *.aab
 .release/
 play-store-assets/
+
+# Native module build output
+apps/mobile/modules/*/android/build/

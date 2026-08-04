@@ -15,6 +15,8 @@ import type {
   DeleteResourceSyncPayload,
   IgnoreFinancialEventSyncPayload,
   SyncQueueItem,
+  TransactionUpdates,
+  UpdateTransactionSyncPayload,
   UpdateAccountSyncPayload,
   UpdateAssetSyncPayload,
   UpdateFinancialEventSyncPayload,
@@ -57,7 +59,10 @@ import {
   matchAccountFromHint,
   matchMerchantFromRaw,
 } from "@finance/finance-core";
-import { normalizeMerchantName } from "@finance/shared-utils";
+import {
+  getCurrentMonthStart,
+  normalizeMerchantName,
+} from "@finance/shared-utils";
 
 import {
   AppMetadataRepository,
@@ -475,6 +480,41 @@ export class OfflineStorageService {
       event,
       queueItem,
     };
+  }
+
+  static async updateTransaction(
+    transaction: CachedTransaction,
+    updates: TransactionUpdates
+  ) {
+    await this.initialize();
+
+    await LocalTransactionRepository.upsert(transaction);
+
+    const deviceId = await this.getDeviceId();
+    const payload: UpdateTransactionSyncPayload = {
+      transactionId: transaction.id,
+      updates,
+    };
+
+    return SyncQueueRepository.enqueue(
+      "update_transaction",
+      payload,
+      deviceId,
+      `update_transaction:${transaction.id}`
+    );
+  }
+
+  static async deleteTransaction(
+    transactionId: string,
+    eventId: string
+  ) {
+    await this.initialize();
+
+    // The server cascades the transaction when its event is deleted;
+    // remove the local row immediately for instant UI.
+    await LocalTransactionRepository.delete(transactionId);
+
+    return this.deleteFinancialEvent(eventId);
   }
 
   static async deleteFinancialEvent(eventId: string) {
@@ -939,13 +979,13 @@ function toCachedAccount(resource: AccountLike): CachedAccount {
 }
 
 function toCachedBudget(resource: BudgetLike): CachedBudget {
-  const monthStart =
-    resource.month_start ?? new Date().toISOString().slice(0, 7) + "-01";
-
   return {
     ...withTimestamps(resource),
+    auto_renew: resource.auto_renew ?? true,
     currency: "INR",
-    month_start: monthStart,
+    ends_on: resource.ends_on ?? null,
+    period: resource.period ?? "monthly",
+    starts_on: resource.starts_on ?? getCurrentMonthStart(),
   };
 }
 

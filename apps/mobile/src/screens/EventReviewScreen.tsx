@@ -27,6 +27,7 @@ import { normalizeMerchantName } from "@finance/shared-utils";
 import { AccountPickerField } from "../components/finance/AccountPicker";
 import { CategoryPickerField } from "../components/finance/CategoryPicker";
 import { financeStyles } from "../components/finance/financeStyles";
+import { SavingOverlay } from "../components/finance/SavingOverlay";
 import { MobileDashboardService } from "../services/MobileDashboardService";
 import { useOfflineStore } from "../stores/offlineStore";
 import { useSyncStore } from "../stores/syncStore";
@@ -160,6 +161,9 @@ export function EventReviewScreen({
     );
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [savingAction, setSavingAction] = useState<"confirm" | "ignore" | null>(
+    null
+  );
 
   useEffect(() => {
     if (event && event.status !== "pending") {
@@ -247,20 +251,26 @@ export function EventReviewScreen({
     }
 
     setIsSaving(true);
+    setSavingAction("confirm");
     setError(null);
 
     try {
       await confirmFinancialEvent(event.id);
       await synchronize();
-      navigation.popTo("Transactions");
+      // Close the overlay Modal BEFORE navigating: unmounting a screen
+      // that still hosts an open Modal intermittently crashes the app on
+      // Android during the stack transition.
+      setIsSaving(false);
+      setSavingAction(null);
+      setTimeout(() => navigation.popTo("Transactions"), 80);
     } catch (confirmError) {
       setError(
         confirmError instanceof Error
           ? confirmError.message
           : "Unable to confirm this event."
       );
-    } finally {
       setIsSaving(false);
+      setSavingAction(null);
     }
   }
 
@@ -270,20 +280,23 @@ export function EventReviewScreen({
     }
 
     setIsSaving(true);
+    setSavingAction("ignore");
     setError(null);
 
     try {
       await ignoreFinancialEvent(event.id);
       await synchronize();
-      navigation.popTo("Transactions");
+      setIsSaving(false);
+      setSavingAction(null);
+      setTimeout(() => navigation.popTo("Transactions"), 80);
     } catch (ignoreError) {
       setError(
         ignoreError instanceof Error
           ? ignoreError.message
           : "Unable to ignore this event."
       );
-    } finally {
       setIsSaving(false);
+      setSavingAction(null);
     }
   }
 
@@ -651,6 +664,20 @@ export function EventReviewScreen({
           </MotiView>
         </KeyboardAvoidingView>
       </Modal>
+
+      <SavingOverlay
+        subtitle={
+          savingAction === "ignore"
+            ? "Removing it from your pending reviews"
+            : "Adding it to your transactions"
+        }
+        title={
+          savingAction === "ignore"
+            ? "Ignoring transaction"
+            : "Confirming transaction"
+        }
+        visible={isSaving && savingAction !== null}
+      />
     </ScrollView>
   );
 }

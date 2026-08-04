@@ -1,5 +1,7 @@
 import * as SQLite from "expo-sqlite";
 
+import { getCurrentMonthStart } from "@finance/shared-utils";
+
 import type {
   CachedBudget,
   CachedAccount,
@@ -27,7 +29,7 @@ import type {
 } from "@finance/shared-api";
 
 const DATABASE_NAME = "finance-platform.db";
-const SCHEMA_VERSION = "5";
+const SCHEMA_VERSION = "6";
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -78,6 +80,17 @@ async function ensureColumn(
 
 export async function initializeLocalDatabase() {
   const database = await getLocalDatabase();
+
+  // cached_budgets is a pure server cache. The legacy per-month shape
+  // (month_start) is dropped so the template shape below is recreated;
+  // the next sync repopulates it.
+  const legacyBudgetColumns = await database.getAllAsync<{ name: string }>(
+    "pragma table_info(cached_budgets);"
+  );
+
+  if (legacyBudgetColumns.some((row) => row.name === "month_start")) {
+    await database.execAsync("drop table cached_budgets;");
+  }
 
   await database.execAsync(`
     create table if not exists app_metadata (
@@ -186,14 +199,17 @@ export async function initializeLocalDatabase() {
       amount real not null,
       category_id text,
       currency text not null,
-      month_start text not null,
+      period text not null default 'monthly',
+      auto_renew integer not null default 1,
+      starts_on text not null,
+      ends_on text,
       category text,
       created_at text not null,
       updated_at text not null
     );
 
-    create index if not exists idx_cached_budgets_month
-      on cached_budgets(month_start);
+    create index if not exists idx_cached_budgets_starts_on
+      on cached_budgets(starts_on);
 
     create table if not exists cached_rules (
       id text primary key not null,
@@ -612,6 +628,15 @@ export class LocalTransactionRepository {
     );
   }
 
+  static async delete(id: string) {
+    const database = await getLocalDatabase();
+
+    await database.runAsync(
+      "delete from cached_transactions where id = ?;",
+      [id]
+    );
+  }
+
   static async clear() {
     const database = await getLocalDatabase();
 
@@ -856,7 +881,7 @@ export class LocalBudgetRepository {
       `
         select *
         from cached_budgets
-        order by month_start desc;
+        order by starts_on desc;
       `
     );
 
@@ -873,17 +898,23 @@ export class LocalBudgetRepository {
           amount,
           category_id,
           currency,
-          month_start,
+          period,
+          auto_renew,
+          starts_on,
+          ends_on,
           category,
           created_at,
           updated_at
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         on conflict(id) do update set
           amount = excluded.amount,
           category_id = excluded.category_id,
           currency = excluded.currency,
-          month_start = excluded.month_start,
+          period = excluded.period,
+          auto_renew = excluded.auto_renew,
+          starts_on = excluded.starts_on,
+          ends_on = excluded.ends_on,
           category = excluded.category,
           updated_at = excluded.updated_at;
       `,
@@ -892,7 +923,10 @@ export class LocalBudgetRepository {
         budget.amount,
         budget.category_id,
         budget.currency,
-        budget.month_start ?? new Date().toISOString().slice(0, 7) + "-01",
+        budget.period ?? "monthly",
+        budget.auto_renew === false ? 0 : 1,
+        budget.starts_on ?? getCurrentMonthStart(),
+        budget.ends_on ?? null,
         serializePersistenceJson(budget.category),
         budget.created_at,
         budget.updated_at,
@@ -1706,7 +1740,10 @@ interface CachedBudgetRow {
   amount: number;
   category_id: string | null;
   currency: string;
-  month_start: string;
+  period: string;
+  auto_renew: number;
+  starts_on: string;
+  ends_on: string | null;
   category: string | null;
   created_at: string;
   updated_at: string;
@@ -2041,7 +2078,10 @@ function toCachedBudget(row: CachedBudgetRow): CachedBudget {
     amount: row.amount,
     category_id: row.category_id,
     currency: row.currency,
-    month_start: row.month_start,
+    period: row.period as CachedBudget["period"],
+    auto_renew: row.auto_renew === 1,
+    starts_on: row.starts_on,
+    ends_on: row.ends_on,
     category: parseJson(row.category) as CachedBudget["category"],
     created_at: row.created_at,
     updated_at: row.updated_at,

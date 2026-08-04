@@ -23,6 +23,7 @@ import {
 } from "lucide-react-native";
 import {
   Animated,
+  Image,
   Modal,
   PanResponder,
   Platform,
@@ -37,6 +38,8 @@ import {
 } from "react-native";
 import { LineChart } from "react-native-chart-kit";
 import Svg, { Path } from "react-native-svg";
+
+import appMark from "../../assets/icon.png";
 
 import { MobileDashboardService } from "../services/MobileDashboardService";
 import { useOfflineStore } from "../stores/offlineStore";
@@ -190,7 +193,10 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.topBar}>
-          <Text style={styles.title}>Finance</Text>
+          <View style={styles.brandRow}>
+            <Image source={appMark} style={styles.brandMark} />
+            <Text style={styles.brandName}>FinAce</Text>
+          </View>
 
           <View style={styles.topActions}>
             <Pressable
@@ -218,13 +224,6 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
               />
             </Pressable>
           </View>
-        </View>
-
-        <View style={styles.dashboardIntro}>
-          <Text style={styles.dashboardIntroTitle}>Monthly overview</Text>
-          <Text style={styles.dashboardIntroText}>
-            Spending, income, and account balances at a glance.
-          </Text>
         </View>
 
         {(offlineError || syncError) && (
@@ -262,12 +261,14 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
 
         <View style={styles.summaryRow}>
           <SummaryCard
+            deltaGoodWhenUp
             deltaPercent={incomeDeltaPercent}
             Icon={ArrowUpRight}
             label="Income"
             value={monthlySpend.currentIncomeTotal}
           />
           <SummaryCard
+            deltaGoodWhenUp={false}
             deltaPercent={spendDeltaPercent}
             Icon={ArrowDownRight}
             label="Expense"
@@ -477,17 +478,28 @@ function MonthSelect({
   );
 }
 
-function DeltaChip({ percent }: { percent: number }) {
+function DeltaChip({
+  goodWhenUp,
+  percent,
+}: {
+  goodWhenUp: boolean;
+  percent: number;
+}) {
   const Icon = percent > 0 ? ArrowUp : percent < 0 ? ArrowDown : Minus;
+  // Direction is only meaningful relative to the metric: rising income is
+  // good, rising spend is not.
+  const favourable = percent > 0 ? goodWhenUp : !goodWhenUp;
+  const color =
+    percent === 0
+      ? premiumTheme.colors.ink
+      : favourable
+        ? premiumTheme.colors.success
+        : premiumTheme.colors.danger;
 
   return (
     <View style={styles.deltaChip}>
-      <Icon
-        color={premiumTheme.colors.ink}
-        size={11}
-        strokeWidth={2.6}
-      />
-      <Text style={styles.deltaPercentText}>
+      <Icon color={color} size={11} strokeWidth={2.6} />
+      <Text style={[styles.deltaPercentText, { color }]}>
         {Math.abs(percent)}%
       </Text>
       <Text style={styles.deltaCaptionText}>vs last month</Text>
@@ -687,11 +699,13 @@ function SummaryCornerWave() {
 }
 
 function SummaryCard({
+  deltaGoodWhenUp,
   deltaPercent,
   Icon,
   label,
   value,
 }: {
+  deltaGoodWhenUp: boolean;
   deltaPercent: number;
   Icon: DashboardIcon;
   label: string;
@@ -718,7 +732,7 @@ function SummaryCard({
       >
         {MobileDashboardService.getFormattedBalance(value)}
       </Text>
-      <DeltaChip percent={deltaPercent} />
+      <DeltaChip goodWhenUp={deltaGoodWhenUp} percent={deltaPercent} />
     </View>
   );
 }
@@ -986,6 +1000,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
   },
+  brandMark: {
+    borderRadius: 11,
+    height: 38,
+    width: 38,
+  },
+  brandName: {
+    color: premiumTheme.colors.ink,
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+  },
+  brandRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
   chart: {
     alignItems: "center",
     height: 168,
@@ -1067,24 +1097,6 @@ const styles = StyleSheet.create({
     color: premiumTheme.colors.danger,
     fontSize: 13,
     fontWeight: "700",
-  },
-  dashboardIntro: {
-    marginBottom: 28,
-    marginTop: 24,
-  },
-  dashboardIntroText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 13,
-    fontWeight: "500",
-    lineHeight: 20,
-    marginTop: 5,
-  },
-  dashboardIntroTitle: {
-    color: premiumTheme.colors.ink,
-    fontSize: 20,
-    fontWeight: "800",
-    letterSpacing: -0.4,
-    lineHeight: 27,
   },
   heroAmount: {
     color: premiumTheme.colors.ink,
@@ -1353,13 +1365,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: -1,
   },
-  title: {
-    color: premiumTheme.colors.ink,
-    fontSize: 27,
-    fontWeight: "800",
-    letterSpacing: -0.7,
-    lineHeight: 34,
-  },
   topActions: {
     flexDirection: "row",
     gap: 10,
@@ -1368,6 +1373,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
+    marginBottom: 28,
   },
   viewAllPill: {
     backgroundColor: "#ffffff",

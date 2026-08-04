@@ -139,6 +139,14 @@ export default function App() {
 
   function navigateFromBottomBar(route: AppBottomNavigationRoute) {
     if (navigationRef.isReady()) {
+      // Re-tapping the tab for the screen already on top would reset the
+      // stack and replay the screen's entrance transition. Sub-screens of
+      // the tab (e.g. Events under Transactions) still fall through so the
+      // tap pops back to the tab root.
+      if (navigationRef.getCurrentRoute()?.name === route) {
+        return;
+      }
+
       const routes =
         route === "Dashboard"
           ? [{ name: "Dashboard" as const }]

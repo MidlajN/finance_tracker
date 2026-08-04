@@ -339,15 +339,22 @@ const SMS_APP_PACKAGES = new Set([
     "com.miui.smsextra",
 ]);
 
-// Chat/social apps: mentions of money here are conversation, never a
-// bank alert.
+// Never a bank alert. Chat/social apps: money mentions are
+// conversation. Expense trackers: their notifications mirror
+// transactions we already captured — parsing them double-counts.
 const BLOCKED_PACKAGES = new Set([
+    // Chat / social
     "com.whatsapp",
     "com.whatsapp.w4b",
     "org.telegram.messenger",
     "com.instagram.android",
     "com.facebook.katana",
     "com.facebook.orca",
+    // Expense trackers / PFM apps
+    "com.daamitt.walnut.app", // axio (Walnut)
+    "com.whizdm.moneyview.loans", // Moneyview
+    "com.smartspends", // ET Money
+    "in.indwealth", // INDmoney
 ]);
 
 // DLT header shape; the optional route suffix marks P = promotional.
@@ -425,6 +432,11 @@ const PROMO_REJECT_PATTERN =
 const FUTURE_TENSE_PATTERN =
     /\bwill\s+be\s+(?:debited|credited)\b/i;
 
+// Bill/dues reminders ask for a payment that has not happened yet;
+// completed-transaction alerts never use this phrasing.
+const BILL_REMINDER_PATTERN =
+    /\b(?:due\s+date\s+alert|due\s+for\s+payment|is\s+due|pay\s+immediately|pay\s+your\s+bill|overdue|if\s+already\s+paid)\b/i;
+
 // Words that also appear in genuine credits (e.g. scratch-card
 // cashback), so they only lower confidence instead of rejecting.
 const PROMO_HINT_PATTERN =
@@ -494,6 +506,10 @@ function isPromotionalNotification(
     }
 
     if (FUTURE_TENSE_PATTERN.test(text)) {
+        return true;
+    }
+
+    if (BILL_REMINDER_PATTERN.test(text)) {
         return true;
     }
 
@@ -759,7 +775,7 @@ function parseMerchantName(
 
     for (const candidate of candidates) {
         const incomingMatch = candidate.match(
-            /^\s*([A-Za-z0-9][A-Za-z0-9&().'\-\s]{1,48}?)\s+(?:paid|sent)\s+you\b/i
+            /^\s*([A-Za-z0-9][A-Za-z0-9&().'\-\s]{1,48}?)\s+(?:has\s+|have\s+|just\s+)?(?:paid|sent)\s+you\b/i
         );
 
         if (incomingMatch?.[1]) {

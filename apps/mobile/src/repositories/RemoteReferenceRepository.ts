@@ -1,4 +1,5 @@
 import type {
+  BudgetPeriod,
   CachedBudget,
   CachedCategory,
   CachedFinancialRule,
@@ -9,6 +10,7 @@ import type {
   MerchantReference,
   MerchantLike,
 } from "@finance/shared-types";
+import { getCurrentMonthStart } from "@finance/shared-utils";
 
 import { supabase } from "../lib/supabase";
 
@@ -39,7 +41,10 @@ interface BudgetRow {
   amount: number;
   category_id: string | null;
   currency: string;
-  month_start: string;
+  period: BudgetPeriod;
+  auto_renew: boolean;
+  starts_on: string;
+  ends_on: string | null;
   category?: CategoryReference | null;
   created_at: string;
   updated_at: string;
@@ -93,7 +98,10 @@ function toCachedBudget(row: BudgetRow): CachedBudget {
     amount: row.amount,
     category_id: row.category_id,
     currency: row.currency,
-    month_start: row.month_start,
+    period: row.period,
+    auto_renew: row.auto_renew,
+    starts_on: row.starts_on,
+    ends_on: row.ends_on,
     category: row.category ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -313,7 +321,7 @@ export class RemoteBudgetRepository {
         *,
         category:categories(*)
       `)
-      .order("month_start", {
+      .order("starts_on", {
         ascending: false,
       });
 
@@ -329,7 +337,10 @@ export class RemoteBudgetRepository {
     budget: {
       amount: number;
       category_id: string | null;
-      month_start?: string;
+      period?: BudgetPeriod;
+      auto_renew?: boolean;
+      starts_on?: string;
+      ends_on?: string | null;
     }
   ) {
     if (!budget.category_id) {
@@ -342,10 +353,12 @@ export class RemoteBudgetRepository {
       .insert({
         id: localId,
         amount: budget.amount,
+        auto_renew: budget.auto_renew ?? true,
         category_id: budget.category_id,
         currency: "INR",
-        month_start:
-          budget.month_start ?? new Date().toISOString().slice(0, 7) + "-01",
+        ends_on: budget.ends_on ?? null,
+        period: budget.period ?? "monthly",
+        starts_on: budget.starts_on ?? getCurrentMonthStart(),
         user_id: userId,
       })
       .select(`

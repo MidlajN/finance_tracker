@@ -78,8 +78,20 @@ export function TransactionDateField({
           <CalendarDays color="#4f46e5" size={17} strokeWidth={2.5} />
         </View>
         <View style={styles.transactionSelectCopy}>
-          <Text style={styles.transactionSelectLabel}>Transaction date</Text>
-          <Text style={styles.transactionSelectValue}>
+          <Text
+            style={[
+              styles.transactionSelectLabel,
+              grouped && styles.transactionSelectLabelGrouped,
+            ]}
+          >
+            {grouped ? "Date" : "Transaction date"}
+          </Text>
+          <Text
+            style={[
+              styles.transactionSelectValue,
+              grouped && styles.transactionSelectValueGrouped,
+            ]}
+          >
             {formatTransactionDate(value)}
           </Text>
         </View>
@@ -342,10 +354,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
   },
+  transactionSelectLabelGrouped: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
   transactionSelectValue: {
     color: "#0f172a",
     fontSize: 14,
     fontWeight: "900",
     marginTop: 2,
+  },
+  transactionSelectValueGrouped: {
+    fontWeight: "700",
+    marginTop: 3,
   },
 });

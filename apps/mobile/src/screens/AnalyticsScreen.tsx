@@ -25,7 +25,6 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { LineChart } from "react-native-chart-kit";
 import Svg, {
   Circle,
   Defs,
@@ -748,8 +747,8 @@ export function AnalyticsScreen() {
                   y1="0"
                   y2="1"
                 >
-                  <Stop offset="0" stopColor="#7c6ce8" stopOpacity="0.04" />
-                  <Stop offset="1" stopColor="#7c6ce8" stopOpacity="0.09" />
+                  <Stop offset="0" stopColor="#7c6ce8" stopOpacity="0.01" />
+                  <Stop offset="1" stopColor="#7c6ce8" stopOpacity="0.03" />
                 </LinearGradient>
               </Defs>
               <Rect fill="url(#analyticsStatsBg)" height="100%" width="100%" />
@@ -786,47 +785,88 @@ export function AnalyticsScreen() {
       </View>
 
       <View style={styles.analyticsChartCard}>
+        <View pointerEvents="none" style={styles.analyticsChartCardBg}>
+          <Svg height="100%" preserveAspectRatio="none" width="100%">
+            <Defs>
+              <LinearGradient
+                id="analyticsChartCardBg"
+                x1="0"
+                x2="0"
+                y1="0"
+                y2="1"
+              >
+                <Stop offset="0" stopColor="#101828" stopOpacity="0.04" />
+                <Stop offset="0.55" stopColor="#101828" stopOpacity="0.015" />
+                <Stop offset="1" stopColor="#101828" stopOpacity="0" />
+              </LinearGradient>
+            </Defs>
+            <Rect
+              fill="url(#analyticsChartCardBg)"
+              height="100%"
+              width="100%"
+            />
+          </Svg>
+        </View>
         <View style={styles.analyticsCardHeader}>
           <Text style={styles.analyticsSectionTitle}>
             Income vs Expense
           </Text>
           <View style={styles.analyticsLegendRow}>
-            <AnalyticsLegendDot color="#16a34a" label="Income" />
-            <AnalyticsLegendDot color="#0f172a" label="Expense" />
+            <View style={styles.analyticsLegendItem}>
+              <View
+                style={[
+                  styles.analyticsLegendDot,
+                  { backgroundColor: "#16a34a" },
+                ]}
+              />
+              <Text style={styles.analyticsLegendText}>Income</Text>
+            </View>
+            <View style={styles.analyticsLegendItem}>
+              <View
+                style={[
+                  styles.analyticsLegendDot,
+                  { backgroundColor: premiumTheme.colors.ink },
+                ]}
+              />
+              <Text style={styles.analyticsLegendText}>Expense</Text>
+            </View>
           </View>
         </View>
+
         <CashFlowLineChart series={chartSeries} width={chartWidth} />
+
         {spendStats ? (
           <View style={styles.analyticsChartStats}>
-            <AnalyticsSummaryStat
-              Icon={TrendingUp}
-              label="Avg. per day"
-              round
-              value={MobileDashboardService.getFormattedBalance(
-                spendStats.avgPerDay
-              )}
-            />
-            <View style={styles.analyticsSummaryStatDivider} />
-            <AnalyticsSummaryStat
-              Icon={CalendarDays}
-              label="Highest day"
-              round
-              sub={spendStats.highest?.label}
-              value={
-                spendStats.highest
-                  ? MobileDashboardService.getFormattedBalance(
-                      spendStats.highest.amount
-                    )
-                  : "—"
-              }
-            />
-            <View style={styles.analyticsSummaryStatDivider} />
-            <AnalyticsSummaryStat
-              Icon={ReceiptText}
-              label="Total days"
-              round
-              value={`${spendStats.dayCount}`}
-            />
+          <AnalyticsSummaryStat
+            accent={premiumTheme.colors.accent}
+            Icon={TrendingUp}
+            label="Avg. per day"
+            round
+            value={MobileDashboardService.getFormattedBalance(
+              spendStats.avgPerDay
+            )}
+          />
+          <AnalyticsSummaryStat
+            accent={premiumTheme.colors.accent}
+            Icon={CalendarDays}
+            label="Highest day"
+            round
+            sub={spendStats.highest?.label}
+            value={
+              spendStats.highest
+                ? MobileDashboardService.getFormattedBalance(
+                    spendStats.highest.amount
+                  )
+                : "—"
+            }
+          />
+          <AnalyticsSummaryStat
+            accent={premiumTheme.colors.accent}
+            Icon={ReceiptText}
+            label="Total days"
+            round
+            value={`${spendStats.dayCount}`}
+          />
           </View>
         ) : null}
       </View>
@@ -962,12 +1002,15 @@ function AnalyticsSummaryStat({
           styles.analyticsSummaryStatIcon,
           round && styles.analyticsSummaryStatIconRound,
           tinted && styles.analyticsSummaryStatIconFilled,
-          tinted && { backgroundColor: `${accent}1a` },
+          (tinted ||
+            (round && accent !== premiumTheme.colors.ink)) && {
+            backgroundColor: `${accent}14`,
+          },
         ]}
       >
         <Icon
           color={accent}
-          size={tinted ? 15 : round ? 17 : 15}
+          size={tinted ? 15 : round ? 14 : 15}
           strokeWidth={2.3}
         />
       </View>
@@ -993,26 +1036,29 @@ function AnalyticsSummaryStat({
   );
 }
 
-function AnalyticsLegendDot({
-  color,
-  label,
-}: {
-  color: string;
-  label: string;
-}) {
-  return (
-    <View style={styles.analyticsLegendItem}>
-      <View
-        style={[
-          styles.analyticsLegendDot,
-          {
-            backgroundColor: color,
-          },
-        ]}
-      />
-      <Text style={styles.analyticsLegendText}>{label}</Text>
-    </View>
-  );
+// Catmull-Rom smoothing: rounded without chart-kit's bezier overshoot.
+function buildSmoothPath(points: { x: number; y: number }[]) {
+  if (points.length === 0) return "";
+  if (points.length === 1) {
+    return `M ${points[0].x} ${points[0].y}`;
+  }
+
+  let path = `M ${points[0].x} ${points[0].y}`;
+
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const p0 = points[i - 1] ?? points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] ?? p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+
+    path += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
+  }
+
+  return path;
 }
 
 function CashFlowLineChart({
@@ -1022,110 +1068,220 @@ function CashFlowLineChart({
   series: AnalyticsChartSeries;
   width: number;
 }) {
-  const lastIndex = series.expense.length - 1;
-  const lastIncome = series.income[lastIndex];
-  const lastExpense = series.expense[lastIndex];
+  const height = 224;
+  const padTop = 14;
+  const padBottom = 28;
+  const padLeft = 42;
+  const padRight = 16;
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+
+  const count = series.expense.length;
+  const yMax =
+    Math.max(1, ...series.income, ...series.expense) * 1.08;
+
+  const toX = (index: number) =>
+    padLeft + (count > 1 ? (index * plotWidth) / (count - 1) : plotWidth / 2);
+  const toY = (value: number) =>
+    padTop + plotHeight * (1 - value / yMax);
+
+  const incomePoints = series.income.map((value, index) => ({
+    x: toX(index),
+    y: toY(value),
+  }));
+  const expensePoints = series.expense.map((value, index) => ({
+    x: toX(index),
+    y: toY(value),
+  }));
+
+  const baseline = padTop + plotHeight;
+  const incomePath = buildSmoothPath(incomePoints);
+  const expensePath = buildSmoothPath(expensePoints);
+  const areaSuffix = (points: { x: number; y: number }[]) =>
+    ` L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`;
+
+  const gridSteps = [0, 1, 2, 3, 4];
+  const lastIndex = count - 1;
+  const lastIncome = series.income[lastIndex] ?? 0;
+  const lastExpense = series.expense[lastIndex] ?? 0;
   const endValuesEqual = lastIncome === lastExpense;
+
+  // Nudge endpoint pills apart when the lines finish close together.
+  let incomeEndY = incomePoints[lastIndex]?.y ?? baseline;
+  let expenseEndY = expensePoints[lastIndex]?.y ?? baseline;
+
+  if (!endValuesEqual && Math.abs(incomeEndY - expenseEndY) < 24) {
+    const middle = (incomeEndY + expenseEndY) / 2;
+    const direction = incomeEndY <= expenseEndY ? 1 : -1;
+
+    incomeEndY = middle - direction * 12;
+    expenseEndY = middle + direction * 12;
+  }
+
+  const xLabelIndices =
+    count <= 6
+      ? series.labels.map((_, index) => index)
+      : [0, 1, 2, 3].map((step) =>
+          Math.round((step * (count - 1)) / 3)
+        );
+
+  const endpoints: {
+    color: string;
+    key: string;
+    pillY: number;
+    pointY: number;
+    value: number;
+  }[] = endValuesEqual
+    ? [
+        {
+          color: premiumTheme.colors.ink,
+          key: "combined",
+          pillY: expenseEndY,
+          pointY: expensePoints[lastIndex]?.y ?? baseline,
+          value: lastExpense,
+        },
+      ]
+    : [
+        {
+          color: "#16a34a",
+          key: "income",
+          pillY: incomeEndY,
+          pointY: incomePoints[lastIndex]?.y ?? baseline,
+          value: lastIncome,
+        },
+        {
+          color: premiumTheme.colors.ink,
+          key: "expense",
+          pillY: expenseEndY,
+          pointY: expensePoints[lastIndex]?.y ?? baseline,
+          value: lastExpense,
+        },
+      ];
 
   return (
     <View style={styles.analyticsLineChartWrap}>
-      <LineChart
-        bezier
-        chartConfig={{
-          backgroundGradientFrom: "#ffffff",
-          backgroundGradientFromOpacity: 0,
-          backgroundGradientTo: "#ffffff",
-          backgroundGradientToOpacity: 0,
-          color: (opacity = 1) => `rgba(15, 23, 42, ${opacity})`,
-          decimalPlaces: 0,
-          fillShadowGradient: "#0f172a",
-          fillShadowGradientOpacity: 0.07,
-          labelColor: () => "#667085",
-          propsForBackgroundLines: {
-            stroke: "#eef0f4",
-            strokeDasharray: "",
-          },
-          propsForDots: {
-            r: "0",
-          },
-        }}
-        data={{
-          labels: series.labels,
-          datasets: [
-            {
-              color: () => "#16a34a",
-              data: series.income,
-              strokeWidth: 2.5,
-            },
-            {
-              color: () => "#0f172a",
-              data: series.expense,
-              strokeWidth: 2.5,
-            },
-          ],
-        }}
-        formatYLabel={(value) => formatCompactAmount(Number(value))}
-        fromZero
-        height={220}
-        renderDotContent={({
-          index,
-          indexData,
-          x,
-          y,
-        }: {
-          index: number;
-          indexData: number;
-          x: number;
-          y: number;
-        }) => {
-          if (index !== lastIndex) {
-            return null;
-          }
+      <Svg height={height} width={width}>
+        <Defs>
+          <LinearGradient id="cashFlowIncomeFill" x1="0" x2="0" y1="0" y2="1">
+            <Stop offset="0" stopColor="#16a34a" stopOpacity={0.16} />
+            <Stop offset="1" stopColor="#16a34a" stopOpacity={0.01} />
+          </LinearGradient>
+          <LinearGradient id="cashFlowExpenseFill" x1="0" x2="0" y1="0" y2="1">
+            <Stop offset="0" stopColor="#3f4a63" stopOpacity={0.14} />
+            <Stop offset="1" stopColor="#3f4a63" stopOpacity={0.01} />
+          </LinearGradient>
+        </Defs>
 
-          // Two datasets share this callback; the point's value tells them
-          // apart. Equal endpoints collapse to one ink badge (drawn twice
-          // at identical coordinates).
-          const isIncome = !endValuesEqual && indexData === lastIncome;
-          const label = `₹${Math.round(indexData).toLocaleString("en-IN")}`;
-          const badgeWidth = label.length * 6.4 + 14;
+        {gridSteps.map((step) => {
+          const y = padTop + (plotHeight * step) / 4;
+          const value = yMax * (1 - step / 4);
 
           return (
-            <G key={isIncome ? "income-badge" : "expense-badge"}>
+            <G key={`grid-${step}`}>
+              <Path
+                d={`M ${padLeft} ${y} H ${padLeft + plotWidth}`}
+                stroke={step === 4 ? "#e4e7ec" : "#f2f4f7"}
+                strokeWidth={1}
+              />
+              <SvgText
+                fill="#98a2b3"
+                fontSize={10.5}
+                fontWeight="600"
+                textAnchor="end"
+                x={padLeft - 9}
+                y={y + 3.5}
+              >
+                {step === 4 ? "0" : formatCompactAmount(value)}
+              </SvgText>
+            </G>
+          );
+        })}
+
+        {count > 1 ? (
+          <>
+            <Path
+              d={`${incomePath}${areaSuffix(incomePoints)}`}
+              fill="url(#cashFlowIncomeFill)"
+            />
+            <Path
+              d={`${expensePath}${areaSuffix(expensePoints)}`}
+              fill="url(#cashFlowExpenseFill)"
+            />
+          </>
+        ) : null}
+
+        <Path
+          d={incomePath}
+          fill="none"
+          stroke="#16a34a"
+          strokeLinecap="round"
+          strokeWidth={2.4}
+        />
+        <Path
+          d={expensePath}
+          fill="none"
+          stroke={premiumTheme.colors.ink}
+          strokeLinecap="round"
+          strokeWidth={2.4}
+        />
+
+        {endpoints.map((endpoint) => {
+          const label = `₹${Math.round(endpoint.value).toLocaleString(
+            "en-IN"
+          )}`;
+          const pillWidth = label.length * 6.6 + 18;
+          const dotX = toX(lastIndex);
+
+          return (
+            <G key={endpoint.key}>
               <Circle
-                cx={x}
-                cy={y}
-                fill={isIncome ? "#16a34a" : "#0f172a"}
+                cx={dotX}
+                cy={endpoint.pointY}
+                fill={endpoint.color}
                 r={4.5}
               />
               <Rect
-                fill={isIncome ? "#16a34a" : "#0f172a"}
-                height={20}
-                rx={6}
-                width={badgeWidth}
-                x={x - badgeWidth - 9}
-                y={y - 10}
+                fill={endpoint.color}
+                height={23}
+                rx={8}
+                width={pillWidth}
+                x={dotX - pillWidth - 10}
+                y={endpoint.pillY - 11.5}
               />
               <SvgText
                 fill="#ffffff"
-                fontSize={10}
+                fontSize={10.5}
                 fontWeight="700"
                 textAnchor="middle"
-                x={x - 9 - badgeWidth / 2}
-                y={y + 3.5}
+                x={dotX - 10 - pillWidth / 2}
+                y={endpoint.pillY + 3.5}
               >
                 {label}
               </SvgText>
             </G>
           );
-        }}
-        segments={4}
-        style={styles.analyticsLineChart}
-        width={width}
-        withInnerLines
-        withOuterLines={false}
-        withShadow
-        withVerticalLines={false}
-      />
+        })}
+
+        {xLabelIndices.map((index) => (
+          <SvgText
+            fill="#98a2b3"
+            fontSize={10}
+            fontWeight="600"
+            key={`x-${index}`}
+            textAnchor={
+              index === 0
+                ? "start"
+                : index === lastIndex
+                  ? "end"
+                  : "middle"
+            }
+            x={toX(index)}
+            y={height - 7}
+          >
+            {series.labels[index] ?? ""}
+          </SvgText>
+        ))}
+      </Svg>
     </View>
   );
 }
@@ -1826,12 +1982,19 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   analyticsChartCard: {
-    backgroundColor: premiumTheme.colors.elevated,
+    backgroundColor: "#ffffff",
     borderRadius: premiumTheme.radius.section,
     gap: 12,
     overflow: "hidden",
     padding: 14,
     ...premiumTheme.shadow.floating,
+  },
+  analyticsChartCardBg: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
   analyticsContainer: {
     backgroundColor: premiumTheme.colors.canvas,
@@ -2135,13 +2298,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
   },
-  analyticsLineChart: {
-    marginLeft: -18,
-    marginTop: 2,
-  },
   analyticsLineChartWrap: {
-    marginBottom: -4,
-    marginLeft: -4,
+    marginBottom: -2,
     overflow: "hidden",
   },
   analyticsSummaryAmount: {
@@ -2229,23 +2387,20 @@ const styles = StyleSheet.create({
   },
   analyticsSummaryStatIconRound: {
     backgroundColor: "#e9ebf1",
-    borderRadius: 10,
+    borderRadius: 9,
     borderWidth: 0,
-    height: 38,
-    width: 38,
+    height: 32,
+    width: 32,
   },
   analyticsChartStats: {
-    backgroundColor: premiumTheme.colors.field,
-    borderTopColor: premiumTheme.colors.border,
+    borderTopColor: premiumTheme.colors.divider,
     borderTopWidth: premiumHairline,
     flexDirection: "row",
-    gap: 12,
-    marginBottom: -14,
-    marginHorizontal: -14,
+    gap: 16,
     marginTop: 2,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingTop: 14,
   },
+
   analyticsSummaryStatSub: {
     color: premiumTheme.colors.secondary,
     fontSize: 10,

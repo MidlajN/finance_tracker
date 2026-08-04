@@ -22,7 +22,8 @@ import {
 import type { DimensionValue } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 
-import type { CachedCategory } from "@finance/shared-types";
+import type { BudgetPeriod, CachedCategory } from "@finance/shared-types";
+import { getCurrentMonthStart } from "@finance/shared-utils";
 
 import { CategoryPickerOption } from "../components/finance/CategoryPicker";
 import { financeStyles } from "../components/finance/financeStyles";
@@ -33,6 +34,30 @@ import { premiumHairline, premiumTheme } from "../theme/premiumTheme";
 import { formatMonthRange, getFrequentCategoryIds } from "../utils/financeFormat";
 import { darkenColor, getCategoryVisual } from "../utils/financeVisuals";
 
+const BUDGET_PERIOD_OPTIONS: {
+  label: string;
+  value: BudgetPeriod;
+}[] = [
+  { label: "Weekly", value: "weekly" },
+  { label: "Monthly", value: "monthly" },
+  { label: "Quarterly", value: "quarterly" },
+  { label: "Yearly", value: "yearly" },
+];
+
+const BUDGET_PERIOD_LABELS: Record<BudgetPeriod, string> = {
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  weekly: "Weekly",
+  yearly: "Yearly",
+};
+
+function formatLocalIsoDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export function BudgetsScreen() {
   const budgets = useOfflineStore((state) => state.budgets);
   const categories = useOfflineStore((state) => state.categories);
@@ -40,6 +65,8 @@ export function BudgetsScreen() {
   const createBudget = useOfflineStore((state) => state.createBudget);
   const synchronize = useSyncStore((state) => state.synchronize);
   const [budgetAmount, setBudgetAmount] = useState("");
+  const [budgetPeriod, setBudgetPeriod] = useState<BudgetPeriod>("monthly");
+  const [budgetAutoRenew, setBudgetAutoRenew] = useState(true);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [budgetError, setBudgetError] = useState<string | null>(null);
   const [isSavingBudget, setIsSavingBudget] = useState(false);
@@ -174,7 +201,7 @@ export function BudgetsScreen() {
       )
     ) {
       setBudgetError(
-        "A budget already exists for this category this month."
+        "An active budget already exists for this category."
       );
       return;
     }
@@ -185,12 +212,21 @@ export function BudgetsScreen() {
     try {
       await createBudget({
         amount,
+        auto_renew: budgetAutoRenew,
         category: selectedCategory ?? null,
         category_id: categoryId,
-        month_start: new Date().toISOString().slice(0, 7) + "-01",
+        period: budgetPeriod,
+        // Weekly cycles anchor on today; month-based cycles anchor on the
+        // calendar month so windows match what users expect.
+        starts_on:
+          budgetPeriod === "weekly"
+            ? formatLocalIsoDate(new Date())
+            : getCurrentMonthStart(),
       });
       await synchronize();
       setBudgetAmount("");
+      setBudgetPeriod("monthly");
+      setBudgetAutoRenew(true);
       setCategoryId(null);
       setBudgetError(null);
       closeBudgetForm();
@@ -326,7 +362,7 @@ export function BudgetsScreen() {
                 <View style={financeStyles.merchantPickerTitleBlock}>
                   <Text style={financeStyles.merchantPickerTitle}>Add budget</Text>
                   <Text style={financeStyles.merchantPickerSubtitle}>
-                    Set a monthly spending limit for a category.
+                    Set a spending limit that repeats automatically.
                   </Text>
                 </View>
                 <Pressable
@@ -343,7 +379,9 @@ export function BudgetsScreen() {
                 style={styles.budgetFormScroll}
               >
                 <View style={styles.budgetLimitCard}>
-                  <Text style={styles.budgetLimitLabel}>Monthly limit</Text>
+                  <Text style={styles.budgetLimitLabel}>
+                    {BUDGET_PERIOD_LABELS[budgetPeriod]} limit
+                  </Text>
                   <View style={styles.budgetLimitRow}>
                     <Text style={styles.budgetLimitCurrency}>₹</Text>
                     <TextInput
@@ -376,6 +414,59 @@ export function BudgetsScreen() {
                     </Pressable>
                   ))}
                 </View>
+
+                <View style={styles.budgetPeriodRow}>
+                  {BUDGET_PERIOD_OPTIONS.map((option) => (
+                    <Pressable
+                      key={option.value}
+                      onPress={() => setBudgetPeriod(option.value)}
+                      style={[
+                        styles.budgetPeriodButton,
+                        budgetPeriod === option.value &&
+                          styles.budgetPeriodButtonActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.budgetPeriodText,
+                          budgetPeriod === option.value &&
+                            styles.budgetPeriodTextActive,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <Pressable
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: budgetAutoRenew }}
+                  onPress={() => setBudgetAutoRenew(!budgetAutoRenew)}
+                  style={styles.budgetRenewRow}
+                >
+                  <View style={styles.budgetRenewCopy}>
+                    <Text style={styles.budgetRenewTitle}>Auto renew</Text>
+                    <Text style={styles.budgetRenewText}>
+                      {budgetAutoRenew
+                        ? "Repeats automatically each period."
+                        : "Runs for one period, then ends."}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.budgetRenewTrack,
+                      budgetAutoRenew && styles.budgetRenewTrackOn,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.budgetRenewKnob,
+                        budgetAutoRenew && styles.budgetRenewKnobOn,
+                      ]}
+                    />
+                  </View>
+                </Pressable>
 
                 <View style={styles.budgetCategoryHeaderRow}>
                   <Text style={styles.budgetCategoryTitle}>
@@ -689,6 +780,10 @@ function BudgetProgressRow({
             {MobileDashboardService.getFormattedBalance(item.spent)} of{" "}
             {MobileDashboardService.getFormattedBalance(item.budget.amount)}
           </Text>
+          <Text style={styles.budgetProgressMeta}>
+            {BUDGET_PERIOD_LABELS[item.budget.period ?? "monthly"]}
+            {(item.budget.auto_renew ?? true) ? " · Auto renew ✓" : " · One period"}
+          </Text>
         </View>
         <View
           style={[
@@ -940,6 +1035,42 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 42,
   },
+  budgetPeriodButton: {
+    alignItems: "center",
+    borderColor: "transparent",
+    borderRadius: 10,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 34,
+  },
+  budgetPeriodButtonActive: {
+    backgroundColor: "#ffffff",
+    borderColor: premiumTheme.colors.border,
+    ...premiumTheme.shadow.soft,
+  },
+  budgetPeriodRow: {
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 14,
+    flexDirection: "row",
+    gap: 4,
+    marginBottom: 12,
+    padding: 4,
+  },
+  budgetPeriodText: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  budgetPeriodTextActive: {
+    color: premiumTheme.colors.ink,
+  },
+  budgetProgressMeta: {
+    color: premiumTheme.colors.muted,
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 2,
+  },
   budgetProgressName: {
     color: "#0f172a",
     fontSize: 14,
@@ -985,6 +1116,50 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 7,
     marginBottom: 16,
+  },
+  budgetRenewCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  budgetRenewKnob: {
+    backgroundColor: "#ffffff",
+    borderRadius: 999,
+    height: 22,
+    width: 22,
+    ...premiumTheme.shadow.soft,
+  },
+  budgetRenewKnobOn: {
+    alignSelf: "flex-end",
+  },
+  budgetRenewRow: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 16,
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  budgetRenewText: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  budgetRenewTitle: {
+    color: premiumTheme.colors.ink,
+    fontSize: 13.5,
+    fontWeight: "700",
+  },
+  budgetRenewTrack: {
+    backgroundColor: "#d7dbe3",
+    borderRadius: 999,
+    height: 26,
+    padding: 2,
+    width: 44,
+  },
+  budgetRenewTrackOn: {
+    backgroundColor: premiumTheme.colors.ink,
   },
   budgetRing: {
     alignItems: "center",

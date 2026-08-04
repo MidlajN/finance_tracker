@@ -89,6 +89,22 @@ test("recognizes an incoming person-to-person payment", () => {
     assert.equal(parsed?.merchantName, "Anita");
 });
 
+test("keeps the auxiliary verb out of the payer name in GPay credits", () => {
+    const parsed = parseNotificationPayload({
+        id: "gpay-credit-key",
+        packageName: "com.google.android.apps.nbu.paisa.user",
+        applicationName: "Google Pay",
+        title: "You've received a payment",
+        text: "SHAJAHAN V I has paid you ₹136.00 for Rufu",
+        subText: null,
+        postedAt: "2026-08-04T10:00:00.000Z",
+    });
+
+    assert.equal(parsed?.direction, "credit");
+    assert.equal(parsed?.amount, 136);
+    assert.equal(parsed?.merchantName, "SHAJAHAN V I");
+});
+
 test("rejects a pre-approved loan offer despite the word credited", () => {
     const parsed = parseNotificationPayload({
         id: "loan-spam-key",
@@ -406,6 +422,57 @@ test("drops blocked sources before parsing", () => {
         text: "I paid you Rs.500 via UPI yesterday, check your account.",
         subText: null,
         postedAt: "2026-07-31T10:00:00.000Z",
+    });
+
+    assert.equal(parsed, null);
+});
+
+test("rejects a bill-due reminder despite amount and the word paid", () => {
+    const parsed = parseNotificationPayload({
+        id: "jio-bill-key",
+        packageName: "com.google.android.apps.messaging",
+        applicationName: "Messages",
+        title: "JD-JioNet",
+        text: "BILL DUE DATE ALERT : Your bill dated 23-Jul-26 is due for payment TODAY. Jio Number : 9895030923 Total amount payable : Rs. 529.82. Please pay immediately to enjoy uninterrupted services. To pay your bill through MyJio app, click http://tiny.jio.com/dmyjiobllpay Overdue charges will be applicable, in case of delay in payment. Kindly ignore, if already paid.",
+        subText: null,
+        postedAt: "2026-08-01T09:00:00.000Z",
+    });
+
+    assert.equal(parsed, null);
+});
+
+test("keeps a completed bill-payment confirmation", () => {
+    const parsed = parseNotificationPayload({
+        id: "bill-paid-key",
+        packageName: "com.google.android.apps.messaging",
+        applicationName: "Messages",
+        title: "JD-JioNet",
+        text: "Payment of Rs. 529.82 received for your Jio Number 9895030923 on 01-08-26. Ref No 88771234. Thank you.",
+        subText: null,
+        postedAt: "2026-08-01T10:00:00.000Z",
+    });
+
+    assert.ok(parsed);
+    assert.equal(parsed.amount, 529.82);
+});
+
+test("blocks expense-tracker app notifications", () => {
+    assert.equal(
+        getNotificationSourceTrust({
+            packageName: "com.daamitt.walnut.app",
+            title: "axio",
+        }),
+        "blocked"
+    );
+
+    const parsed = parseNotificationPayload({
+        id: "tracker-summary-key",
+        packageName: "com.daamitt.walnut.app",
+        applicationName: "axio",
+        title: "axio",
+        text: "₹42 spent today",
+        subText: null,
+        postedAt: "2026-08-01T20:00:00.000Z",
     });
 
     assert.equal(parsed, null);

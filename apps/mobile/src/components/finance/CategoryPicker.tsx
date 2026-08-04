@@ -41,8 +41,7 @@ export function CategoryPickerField({
     const frequencyRank = new Map(
       frequentCategoryIds.map((categoryId, index) => [categoryId, index])
     );
-
-    return categories
+    const quick = categories
       .slice()
       .sort((first, second) => {
         const firstRank = frequencyRank.get(first.id) ?? Number.MAX_SAFE_INTEGER;
@@ -54,7 +53,28 @@ export function CategoryPickerField({
         );
       })
       .slice(0, 5);
-  }, [categories, frequentCategoryIds]);
+
+    // A selection made from the full picker must stay visible: swap it
+    // into the last quick slot when it is outside the frequent five.
+    if (
+      selectedCategoryId &&
+      !quick.some((category) => category.id === selectedCategoryId)
+    ) {
+      const selected = categories.find(
+        (category) => category.id === selectedCategoryId
+      );
+
+      if (selected) {
+        if (quick.length === 0) {
+          quick.push(selected);
+        } else {
+          quick[quick.length - 1] = selected;
+        }
+      }
+    }
+
+    return quick;
+  }, [categories, frequentCategoryIds, selectedCategoryId]);
   const filteredCategories = useMemo(() => {
     const query = search.trim().toLowerCase();
 

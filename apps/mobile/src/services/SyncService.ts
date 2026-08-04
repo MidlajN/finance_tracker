@@ -19,6 +19,7 @@ import type {
   UpdateAssetSyncPayload,
   UpdateFinancialEventSyncPayload,
   UpdateGoalSyncPayload,
+  UpdateTransactionSyncPayload,
   UpdateInvestmentSyncPayload,
   UpdateLiabilitySyncPayload,
   UpdateLoanSyncPayload,
@@ -105,6 +106,16 @@ function isDeleteFinancialEventSyncPayload(
   payload: unknown
 ): payload is DeleteFinancialEventSyncPayload {
   return isObject(payload) && typeof payload.eventId === "string";
+}
+
+function isUpdateTransactionSyncPayload(
+  payload: unknown
+): payload is UpdateTransactionSyncPayload {
+  return (
+    isObject(payload) &&
+    typeof payload.transactionId === "string" &&
+    isObject(payload.updates)
+  );
 }
 
 function isConfirmFinancialEventSyncPayload(
@@ -522,6 +533,12 @@ export class SyncService {
         return;
       }
 
+      if (item.operation === "update_transaction") {
+        await this.processUpdateTransaction(item);
+        await SyncQueueRepository.setStatus(item.id, "synced");
+        return;
+      }
+
       if (item.operation === "confirm_event") {
         await this.processConfirmFinancialEvent(item);
         await SyncQueueRepository.setStatus(item.id, "synced");
@@ -737,6 +754,21 @@ export class SyncService {
 
     await RemoteEventRepository.delete(item.payload.eventId);
     await LocalEventRepository.delete(item.payload.eventId);
+  }
+
+  private static async processUpdateTransaction(
+    item: SyncQueueItem
+  ) {
+    if (!isUpdateTransactionSyncPayload(item.payload)) {
+      throw new Error("Invalid transaction update payload.");
+    }
+
+    const transaction = await RemoteTransactionRepository.update(
+      item.payload.transactionId,
+      item.payload.updates
+    );
+
+    await LocalTransactionRepository.upsert(transaction);
   }
 
   private static async processConfirmFinancialEvent(

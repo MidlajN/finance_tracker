@@ -12,7 +12,7 @@
     "plugins": ["./plugins/withAndroidReleaseSigning.cjs"],
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0d1626",
+        "backgroundColor": "#16212E",
         "foregroundImage": "./assets/adaptive-icon.png"
       },
       "package": "com.financeplatform.mobile",

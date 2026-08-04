@@ -4,3 +4,10 @@ declare namespace NodeJS {
     EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?: string;
   }
 }
+
+declare module "*.png" {
+  import type { ImageSourcePropType } from "react-native";
+
+  const source: ImageSourcePropType;
+  export default source;
+}

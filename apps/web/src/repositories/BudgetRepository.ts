@@ -17,30 +17,9 @@ export class BudgetRepository {
                 *,
                 category:categories(*)
             `)
-            .order("month_start", {
+            .order("starts_on", {
                 ascending: false,
             })
-            .order("created_at", {
-                ascending: false,
-            });
-
-        if (error) {
-            throw error;
-        }
-
-        return data;
-    }
-
-    static async listForMonth(
-        monthStart: string
-    ) {
-        const { data, error } = await supabase
-            .from("budgets")
-            .select(`
-                *,
-                category:categories(*)
-            `)
-            .eq("month_start", monthStart)
             .order("created_at", {
                 ascending: false,
             });

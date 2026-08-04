@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import {
   ArrowLeftRight,
   Car,
+  CircleDashed,
   CreditCard,
   Film,
   Fuel,
@@ -127,6 +128,26 @@ export function getTransactionIcon(
       background: "#f1f5f9",
       color: "#0f172a",
       Icon: Landmark,
+    };
+  }
+
+  if (
+    normalized.includes("bill") ||
+    normalized.includes("recharge") ||
+    normalized.includes("rent")
+  ) {
+    return {
+      background: "#e0f2fe",
+      color: "#38bdf8",
+      Icon: ReceiptText,
+    };
+  }
+
+  if (normalized.includes("uncategorized")) {
+    return {
+      background: "#f1f5f9",
+      color: "#94a3b8",
+      Icon: CircleDashed,
     };
   }
 

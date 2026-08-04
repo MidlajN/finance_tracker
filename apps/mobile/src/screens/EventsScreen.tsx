@@ -7,7 +7,6 @@ import {
   Plus,
   ReceiptText,
   Search,
-  SlidersHorizontal,
   Store,
   TrendingDown,
   TrendingUp,
@@ -31,6 +30,7 @@ import type { CachedMerchant, EventDirection } from "@finance/shared-types";
 import { AccountPickerField } from "../components/finance/AccountPicker";
 import { CategoryPickerField } from "../components/finance/CategoryPicker";
 import { financeStyles } from "../components/finance/financeStyles";
+import { SavingOverlay } from "../components/finance/SavingOverlay";
 import { SlideToSaveButton } from "../components/finance/SlideToSaveButton";
 import { TransactionDateField } from "../components/finance/TransactionDateField";
 import { useOfflineStore } from "../stores/offlineStore";
@@ -38,7 +38,6 @@ import { useSyncStore } from "../stores/syncStore";
 import { premiumTheme } from "../theme/premiumTheme";
 import type { RootStackParamList } from "../types/navigation";
 import {
-  formatTransactionDate,
   getFrequentCategoryIds,
 } from "../utils/financeFormat";
 
@@ -72,9 +71,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
   const [occurredAt, setOccurredAt] = useState(() => new Date());
   const [notes, setNotes] = useState("");
   const [notesExpanded, setNotesExpanded] = useState(false);
-  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [transactionTypeWidth, setTransactionTypeWidth] = useState(0);
   const savingRef = useRef(false);
@@ -111,10 +108,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
       (item) => item.name.toLowerCase() === merchantSearch.trim().toLowerCase()
     );
   const parsedAmount = Number(amount);
-  const canSave =
-    merchant.trim().length > 0 &&
-    Number.isFinite(parsedAmount) &&
-    parsedAmount > 0;
+  const canSave = Number.isFinite(parsedAmount) && parsedAmount > 0;
 
   useEffect(() => {
     Animated.timing(transactionTypePosition, {
@@ -136,7 +130,6 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
     setMerchantSearch("");
     setMerchantPickerOpen(false);
     setError(null);
-    setSaved(false);
   }
 
   function useNewMerchant() {
@@ -154,7 +147,6 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
     setMerchantSearch("");
     setMerchantPickerOpen(false);
     setError(null);
-    setSaved(false);
   }
 
   async function handleCreate() {
@@ -164,9 +156,8 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
 
     const parsedAmount = Number(amount);
 
-    if (!merchant.trim() || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setError("Enter a merchant and a valid amount.");
-      setSaved(false);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setError("Enter a valid amount.");
       return;
     }
 
@@ -181,7 +172,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           currency: "INR",
           direction,
           merchant_id: selectedMerchantId,
-          merchant_name_raw: merchant.trim(),
+          merchant_name_raw: merchant.trim() || null,
           metadata: {
             source: "manual",
             account_id: selectedAccountId,
@@ -199,23 +190,26 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           occurred_at: occurredAt.toISOString(),
           status: "pending",
         },
-        "manual"
+        "manual",
+        { confirm: true }
       );
       await synchronize();
 
-      setMerchant("");
-      setSelectedMerchantId(null);
-      setSelectedAccountId(null);
-      setSelectedCategoryId(null);
-      setCategoryManuallySelected(false);
-      setOccurredAt(new Date());
-      setAmount("");
-      setNotes("");
-      setNotesExpanded(false);
-      setDetailsExpanded(false);
       setError(null);
-      setSaved(true);
-    } finally {
+      savingRef.current = false;
+      // Close the overlay Modal BEFORE navigating: unmounting a screen
+      // that still hosts an open Modal intermittently crashes the app on
+      // Android during the stack transition.
+      setIsSaving(false);
+      setTimeout(() => {
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate("Transactions");
+        }
+      }, 80);
+    } catch {
+      setError("Unable to save the transaction. Try again.");
       savingRef.current = false;
       setIsSaving(false);
     }
@@ -276,7 +270,6 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
                 key={item.value}
                 onPress={() => {
                   setDirection(item.value as EventDirection);
-                  setSaved(false);
                 }}
                 style={styles.transactionTypeButton}
               >
@@ -309,7 +302,6 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
               keyboardType="decimal-pad"
               onChangeText={(value) => {
                 setAmount(value);
-                setSaved(false);
               }}
               placeholder="0.00"
               placeholderTextColor="#94a3b8"
@@ -328,7 +320,6 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           onSelect={(categoryId) => {
             setSelectedCategoryId(categoryId);
             setCategoryManuallySelected(true);
-            setSaved(false);
           }}
           selectedCategoryId={selectedCategoryId}
         />
@@ -345,7 +336,6 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           }
           onSelect={(accountId) => {
             setSelectedAccountId(accountId);
-            setSaved(false);
           }}
           selectedAccountId={selectedAccountId}
         />
@@ -396,39 +386,51 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
 
           <View style={styles.transactionSecondaryDivider} />
 
+          <TransactionDateField
+            grouped
+            onSelect={(date) => {
+              setOccurredAt(date);
+            }}
+            value={occurredAt}
+          />
+
+          <View style={styles.transactionSecondaryDivider} />
+
           <Pressable
-            accessibilityHint="Shows or hides transaction date and note"
+            accessibilityHint="Shows or hides the note editor"
             accessibilityRole="button"
-            onPress={() => setDetailsExpanded((current) => !current)}
-            style={styles.transactionDetailsDisclosure}
+            onPress={() => setNotesExpanded((current) => !current)}
+            style={styles.transactionNoteRow}
           >
-            <View style={styles.transactionDetailsDisclosureIcon}>
-              <SlidersHorizontal color="#64748b" size={16} strokeWidth={2.3} />
-            </View>
-            <View style={styles.transactionSelectCopy}>
-              <Text style={styles.transactionDetailsDisclosureTitle}>
-                Date & note
-              </Text>
-              <Text style={styles.transactionDetailsDisclosureMeta}>
-                {formatTransactionDate(occurredAt)}
-                {notes ? " · Note added" : ""}
-              </Text>
-            </View>
+            <ReceiptText
+              color={notes.trim() ? premiumTheme.colors.ink : "#94a3b8"}
+              size={15}
+              strokeWidth={2.4}
+            />
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.transactionNoteRowText,
+                notes.trim() && styles.transactionNoteRowTextFilled,
+              ]}
+            >
+              {notes.trim() ? notes.trim().split("\n")[0] : "Add a note"}
+            </Text>
             <ChevronRight
               color="#94a3b8"
-              size={18}
-              strokeWidth={2.4}
+              size={16}
+              strokeWidth={2.5}
               style={{
-                transform: [{ rotate: detailsExpanded ? "90deg" : "0deg" }],
+                transform: [{ rotate: notesExpanded ? "90deg" : "0deg" }],
               }}
             />
           </Pressable>
 
-          {detailsExpanded ? (
+          {notesExpanded ? (
             <MotiView
               animate={{ opacity: 1, translateY: 0 }}
               from={{ opacity: 0, translateY: -6 }}
-              style={styles.transactionAdvancedDetails}
+              style={styles.transactionInlineNote}
               transition={{
                 damping: 18,
                 mass: 0.7,
@@ -436,55 +438,29 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
                 type: "spring",
               }}
             >
-              <TransactionDateField
-                grouped
-                onSelect={(date) => {
-                  setOccurredAt(date);
-                  setSaved(false);
+              <TextInput
+                autoFocus
+                multiline
+                onChangeText={(value) => {
+                  setNotes(value);
                 }}
-                value={occurredAt}
+                placeholder="Receipt reference or reminder"
+                placeholderTextColor="#8b929d"
+                style={[styles.transactionInput, styles.notesInput]}
+                value={notes}
               />
-
-              {notesExpanded ? (
-                <View style={styles.transactionInlineNote}>
-                  <View style={styles.transactionFieldLabelRow}>
-                    <Text style={styles.transactionFieldLabel}>Note</Text>
-                    <Pressable onPress={() => setNotesExpanded(false)}>
-                      <Text style={styles.transactionNoteDone}>Done</Text>
-                    </Pressable>
-                  </View>
-                  <TextInput
-                    autoFocus
-                    multiline
-                    onChangeText={(value) => {
-                      setNotes(value);
-                      setSaved(false);
-                    }}
-                    placeholder="Receipt reference or reminder"
-                    placeholderTextColor="#8b929d"
-                    style={[styles.transactionInput, styles.notesInput]}
-                    value={notes}
-                  />
-                </View>
-              ) : (
-                <Pressable
-                  onPress={() => setNotesExpanded(true)}
-                  style={styles.transactionAddNoteButton}
-                >
-                  <ReceiptText color="#64748b" size={15} strokeWidth={2.4} />
-                  <Text style={styles.transactionAddNoteText}>
-                    {notes ? "Edit note" : "Add note"}
-                  </Text>
-                </Pressable>
-              )}
+              <Pressable
+                onPress={() => setNotesExpanded(false)}
+                style={styles.transactionNoteDoneButton}
+              >
+                <Check color="#ffffff" size={14} strokeWidth={3} />
+                <Text style={styles.transactionNoteDoneButtonText}>Done</Text>
+              </Pressable>
             </MotiView>
           ) : null}
         </View>
 
         {error && <Text style={financeStyles.error}>{error}</Text>}
-        {saved && (
-          <Text style={styles.successText}>Transaction saved for processing.</Text>
-        )}
       </ScrollView>
 
       <View style={styles.transactionSaveDock}>
@@ -496,6 +472,12 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           }}
         />
       </View>
+
+      <SavingOverlay
+        subtitle="Adding it to your transactions"
+        title="Saving transaction"
+        visible={isSaving}
+      />
 
       <Modal
         animationType="fade"
@@ -775,30 +757,6 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     textAlignVertical: "top",
   },
-  successText: {
-    color: "#16a34a",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  transactionAddNoteButton: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: "#f5f5f7",
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 6,
-    minHeight: 34,
-    paddingHorizontal: 11,
-  },
-  transactionAddNoteText: {
-    color: "#475569",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  transactionAdvancedDetails: {
-    gap: 10,
-    paddingBottom: 4,
-  },
   transactionAmountHero: {
     backgroundColor: "#ffffff",
     borderColor: premiumTheme.colors.border,
@@ -834,32 +792,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
   },
-  transactionDetailsDisclosure: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-    minHeight: 54,
-    paddingVertical: 7,
-  },
-  transactionDetailsDisclosureIcon: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 12,
-    height: 34,
-    justifyContent: "center",
-    width: 34,
-  },
-  transactionDetailsDisclosureMeta: {
-    color: "#8a919e",
-    fontSize: 11,
-    fontWeight: "700",
-    marginTop: 2,
-  },
-  transactionDetailsDisclosureTitle: {
-    color: "#334155",
-    fontSize: 13,
-    fontWeight: "700",
-  },
   transactionEntryScreen: {
     backgroundColor: "#ffffff",
     flex: 1,
@@ -868,19 +800,42 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     flex: 1,
   },
-  transactionFieldLabel: {
-    color: "#475569",
-    fontSize: 12,
-    fontWeight: "900",
+  transactionInlineNote: {
+    gap: 10,
+    paddingBottom: 14,
+    paddingTop: 2,
   },
-  transactionFieldLabelRow: {
+  transactionNoteRow: {
     alignItems: "center",
     flexDirection: "row",
-    justifyContent: "space-between",
+    gap: 8,
+    minHeight: 44,
+    paddingVertical: 4,
   },
-  transactionInlineNote: {
-    gap: 9,
-    paddingBottom: 8,
+  transactionNoteRowText: {
+    color: "#8b929d",
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  transactionNoteRowTextFilled: {
+    color: premiumTheme.colors.ink,
+    fontWeight: "700",
+  },
+  transactionNoteDoneButton: {
+    alignItems: "center",
+    alignSelf: "flex-end",
+    backgroundColor: premiumTheme.colors.ink,
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 6,
+    minHeight: 34,
+    paddingHorizontal: 15,
+  },
+  transactionNoteDoneButtonText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "800",
   },
   transactionInput: {
     backgroundColor: "#f5f5f7",
@@ -890,11 +845,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     minHeight: 52,
     paddingHorizontal: 14,
-  },
-  transactionNoteDone: {
-    color: premiumTheme.colors.ink,
-    fontSize: 12,
-    fontWeight: "700",
   },
   transactionSaveDock: {
     backgroundColor: "#ffffff",
