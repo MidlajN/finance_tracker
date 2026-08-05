@@ -38,3 +38,7 @@ play-store-assets/
 
 # Native module build output
 apps/mobile/modules/*/android/build/
+apps/mobile/android/.kotlin/
+
+# Understand-Anything plugin cache
+.ua/

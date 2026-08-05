@@ -501,7 +501,7 @@ export function AnalyticsScreen() {
     .filter((group) => group.expenses > 0)
     .slice(0, 6);
   const chartWidth = Math.max(280, width - 72);
-  const pieSize = Math.min(124, Math.max(104, width * 0.29));
+  const pieSize = Math.min(176, Math.max(148, width * 0.42));
   const highestCategory = visibleCategories[0] ?? null;
   const lowestCategory =
     visibleCategories.length > 0
@@ -878,30 +878,28 @@ export function AnalyticsScreen() {
           </Text>
         </View>
 
-        <View style={styles.analyticsCategoryBody}>
-          <View style={styles.analyticsDonutContainer}>
-            <CategoryDonutChart
-              categories={visibleCategories}
-              size={pieSize}
-              total={analytics.totalExpenses}
-            />
-          </View>
+        <View style={styles.analyticsDonutContainer}>
+          <CategoryDonutChart
+            categories={visibleCategories}
+            size={pieSize}
+            total={analytics.totalExpenses}
+          />
+        </View>
 
-          <View style={styles.analyticsCategoryList}>
-            {visibleCategories.length === 0 ? (
-              <Text style={styles.analyticsEmptyText}>
-                No expense categories yet.
-              </Text>
-            ) : (
-              visibleCategories.map((category, index) => (
-                <AnalyticsCategoryRow
-                  category={category}
-                  color={getAnalyticsCategoryColor(index)}
-                  key={category.name}
-                />
-              ))
-            )}
-          </View>
+        <View style={styles.analyticsCategoryList}>
+          {visibleCategories.length === 0 ? (
+            <Text style={styles.analyticsEmptyText}>
+              No expense categories yet.
+            </Text>
+          ) : (
+            visibleCategories.map((category, index) => (
+              <AnalyticsCategoryRow
+                category={category}
+                color={getAnalyticsCategoryColor(index)}
+                key={category.name}
+              />
+            ))
+          )}
         </View>
       </View>
 
@@ -1364,32 +1362,49 @@ function AnalyticsCategoryRow({
   const categoryIcon = getTransactionIcon(category.name, "expense");
   const Icon = categoryIcon.Icon;
 
+  const share = Math.max(
+    0,
+    Math.min(100, category.percentageOfExpenses)
+  );
+
   return (
     <View style={styles.analyticsCategoryRow}>
       <View
         style={[
           styles.analyticsCategoryIcon,
           {
-            backgroundColor: color,
+            backgroundColor: `${color}1f`,
           },
         ]}
       >
-        <Icon color="#ffffff" size={14} strokeWidth={2.5} />
+        <Icon color={color} size={15} strokeWidth={2.4} />
       </View>
-      <Text numberOfLines={1} style={styles.analyticsCategoryName}>
-        {category.name}
-      </Text>
-      <Text style={styles.analyticsCategoryPercent}>
-        {Math.round(category.percentageOfExpenses)}%
-      </Text>
-      <Text
-        adjustsFontSizeToFit
-        minimumFontScale={0.72}
-        numberOfLines={1}
-        style={styles.analyticsCategoryAmount}
-      >
-        {MobileDashboardService.getFormattedBalance(category.expenses)}
-      </Text>
+      <View style={styles.analyticsCategoryCopy}>
+        <View style={styles.analyticsCategoryTopRow}>
+          <Text numberOfLines={1} style={styles.analyticsCategoryName}>
+            {category.name}
+          </Text>
+          <Text style={styles.analyticsCategoryAmount}>
+            {MobileDashboardService.getFormattedBalance(category.expenses)}
+          </Text>
+        </View>
+        <View style={styles.analyticsCategoryBarRow}>
+          <View style={styles.analyticsCategoryBarTrack}>
+            <View
+              style={[
+                styles.analyticsCategoryBarFill,
+                {
+                  backgroundColor: color,
+                  width: `${share}%`,
+                },
+              ]}
+            />
+          </View>
+          <Text style={styles.analyticsCategoryPercent}>
+            {Math.round(category.percentageOfExpenses)}%
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -1928,15 +1943,36 @@ const styles = StyleSheet.create({
   },
   analyticsCategoryAmount: {
     color: "#0f172a",
-    fontSize: 11,
-    fontWeight: "900",
-    minWidth: 60,
-    textAlign: "right",
+    fontSize: 13,
+    fontVariant: ["tabular-nums"],
+    fontWeight: "800",
+    marginLeft: 10,
   },
-  analyticsCategoryBody: {
+  analyticsCategoryBarFill: {
+    borderRadius: 999,
+    height: "100%",
+  },
+  analyticsCategoryBarRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 12,
+    gap: 9,
+    marginTop: 6,
+  },
+  analyticsCategoryBarTrack: {
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 999,
+    flex: 1,
+    height: 5,
+    overflow: "hidden",
+  },
+  analyticsCategoryCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  analyticsCategoryTopRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   analyticsCategoryCard: {
     backgroundColor: premiumTheme.colors.elevated,
@@ -1947,39 +1983,36 @@ const styles = StyleSheet.create({
   },
   analyticsCategoryIcon: {
     alignItems: "center",
-    borderRadius: 13,
-    height: 26,
+    borderRadius: 11,
+    height: 34,
     justifyContent: "center",
-    width: 26,
+    width: 34,
   },
   analyticsCategoryList: {
-    flex: 1,
-    gap: 9,
-    justifyContent: "center",
-    minWidth: 0,
+    gap: 4,
   },
   analyticsCategoryName: {
     color: "#0f172a",
     flex: 1,
-    fontSize: 12,
-    fontWeight: "800",
+    fontSize: 13.5,
+    fontWeight: "700",
+    letterSpacing: -0.2,
     minWidth: 0,
   },
   analyticsCategoryPercent: {
-    color: "#0f172a",
-    fontSize: 12,
-    fontWeight: "900",
-    minWidth: 32,
+    color: premiumTheme.colors.secondary,
+    fontSize: 11,
+    fontVariant: ["tabular-nums"],
+    fontWeight: "700",
+    minWidth: 34,
     textAlign: "right",
   },
   analyticsCategoryRow: {
     alignItems: "center",
-    borderBottomColor: premiumTheme.colors.divider,
-    borderBottomWidth: premiumHairline,
     flexDirection: "row",
-    gap: 6,
-    minHeight: 40,
-    paddingVertical: 6,
+    gap: 11,
+    minHeight: 54,
+    paddingVertical: 8,
   },
   analyticsChartCard: {
     backgroundColor: "#ffffff",
@@ -2219,7 +2252,9 @@ const styles = StyleSheet.create({
     width: "48%",
   },
   analyticsDonutContainer: {
-    padding: 8,
+    alignItems: "center",
+    paddingBottom: 6,
+    paddingTop: 4,
   },
   analyticsDonutLabel: {
     color: "#64748b",

@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react-native";
 import {
+  ActivityIndicator,
   Animated,
   Image,
   Modal,
@@ -84,6 +85,12 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
   const offlineError = useOfflineStore((state) => state.error);
   const refreshOfflineData = useOfflineStore((state) => state.refresh);
   const syncError = useSyncStore((state) => state.error);
+  const syncing = useSyncStore((state) => state.syncing);
+  // Offline-first: with a warm cache the dashboard renders instantly and
+  // sync updates in the background. Only a fresh install/login has nothing
+  // to show, so that's the only time a loading state appears.
+  const isFirstLoad =
+    syncing && transactions.length === 0 && accounts.length === 0;
 
   const financialOverview = useMemo(
     () =>
@@ -232,92 +239,110 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
           </View>
         )}
 
-        <View style={styles.heroCard}>
-          <View style={styles.heroHeader}>
-            <Text style={styles.heroLabel}>Total spend</Text>
-            <MonthSelect
-              onSelect={setMonthOffset}
-              options={monthOptions}
-              selectedOffset={monthOffset}
+        {isFirstLoad ? (
+          <View style={styles.firstLoadCard}>
+            <ActivityIndicator
+              color={premiumTheme.colors.ink}
+              size="large"
+            />
+            <Text style={styles.firstLoadTitle}>Fetching your data</Text>
+            <Text style={styles.firstLoadText}>
+              Pulling accounts and transactions from your backup. This only
+              happens on first launch.
+            </Text>
+          </View>
+        ) : null}
+
+        {!isFirstLoad && (
+          <>
+          <View style={styles.heroCard}>
+            <View style={styles.heroHeader}>
+              <Text style={styles.heroLabel}>Total spend</Text>
+              <MonthSelect
+                onSelect={setMonthOffset}
+                options={monthOptions}
+                selectedOffset={monthOffset}
+              />
+            </View>
+
+            <Text
+              adjustsFontSizeToFit
+              minimumFontScale={0.72}
+              numberOfLines={1}
+              style={styles.heroAmount}
+            >
+              {MobileDashboardService.getFormattedBalance(
+                monthlySpend.currentExpenseTotal
+              )}
+            </Text>
+
+            <MonthlySpendChart
+              points={monthlySpend.points}
+              width={chartWidth}
             />
           </View>
 
-          <Text
-            adjustsFontSizeToFit
-            minimumFontScale={0.72}
-            numberOfLines={1}
-            style={styles.heroAmount}
-          >
-            {MobileDashboardService.getFormattedBalance(
-              monthlySpend.currentExpenseTotal
-            )}
-          </Text>
-
-          <MonthlySpendChart
-            points={monthlySpend.points}
-            width={chartWidth}
-          />
-        </View>
-
-        <View style={styles.summaryRow}>
-          <SummaryCard
-            deltaGoodWhenUp
-            deltaPercent={incomeDeltaPercent}
-            Icon={ArrowUpRight}
-            label="Income"
-            value={monthlySpend.currentIncomeTotal}
-          />
-          <SummaryCard
-            deltaGoodWhenUp={false}
-            deltaPercent={spendDeltaPercent}
-            Icon={ArrowDownRight}
-            label="Expense"
-            value={monthlySpend.currentExpenseTotal}
-          />
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Accounts</Text>
-          {financialOverview.accounts.length > 4 && (
-            <Pressable
-              onPress={() => navigation.navigate("FinancialIntelligence")}
-              style={styles.viewAllPill}
-            >
-              <Text style={styles.viewAllText}>View all</Text>
-            </Pressable>
-          )}
-        </View>
-
-        <View style={styles.accountsCard}>
-          <View style={styles.accountsCardInner}>
-          {accountPreview.length === 0 ? (
-            <View style={styles.emptyAccountRow}>
-              <Text style={styles.emptyAccountTitle}>No accounts yet</Text>
-              <Text style={styles.emptyAccountText}>
-                Add cash, bank accounts, cards, or wallets to see balances here.
-              </Text>
-              <Pressable
-                onPress={openAddAccount}
-                style={styles.emptyAccountButton}
-              >
-                <Plus color="#ffffff" size={18} strokeWidth={2.5} />
-                <Text style={styles.emptyAccountButtonText}>Add account</Text>
-              </Pressable>
-            </View>
-          ) : (
-            accountPreview.map((accountBalance, index) => (
-              <AccountRow
-                key={accountBalance.account.id ?? accountBalance.account.name}
-                balance={accountBalance.currentBalance}
-                name={accountBalance.account.name}
-                onPress={() => navigation.navigate("FinancialIntelligence")}
-                type={accountBalance.account.account_type}
-                showDivider={index < accountPreview.length - 1}
-              />
-            ))
-          )}
+          <View style={styles.summaryRow}>
+            <SummaryCard
+              deltaGoodWhenUp
+              deltaPercent={incomeDeltaPercent}
+              Icon={ArrowUpRight}
+              label="Income"
+              value={monthlySpend.currentIncomeTotal}
+            />
+            <SummaryCard
+              deltaGoodWhenUp={false}
+              deltaPercent={spendDeltaPercent}
+              Icon={ArrowDownRight}
+              label="Expense"
+              value={monthlySpend.currentExpenseTotal}
+            />
           </View>
-        </View>
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Accounts</Text>
+            {financialOverview.accounts.length > 4 && (
+              <Pressable
+                onPress={() => navigation.navigate("FinancialIntelligence")}
+                style={styles.viewAllPill}
+              >
+                <Text style={styles.viewAllText}>View all</Text>
+              </Pressable>
+            )}
+          </View>
+
+          <View style={styles.accountsCard}>
+            <View style={styles.accountsCardInner}>
+            {accountPreview.length === 0 ? (
+              <View style={styles.emptyAccountRow}>
+                <Text style={styles.emptyAccountTitle}>No accounts yet</Text>
+                <Text style={styles.emptyAccountText}>
+                  Add cash, bank accounts, cards, or wallets to see balances here.
+                </Text>
+                <Pressable
+                  onPress={openAddAccount}
+                  style={styles.emptyAccountButton}
+                >
+                  <Plus color="#ffffff" size={18} strokeWidth={2.5} />
+                  <Text style={styles.emptyAccountButtonText}>Add account</Text>
+                </Pressable>
+              </View>
+            ) : (
+              accountPreview.map((accountBalance, index) => (
+                <AccountRow
+                  key={accountBalance.account.id ?? accountBalance.account.name}
+                  balance={accountBalance.currentBalance}
+                  name={accountBalance.account.name}
+                  onPress={() => navigation.navigate("FinancialIntelligence")}
+                  type={accountBalance.account.account_type}
+                  showDivider={index < accountPreview.length - 1}
+                />
+              ))
+            )}
+            </View>
+          </View>
+          </>
+        )}
       </ScrollView>
 
       <QuickAddMenu
@@ -1086,6 +1111,30 @@ const styles = StyleSheet.create({
     color: premiumTheme.colors.ink,
     fontSize: 16,
     fontWeight: "700",
+  },
+  firstLoadCard: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: premiumTheme.radius.surface,
+    marginTop: 40,
+    paddingHorizontal: 26,
+    paddingVertical: 44,
+    ...premiumSurface,
+    ...premiumTheme.shadow.soft,
+  },
+  firstLoadText: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 6,
+    textAlign: "center",
+  },
+  firstLoadTitle: {
+    color: premiumTheme.colors.ink,
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+    marginTop: 18,
   },
   errorCard: {
     backgroundColor: premiumTheme.colors.dangerSoft,

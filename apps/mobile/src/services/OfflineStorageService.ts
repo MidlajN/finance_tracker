@@ -496,11 +496,14 @@ export class OfflineStorageService {
       updates,
     };
 
+    // The request id must be unique per edit: a fixed key would collide
+    // with the previous already-synced update and stay "synced", so later
+    // edits would never be pushed (then reverted by the next pull).
     return SyncQueueRepository.enqueue(
       "update_transaction",
       payload,
       deviceId,
-      `update_transaction:${transaction.id}`
+      `update_transaction:${transaction.id}:${transaction.updated_at}`
     );
   }
 
