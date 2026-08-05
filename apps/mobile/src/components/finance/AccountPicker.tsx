@@ -81,11 +81,7 @@ export function AccountPickerField({
           </View>
         ) : null}
 
-        <ScrollView
-          contentContainerStyle={styles.quickAccountList}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-        >
+        <View style={styles.quickAccountList}>
           {quickAccounts.map((account) => {
             const accountVisual = getAccountTypeVisual(account.account_type);
             const AccountIcon = accountVisual.Icon;
@@ -93,10 +89,13 @@ export function AccountPickerField({
 
             return (
               <Pressable
+                accessibilityHint={
+                  selected ? "Clears the account selection" : undefined
+                }
                 accessibilityRole="button"
                 hitSlop={3}
                 key={account.id}
-                onPress={() => onSelect(account.id)}
+                onPress={() => onSelect(selected ? null : account.id)}
                 style={[
                   styles.quickAccountPill,
                   selected && {
@@ -115,7 +114,7 @@ export function AccountPickerField({
                 >
                   <AccountIcon
                     color={accountVisual.color}
-                    size={15}
+                    size={13}
                     strokeWidth={2.5}
                   />
                 </View>
@@ -140,40 +139,54 @@ export function AccountPickerField({
                       },
                     ]}
                   >
-                    <Check color="#ffffff" size={11} strokeWidth={3.2} />
+                    <Check color="#ffffff" size={10} strokeWidth={3.2} />
                   </View>
                 ) : null}
               </Pressable>
             );
           })}
 
-          <Pressable
-            accessibilityHint="Opens all accounts"
-            accessibilityRole="button"
-            hitSlop={3}
-            onPress={() => {
-              if (availableAccounts.length === 0) {
-                onAddAccount();
-              } else {
-                setVisible(true);
-              }
-            }}
-            style={styles.quickAccountMorePill}
-          >
-            {availableAccounts.length === 0 ? (
+          {availableAccounts.length === 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={3}
+              onPress={onAddAccount}
+              style={styles.quickAccountMorePill}
+            >
               <Plus
                 color={premiumTheme.colors.ink}
-                size={15}
+                size={14}
                 strokeWidth={2.7}
               />
-            ) : (
-              <SlidersHorizontal color="#64748b" size={15} strokeWidth={2.4} />
-            )}
-            <Text style={styles.quickAccountMoreText}>
-              {availableAccounts.length === 0 ? "Add account" : "All"}
-            </Text>
-          </Pressable>
-        </ScrollView>
+              <Text style={styles.quickAccountMoreText}>Add account</Text>
+            </Pressable>
+          ) : availableAccounts.length > quickAccounts.length ? (
+            <Pressable
+              accessibilityHint="Opens all accounts"
+              accessibilityRole="button"
+              hitSlop={3}
+              onPress={() => setVisible(true)}
+              style={styles.quickAccountMorePill}
+            >
+              <SlidersHorizontal color="#64748b" size={14} strokeWidth={2.4} />
+              <Text style={styles.quickAccountMoreText}>All</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              accessibilityHint="Adds a new account"
+              accessibilityRole="button"
+              hitSlop={3}
+              onPress={onAddAccount}
+              style={styles.quickAccountMorePill}
+            >
+              <Plus
+                color={premiumTheme.colors.ink}
+                size={14}
+                strokeWidth={2.7}
+              />
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <Modal
@@ -417,19 +430,21 @@ const styles = StyleSheet.create({
   quickAccountCheck: {
     alignItems: "center",
     borderRadius: premiumTheme.radius.pill,
-    height: 18,
+    height: 16,
     justifyContent: "center",
     marginLeft: 2,
-    width: 18,
+    width: 16,
   },
   quickAccountIcon: {
     alignItems: "center",
-    borderRadius: 10,
-    height: 28,
+    borderRadius: 8,
+    height: 23,
     justifyContent: "center",
-    width: 28,
+    width: 23,
   },
   quickAccountList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
     paddingHorizontal: 1,
     paddingVertical: 2,
@@ -437,34 +452,34 @@ const styles = StyleSheet.create({
   quickAccountMorePill: {
     alignItems: "center",
     backgroundColor: "#f5f5f7",
-    borderRadius: 14,
+    borderRadius: 12,
     flexDirection: "row",
-    gap: 6,
-    minHeight: 44,
-    paddingHorizontal: 13,
+    gap: 5,
+    minHeight: 36,
+    paddingHorizontal: 11,
   },
   quickAccountMoreText: {
     color: "#64748b",
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: "800",
   },
   quickAccountName: {
     color: premiumTheme.colors.secondary,
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: "600",
-    maxWidth: 108,
+    maxWidth: 100,
   },
   quickAccountPill: {
     alignItems: "center",
     backgroundColor: "#f5f5f7",
     borderColor: "transparent",
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1.2,
     flexDirection: "row",
-    gap: 7,
-    minHeight: 44,
-    paddingHorizontal: 9,
-    paddingRight: 13,
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 7,
+    paddingRight: 11,
   },
   quickAccountSection: {
     gap: 11,

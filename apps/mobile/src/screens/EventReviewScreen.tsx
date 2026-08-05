@@ -6,6 +6,7 @@ import {
   ChevronRight,
   CreditCard,
   LayoutGrid,
+  Pencil,
   Plus,
   Search,
   Store,
@@ -14,6 +15,7 @@ import {
 import {
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -114,6 +116,9 @@ export function EventReviewScreen({
   const [merchantPickerVisible, setMerchantPickerVisible] = useState(false);
   const [merchantSearch, setMerchantSearch] = useState("");
   const [isCreatingMerchant, setIsCreatingMerchant] = useState(false);
+  const [aliasEditorVisible, setAliasEditorVisible] = useState(false);
+  const [aliasDraft, setAliasDraft] = useState("");
+  const [isSavingAlias, setIsSavingAlias] = useState(false);
   const visibleMerchants = useMemo(() => {
     const query = merchantSearch.trim().toLowerCase();
     const normalizedRaw = normalizeMerchantName(
@@ -223,6 +228,31 @@ export function EventReviewScreen({
     }
   }
 
+  async function handleSaveAlias() {
+    const trimmed = aliasDraft.trim();
+
+    if (!event || !trimmed || isSavingAlias) {
+      return;
+    }
+
+    if (trimmed === event.merchant_name_raw) {
+      setAliasEditorVisible(false);
+      return;
+    }
+
+    setIsSavingAlias(true);
+    setError(null);
+
+    try {
+      await updateFinancialEvent(event.id, {
+        merchant_name_raw: trimmed,
+      });
+      setAliasEditorVisible(false);
+    } finally {
+      setIsSavingAlias(false);
+    }
+  }
+
   async function handleAccount(accountId: string | null) {
     if (!event) {
       return;
@@ -328,11 +358,26 @@ export function EventReviewScreen({
           <Store color="#0f172a" size={20} strokeWidth={2.6} />
         </View>
         <View style={styles.eventReviewSummaryCopy}>
-          <Text numberOfLines={1} style={styles.eventReviewMerchant}>
-            {linkedMerchant?.name ??
-              event.merchant_name_raw ??
-              "Unknown merchant"}
-          </Text>
+          <Pressable
+            onPress={() => {
+              setAliasDraft(event.merchant_name_raw ?? "");
+              setAliasEditorVisible(true);
+            }}
+            style={styles.eventReviewMerchantRow}
+          >
+            <Text numberOfLines={1} style={styles.eventReviewMerchant}>
+              {linkedMerchant?.name ??
+                event.merchant_name_raw ??
+                "Unknown merchant"}
+            </Text>
+            <View style={styles.eventReviewMerchantEdit}>
+              <Pencil
+                color={premiumTheme.colors.secondary}
+                size={11}
+                strokeWidth={2.4}
+              />
+            </View>
+          </Pressable>
           <Text style={styles.eventReviewMeta}>
             {event.direction === "credit" ? "Income" : "Expense"} ·{" "}
             {new Date(event.occurred_at).toLocaleString("en-IN", {
@@ -360,7 +405,7 @@ export function EventReviewScreen({
           <View style={styles.eventReviewSectionIcon}>
             <Store
               color={premiumTheme.colors.ink}
-              size={17}
+              size={14}
               strokeWidth={2.3}
             />
           </View>
@@ -408,7 +453,7 @@ export function EventReviewScreen({
           <View style={styles.eventReviewSectionIcon}>
             <CreditCard
               color={premiumTheme.colors.ink}
-              size={17}
+              size={14}
               strokeWidth={2.3}
             />
           </View>
@@ -436,7 +481,7 @@ export function EventReviewScreen({
           <View style={styles.eventReviewSectionIcon}>
             <LayoutGrid
               color={premiumTheme.colors.ink}
-              size={17}
+              size={14}
               strokeWidth={2.3}
             />
           </View>
@@ -481,6 +526,83 @@ export function EventReviewScreen({
           </Pressable>
         </View>
       </View>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setAliasEditorVisible(false)}
+        transparent
+        visible={aliasEditorVisible}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.aliasEditorBackdrop}
+        >
+          <Pressable
+            onPress={() => setAliasEditorVisible(false)}
+            style={financeStyles.modalDismissLayer}
+          />
+          <MotiView
+            animate={{ opacity: 1, scale: 1 }}
+            from={{ opacity: 0, scale: 0.94 }}
+            style={styles.aliasEditorCard}
+            transition={{
+              damping: 17,
+              mass: 0.7,
+              stiffness: 240,
+              type: "spring",
+            }}
+          >
+            <Text style={styles.aliasEditorTitle}>Edit captured name</Text>
+            <Text style={styles.aliasEditorSubtitle}>
+              Corrects the raw name on this capture only. Use the Merchant
+              section below to link a merchant.
+            </Text>
+
+            <View style={styles.aliasEditorInputWrap}>
+              <Store color="#7b818c" size={17} strokeWidth={2.3} />
+              <TextInput
+                autoFocus
+                onChangeText={setAliasDraft}
+                onSubmitEditing={() => {
+                  void handleSaveAlias();
+                }}
+                placeholder="Merchant name"
+                placeholderTextColor="#8b929d"
+                returnKeyType="done"
+                style={styles.aliasEditorInput}
+                value={aliasDraft}
+              />
+            </View>
+
+            <View style={styles.aliasEditorFooter}>
+              <Pressable
+                onPress={() => setAliasEditorVisible(false)}
+                style={({ pressed }) => [
+                  styles.aliasEditorCancelButton,
+                  pressed && financeStyles.saveButtonDisabled,
+                ]}
+              >
+                <Text style={styles.aliasEditorCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                disabled={!aliasDraft.trim() || isSavingAlias}
+                onPress={() => {
+                  void handleSaveAlias();
+                }}
+                style={({ pressed }) => [
+                  styles.aliasEditorSaveButton,
+                  (pressed || !aliasDraft.trim() || isSavingAlias) &&
+                    financeStyles.saveButtonDisabled,
+                ]}
+              >
+                <Text style={styles.aliasEditorSaveText}>
+                  {isSavingAlias ? "Saving..." : "Save"}
+                </Text>
+              </Pressable>
+            </View>
+          </MotiView>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Modal
         animationType="fade"
@@ -859,10 +981,100 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 46,
   },
+  aliasEditorBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.4)",
+    flex: 1,
+    justifyContent: "center",
+    padding: 28,
+  },
+  aliasEditorCancelButton: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 14,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 48,
+  },
+  aliasEditorCancelText: {
+    color: premiumTheme.colors.ink,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  aliasEditorCard: {
+    alignSelf: "stretch",
+    backgroundColor: "#ffffff",
+    borderRadius: premiumTheme.radius.surface,
+    padding: 22,
+    ...premiumTheme.shadow.raised,
+  },
+  aliasEditorFooter: {
+    flexDirection: "row",
+    gap: 11,
+    marginTop: 18,
+  },
+  aliasEditorInput: {
+    color: premiumTheme.colors.ink,
+    flex: 1,
+    fontSize: 14.5,
+    fontWeight: "600",
+    paddingVertical: 0,
+  },
+  aliasEditorInputWrap: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 14,
+    flexDirection: "row",
+    gap: 9,
+    marginTop: 16,
+    minHeight: 48,
+    paddingHorizontal: 14,
+  },
+  aliasEditorSaveButton: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.ink,
+    borderRadius: 14,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 48,
+  },
+  aliasEditorSaveText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  aliasEditorSubtitle: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 6,
+  },
+  aliasEditorTitle: {
+    color: premiumTheme.colors.ink,
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+  },
   eventReviewMerchant: {
     color: "#0f172a",
+    flexShrink: 1,
     fontSize: 15,
     fontWeight: "800",
+  },
+  eventReviewMerchantEdit: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 999,
+    height: 20,
+    justifyContent: "center",
+    width: 20,
+  },
+  eventReviewMerchantRow: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    gap: 6,
+    maxWidth: "100%",
   },
   eventReviewMeta: {
     color: premiumTheme.colors.secondary,
@@ -905,14 +1117,14 @@ const styles = StyleSheet.create({
   eventReviewSectionIcon: {
     alignItems: "center",
     backgroundColor: premiumTheme.colors.field,
-    borderRadius: 12,
-    height: 36,
+    borderRadius: 10,
+    height: 29,
     justifyContent: "center",
-    width: 36,
+    width: 29,
   },
   eventReviewSectionTitle: {
     color: "#0f172a",
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "700",
   },
   eventReviewSubtitle: {

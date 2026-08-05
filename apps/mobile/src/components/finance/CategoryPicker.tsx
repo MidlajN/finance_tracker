@@ -122,7 +122,7 @@ export function CategoryPickerField({
               >
                 <CategoryIcon
                   color={visual.color}
-                  size={15}
+                  size={13}
                   strokeWidth={2.4}
                 />
                 <Text
@@ -149,7 +149,7 @@ export function CategoryPickerField({
           >
             <Plus
               color={premiumTheme.colors.ink}
-              size={15}
+              size={13}
               strokeWidth={2.6}
             />
             <Text style={styles.transactionCategoryMoreText}>More</Text>
