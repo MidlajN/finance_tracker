@@ -10,13 +10,21 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MotiView } from "moti";
 import {
   ArrowRight,
+  Banknote,
   Building2,
+  CalendarDays,
   Check,
+  ChartPie,
   CreditCard,
+  FileText,
+  Hash,
   IndianRupee,
   Landmark,
+  Layers,
   Pencil,
+  Percent,
   Plus,
+  Target,
   Trash2,
   TrendingDown,
   TrendingUp,
@@ -93,6 +101,18 @@ const advancedResourceTabs: IntelligenceResource[] = [
   "goal",
   "loan",
 ];
+
+const trackResourceVisuals: Record<
+  IntelligenceResource,
+  { color: string; Icon: typeof Landmark }
+> = {
+  account: { color: "#0f172a", Icon: CreditCard },
+  asset: { color: "#16a34a", Icon: ChartPie },
+  goal: { color: "#2563eb", Icon: Target },
+  investment: { color: "#7c3aed", Icon: TrendingUp },
+  liability: { color: "#ef4444", Icon: CreditCard },
+  loan: { color: "#f59e0b", Icon: Banknote },
+};
 
 const resourceLabels: Record<IntelligenceResource, string> = {
   account: "account",
@@ -205,13 +225,12 @@ export function FinancialIntelligenceScreen({
   );
   const [editing, setEditing] = useState<IntelligenceItem | null>(null);
   const [accountModalVisible, setAccountModalVisible] = useState(false);
-  const [advancedOptionsExpanded, setAdvancedOptionsExpanded] =
-    useState(false);
   const [deletingItem, setDeletingItem] = useState<{
     id: string;
     kind: IntelligenceResource;
     name: string;
   } | null>(null);
+
   const [isDeletingItem, setIsDeletingItem] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState(getDefaultResourceType(requestedResource));
@@ -635,142 +654,187 @@ export function FinancialIntelligenceScreen({
   }
 
   function renderResourceFields() {
+    const amountLabel =
+      resource === "account"
+        ? "Opening balance"
+        : resource === "asset"
+          ? "Current valuation"
+          : resource === "liability"
+            ? "Outstanding balance"
+            : resource === "loan"
+              ? "Monthly payment"
+              : resource === "investment"
+                ? "Average purchase price"
+                : "Target amount";
+    const secondaryAmountLabel =
+      resource === "asset"
+        ? "Acquisition value"
+        : resource === "liability"
+          ? "Original amount"
+          : resource === "loan"
+            ? "Interest accrued"
+            : "Current price";
+    const showDates = ["asset", "liability", "goal"].includes(resource);
+
     return (
       <>
+        <Text style={styles.accountSectionLabel}>
+          1.  {titleCase(resourceLabels[resource])} details
+        </Text>
         {resource !== "loan" && (
-          <TextInput
+          <AccountInputField
+            autoCapitalize={resource === "investment" ? "characters" : "sentences"}
+            icon={
+              resource === "investment" ? (
+                <TrendingUp color="#64748b" size={16} strokeWidth={2.2} />
+              ) : (
+                <Landmark color="#64748b" size={16} strokeWidth={2.2} />
+              )
+            }
+            label={resource === "investment" ? "Symbol" : "Name"}
             onChangeText={setName}
             placeholder={getNamePlaceholder(resource)}
-            style={styles.input}
             value={name}
           />
         )}
         {["asset", "liability", "loan"].includes(resource) && (
-          <TextInput
+          <AccountInputField
+            icon={<Layers color="#64748b" size={16} strokeWidth={2.2} />}
+            label="Type"
             onChangeText={setType}
             placeholder={getTypePlaceholder(resource)}
-            style={styles.input}
             value={type}
           />
         )}
-        {resource !== "loan" && (
-          <TextInput
-            onChangeText={setCurrency}
-            placeholder="Currency"
-            style={styles.input}
-            value={currency}
+        {resource === "investment" && (
+          <AccountInputField
+            icon={<Landmark color="#64748b" size={16} strokeWidth={2.2} />}
+            label="Exchange"
+            onChangeText={setExchange}
+            placeholder="e.g. NSE or BSE"
+            value={exchange}
           />
         )}
         {resource === "loan" && (
-          <TextInput
+          <AccountInputField
+            icon={<Layers color="#64748b" size={16} strokeWidth={2.2} />}
+            label="Linked liability ID"
             onChangeText={setLiabilityId}
-            placeholder="Linked liability ID"
-            style={styles.input}
+            placeholder="Liability this loan pays down"
             value={liabilityId}
           />
         )}
+        {resource === "goal" && (
+          <AccountInputField
+            icon={<Target color="#64748b" size={16} strokeWidth={2.2} />}
+            label="Status"
+            onChangeText={(value) => setStatus(value as GoalStatus)}
+            placeholder="active, achieved, or paused"
+            value={status}
+          />
+        )}
+        {["account", "asset"].includes(resource) && (
+          <AccountInputField
+            icon={<FileText color="#64748b" size={16} strokeWidth={2.2} />}
+            label={resource === "account" ? "Institution" : "Notes"}
+            onChangeText={setNotes}
+            placeholder={
+              resource === "account" ? "e.g. HDFC, SBI, ICICI" : "Optional"
+            }
+            value={notes}
+          />
+        )}
+
+        <Text style={styles.accountSectionLabel}>2.  Amounts</Text>
         {["asset", "investment"].includes(resource) && (
-          <TextInput
+          <AccountInputField
+            icon={<Hash color="#64748b" size={16} strokeWidth={2.2} />}
             keyboardType="decimal-pad"
+            label="Quantity"
             onChangeText={setQuantity}
-            placeholder="Quantity"
-            style={styles.input}
+            placeholder="0"
             value={quantity}
           />
         )}
-        <TextInput
+        <AccountInputField
+          icon={<IndianRupee color="#64748b" size={16} strokeWidth={2.2} />}
           keyboardType="decimal-pad"
+          label={amountLabel}
           onChangeText={setAmount}
-          placeholder={
-            resource === "account"
-              ? "Opening balance"
-              : resource === "asset"
-                ? "Current valuation"
-                : resource === "liability"
-                  ? "Outstanding balance"
-                  : resource === "loan"
-                    ? "Monthly payment"
-                    : resource === "investment"
-                      ? "Average purchase price"
-                      : "Target amount"
-          }
-          style={styles.input}
+          placeholder="0.00"
           value={amount}
         />
         {["asset", "liability", "loan", "investment"].includes(resource) && (
-          <TextInput
-            keyboardType="decimal-pad"
-            onChangeText={setSecondaryAmount}
-            placeholder={
-              resource === "asset"
-                ? "Acquisition value"
-                : resource === "liability"
-                  ? "Original amount"
-                  : resource === "loan"
-                    ? "Interest accrued"
-                    : "Current price"
+          <AccountInputField
+            icon={
+              resource === "investment" ? (
+                <TrendingUp color="#64748b" size={16} strokeWidth={2.2} />
+              ) : (
+                <CreditCard color="#64748b" size={16} strokeWidth={2.2} />
+              )
             }
-            style={styles.input}
+            keyboardType="decimal-pad"
+            label={secondaryAmountLabel}
+            onChangeText={setSecondaryAmount}
+            placeholder="0.00"
             value={secondaryAmount}
           />
         )}
         {resource === "liability" && (
-          <TextInput
+          <AccountInputField
+            icon={<Percent color="#64748b" size={16} strokeWidth={2.2} />}
             keyboardType="decimal-pad"
+            label="Interest rate"
             onChangeText={setRate}
-            placeholder="Interest rate"
-            style={styles.input}
+            placeholder="e.g. 12.5"
             value={rate}
           />
         )}
         {resource === "loan" && (
-          <TextInput
+          <AccountInputField
+            icon={<Hash color="#64748b" size={16} strokeWidth={2.2} />}
             keyboardType="number-pad"
+            label="Remaining payments"
             onChangeText={setPayments}
-            placeholder="Remaining payments"
-            style={styles.input}
+            placeholder="e.g. 24"
             value={payments}
           />
         )}
-        {["asset", "liability", "goal"].includes(resource) && (
-          <TextInput
-            onChangeText={setDate}
-            placeholder="Date"
-            style={styles.input}
-            value={date}
+        {resource !== "loan" && (
+          <AccountInputField
+            autoCapitalize="characters"
+            icon={<IndianRupee color="#64748b" size={16} strokeWidth={2.4} />}
+            label="Currency"
+            onChangeText={setCurrency}
+            placeholder="INR"
+            value={currency}
           />
         )}
-        {resource === "liability" && (
-          <TextInput
-            onChangeText={setEndDate}
-            placeholder="End date"
-            style={styles.input}
-            value={endDate}
-          />
-        )}
-        {resource === "goal" && (
-          <TextInput
-            onChangeText={(value) => setStatus(value as GoalStatus)}
-            placeholder="Status"
-            style={styles.input}
-            value={status}
-          />
-        )}
-        {resource === "investment" && (
-          <TextInput
-            onChangeText={setExchange}
-            placeholder="Exchange"
-            style={styles.input}
-            value={exchange}
-          />
-        )}
-        {["account", "asset"].includes(resource) && (
-          <TextInput
-            onChangeText={setNotes}
-            placeholder={resource === "account" ? "Institution" : "Notes"}
-            style={styles.input}
-            value={notes}
-          />
+
+        {showDates && (
+          <>
+            <Text style={styles.accountSectionLabel}>3.  Dates</Text>
+            <AccountInputField
+              icon={
+                <CalendarDays color="#64748b" size={16} strokeWidth={2.2} />
+              }
+              label="Date"
+              onChangeText={setDate}
+              placeholder="YYYY-MM-DD"
+              value={date}
+            />
+            {resource === "liability" && (
+              <AccountInputField
+                icon={
+                  <CalendarDays color="#64748b" size={16} strokeWidth={2.2} />
+                }
+                label="End date"
+                onChangeText={setEndDate}
+                placeholder="YYYY-MM-DD"
+                value={endDate}
+              />
+            )}
+          </>
         )}
       </>
     );
@@ -850,11 +914,13 @@ export function FinancialIntelligenceScreen({
 
         <View style={styles.optionalSection}>
           <View style={styles.optionalHeader}>
+            <View style={styles.optionalHeaderIcon}>
+              <TrendingUp color="#ffffff" size={17} strokeWidth={2.6} />
+            </View>
             <View style={styles.rowTitleBlock}>
               <Text style={styles.optionalTitle}>Net worth tracking</Text>
               <Text style={styles.optionalText}>
-                Add assets, debt, investments, loans, or goals when you want a
-                fuller financial picture.
+                Track your assets and liabilities in one place.
               </Text>
             </View>
             <View style={styles.optionalBadge}>
@@ -873,32 +939,32 @@ export function FinancialIntelligenceScreen({
               value={overview.netWorth.totalLiabilities}
             />
           </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setAdvancedOptionsExpanded((current) => !current)}
-            style={styles.addDetailsButton}
-          >
-            <Plus
-              color={premiumTheme.colors.ink}
-              size={16}
-              strokeWidth={2.8}
-            />
-            <Text style={styles.addDetailsButtonText}>Add details</Text>
-          </Pressable>
-          {advancedOptionsExpanded ? (
-            <View style={styles.optionalActions}>
-              {advancedResourceTabs.map((tab) => (
+
+          <View style={styles.trackDivider} />
+          <Text style={styles.trackHeading}>Track your financials</Text>
+          <View style={styles.trackGrid}>
+            {advancedResourceTabs.map((tab) => {
+              const visual = trackResourceVisuals[tab];
+              const Icon = visual.Icon;
+
+              return (
                 <Pressable
+                  accessibilityRole="button"
                   key={tab}
                   onPress={() => openAdvancedForm(tab)}
-                  style={styles.advancedPill}
+                  style={({ pressed }) => [
+                    styles.trackCard,
+                    pressed && financeStyles.saveButtonDisabled,
+                  ]}
                 >
-                  <Plus color="#334155" size={14} strokeWidth={2.8} />
-                  <Text style={styles.segmentText}>{titleCase(tab)}</Text>
+                  <Icon color={visual.color} size={13} strokeWidth={2.4} />
+                  <Text numberOfLines={1} style={styles.trackCardText}>
+                    {titleCase(tab)}
+                  </Text>
                 </Pressable>
-              ))}
-            </View>
-          ) : null}
+              );
+            })}
+          </View>
         </View>
 
         {overview.goals.length > 0 && (
@@ -1174,14 +1240,18 @@ export function FinancialIntelligenceScreen({
             }}
           >
             <ScrollView contentContainerStyle={styles.modalContent}>
+              <View style={styles.accountModalHandle} />
               <View style={financeStyles.modalHeader}>
                 <View style={styles.rowTitleBlock}>
-                  <Text style={financeStyles.sectionTitle}>
+                  <Text style={styles.accountModalTitle}>
                     {editing ? "Edit" : "Add"} {resourceLabels[resource]}
                   </Text>
-                  <Text style={financeStyles.muted}>{getResourceHelpText(resource)}</Text>
+                  <Text style={styles.accountModalSubtitle}>
+                    {getResourceHelpText(resource)}
+                  </Text>
                 </View>
                 <Pressable
+                  disabled={isSavingResource}
                   onPress={closeAdvancedForm}
                   style={financeStyles.modalCloseButton}
                 >
@@ -1192,26 +1262,32 @@ export function FinancialIntelligenceScreen({
               {renderResourceFields()}
 
               {error && <Text style={financeStyles.error}>{error}</Text>}
-              <View style={styles.actions}>
+              <View style={styles.accountModalActions}>
+                <Pressable
+                  disabled={isSavingResource}
+                  onPress={closeAdvancedForm}
+                  style={styles.accountCancelButton}
+                >
+                  <Text style={styles.accountCancelButtonText}>Cancel</Text>
+                </Pressable>
                 <Pressable
                   disabled={isSavingResource}
                   onPress={handleSave}
                   style={[
-                    styles.primaryButton,
+                    styles.accountSubmitButton,
                     isSavingResource && financeStyles.saveButtonDisabled,
                   ]}
                 >
-                  <Text style={styles.primaryButtonText}>
+                  <Text style={styles.accountSubmitButtonText}>
                     {isSavingResource
                       ? "Saving..."
-                      : `Save ${resourceLabels[resource]}`}
+                      : `${editing ? "Update" : "Add"} ${titleCase(
+                          resourceLabels[resource]
+                        )}`}
                   </Text>
-                </Pressable>
-                <Pressable
-                  onPress={closeAdvancedForm}
-                  style={styles.secondaryButton}
-                >
-                  <Text style={styles.secondaryButtonText}>Cancel</Text>
+                  {isSavingResource ? null : (
+                    <ArrowRight color="#ffffff" size={17} strokeWidth={2.6} />
+                  )}
                 </Pressable>
               </View>
             </ScrollView>
@@ -1474,7 +1550,14 @@ function CompactMetric({
   const Icon = tone === "positive" ? TrendingUp : TrendingDown;
 
   return (
-    <View style={styles.compactMetric}>
+    <View
+      style={[
+        styles.compactMetric,
+        {
+          backgroundColor: tone === "positive" ? "#f2faf4" : "#fdf6ee",
+        },
+      ]}
+    >
       <View
         style={[
           styles.compactMetricIcon,
@@ -1871,7 +1954,6 @@ const styles = StyleSheet.create({
   },
   compactMetric: {
     alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
     borderRadius: 14,
     flex: 1,
     flexDirection: "row",
@@ -1991,6 +2073,46 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     justifyContent: "space-between",
+  },
+  optionalHeaderIcon: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.ink,
+    borderRadius: 999,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  trackCard: {
+    alignItems: "center",
+    backgroundColor: "#f5f5f7",
+    borderColor: "transparent",
+    borderRadius: 12,
+    borderWidth: 1.2,
+    flexDirection: "row",
+    gap: 5,
+    minHeight: 36,
+    paddingHorizontal: 10,
+  },
+  trackCardText: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  trackDivider: {
+    backgroundColor: premiumTheme.colors.border,
+    height: StyleSheet.hairlineWidth,
+    marginTop: 2,
+  },
+  trackGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 9,
+  },
+  trackHeading: {
+    color: premiumTheme.colors.ink,
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: -0.2,
   },
   optionalSection: {
     backgroundColor: "#ffffff",
