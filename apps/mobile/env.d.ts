@@ -5,6 +5,8 @@ declare namespace NodeJS {
   }
 }
 
+declare module "*.css";
+
 declare module "*.png" {
   import type { ImageSourcePropType } from "react-native";
 

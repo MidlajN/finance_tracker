@@ -11,5 +11,5 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true
   },
-  "include": ["index.ts", "src", "env.d.ts"]
+  "include": ["index.ts", "src", "env.d.ts", "nativewind-env.d.ts"]
 }
