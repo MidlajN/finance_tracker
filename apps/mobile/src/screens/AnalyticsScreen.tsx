@@ -116,6 +116,7 @@ export function AnalyticsScreen() {
   const [anchorOffset, setAnchorOffset] = useState(0);
   const [periodOpen, setPeriodOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [customRange, setCustomRange] = useState<AnalyticsCustomRange | null>(
     null
   );
@@ -497,15 +498,17 @@ export function AnalyticsScreen() {
               : analyticsRange === "custom"
                 ? "Custom Range"
                 : "All Time";
-  const visibleCategories = analytics.categoryAnalytics
-    .filter((group) => group.expenses > 0)
-    .slice(0, 6);
+  const expenseCategories = analytics.categoryAnalytics.filter(
+    (group) => group.expenses > 0
+  );
+  const visibleCategories = expenseCategories.slice(0, 6);
+  const listedCategories = expenseCategories.slice(0, 3);
   const chartWidth = Math.max(280, width - 72);
-  const pieSize = Math.min(176, Math.max(148, width * 0.42));
-  const highestCategory = visibleCategories[0] ?? null;
+  const pieSize = Math.min(132, Math.max(108, width * 0.3));
+  const highestCategory = expenseCategories[0] ?? null;
   const lowestCategory =
-    visibleCategories.length > 0
-      ? visibleCategories[visibleCategories.length - 1]
+    expenseCategories.length > 0
+      ? expenseCategories[expenseCategories.length - 1]
       : null;
 
   return (
@@ -876,32 +879,53 @@ export function AnalyticsScreen() {
           <Text style={styles.analyticsSectionTitle}>
             Spending by Category
           </Text>
-        </View>
-
-        <View style={styles.analyticsDonutContainer}>
-          <CategoryDonutChart
-            categories={visibleCategories}
-            size={pieSize}
-            total={analytics.totalExpenses}
-          />
-        </View>
-
-        <View style={styles.analyticsCategoryList}>
-          {visibleCategories.length === 0 ? (
-            <Text style={styles.analyticsEmptyText}>
-              No expense categories yet.
-            </Text>
-          ) : (
-            visibleCategories.map((category, index) => (
-              <AnalyticsCategoryRow
-                category={category}
-                color={getAnalyticsCategoryColor(index)}
-                key={category.name}
+          {expenseCategories.length > 0 ? (
+            <Pressable
+              onPress={() => setCategoryModalOpen(true)}
+              style={styles.analyticsViewAllPill}
+            >
+              <Text style={styles.analyticsViewAllLabel}>View all</Text>
+              <ChevronRight
+                color={premiumTheme.colors.ink}
+                size={13}
+                strokeWidth={2.6}
               />
-            ))
-          )}
+            </Pressable>
+          ) : null}
         </View>
+
+        {listedCategories.length === 0 ? (
+          <Text style={styles.analyticsEmptyText}>
+            No expense categories yet.
+          </Text>
+        ) : (
+          <View style={styles.analyticsCategorySplit}>
+            <CategoryDonutChart
+              categories={visibleCategories}
+              size={pieSize}
+              total={analytics.totalExpenses}
+            />
+            <View style={styles.analyticsCategorySplitList}>
+              {listedCategories.map((category, index) => (
+                <AnalyticsCategoryRow
+                  category={category}
+                  color={getAnalyticsCategoryColor(index)}
+                  key={category.name}
+                />
+              ))}
+            </View>
+          </View>
+        )}
       </View>
+
+      {categoryModalOpen ? (
+        <AnalyticsCategoryModal
+          categories={expenseCategories}
+          onClose={() => setCategoryModalOpen(false)}
+          subtitle={summaryTitle}
+          total={analytics.totalExpenses}
+        />
+      ) : null}
 
       <View style={styles.analyticsInsightRow}>
         <AnalyticsInsightCard
@@ -1377,7 +1401,7 @@ function AnalyticsCategoryRow({
           },
         ]}
       >
-        <Icon color={color} size={15} strokeWidth={2.4} />
+        <Icon color={color} size={13} strokeWidth={2.4} />
       </View>
       <View style={styles.analyticsCategoryCopy}>
         <View style={styles.analyticsCategoryTopRow}>
@@ -1424,8 +1448,22 @@ function AnalyticsInsightCard({
   subtitle: string;
   value: number;
 }) {
+  const gradientId = `insightBg${accent.replace("#", "")}`;
+
   return (
     <View style={styles.analyticsInsightCard}>
+      <View pointerEvents="none" style={styles.analyticsInsightCardBg}>
+        <Svg height="100%" preserveAspectRatio="none" width="100%">
+          <Defs>
+            <LinearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+              <Stop offset="0" stopColor={accent} stopOpacity="0.12" />
+              <Stop offset="0.6" stopColor={accent} stopOpacity="0.05" />
+              <Stop offset="1" stopColor={accent} stopOpacity="0" />
+            </LinearGradient>
+          </Defs>
+          <Rect fill={`url(#${gradientId})`} height="100%" width="100%" />
+        </Svg>
+      </View>
       <View
         style={[
           styles.analyticsInsightIcon,
@@ -1447,17 +1485,34 @@ function AnalyticsInsightCard({
       >
         {MobileDashboardService.getFormattedBalance(value)}
       </Text>
-      <Text
-        numberOfLines={1}
+      <View
         style={[
-          styles.analyticsInsightSubtitle,
+          styles.analyticsInsightPill,
           {
-            color: accent,
+            backgroundColor: `${accent}17`,
           },
         ]}
       >
-        {subtitle}
-      </Text>
+        <View
+          style={[
+            styles.analyticsInsightPillDot,
+            {
+              backgroundColor: accent,
+            },
+          ]}
+        />
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.analyticsInsightSubtitle,
+            {
+              color: accent,
+            },
+          ]}
+        >
+          {subtitle}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -1746,6 +1801,82 @@ function getAnalyticsCategoryColor(index: number) {
   ][index % 7];
 }
 
+function AnalyticsCategoryModal({
+  categories,
+  onClose,
+  subtitle,
+  total,
+}: {
+  categories: AnalyticsGroup[];
+  onClose: () => void;
+  subtitle: string;
+  total: number;
+}) {
+  const { height } = useWindowDimensions();
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={financeStyles.modalBackdrop}>
+        <Pressable onPress={onClose} style={financeStyles.modalDismissLayer} />
+        <MotiView
+          animate={{ opacity: 1, translateY: 0 }}
+          from={{ opacity: 0, translateY: 24 }}
+          style={styles.analyticsPickerPanel}
+          transition={{
+            damping: 18,
+            mass: 0.8,
+            stiffness: 180,
+            type: "spring",
+          }}
+        >
+          <View style={styles.analyticsPickerHeader}>
+            <View>
+              <Text style={financeStyles.merchantPickerTitle}>
+                Spending by Category
+              </Text>
+              <Text style={financeStyles.merchantPickerSubtitle}>
+                {subtitle} · {categories.length}{" "}
+                {categories.length === 1 ? "category" : "categories"}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} style={financeStyles.modalCloseButton}>
+              <X color="#0f172a" size={20} strokeWidth={2.4} />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.analyticsCategorySheetContent}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+            style={{
+              flexGrow: 0,
+              maxHeight: Math.max(320, height * 0.62),
+            }}
+          >
+            <View style={styles.analyticsDonutContainer}>
+              <CategoryDonutChart
+                categories={categories}
+                size={160}
+                total={total}
+              />
+            </View>
+
+            <View style={styles.analyticsCategoryList}>
+              {categories.map((category, index) => (
+                <AnalyticsCategoryRow
+                  category={category}
+                  color={getAnalyticsCategoryColor(index)}
+                  key={category.name}
+                />
+              ))}
+            </View>
+          </ScrollView>
+        </MotiView>
+      </View>
+    </Modal>
+  );
+}
+
 function AnalyticsCustomRangeModal({
   initialRange,
   onApply,
@@ -1943,10 +2074,10 @@ const styles = StyleSheet.create({
   },
   analyticsCategoryAmount: {
     color: "#0f172a",
-    fontSize: 13,
+    fontSize: 12,
     fontVariant: ["tabular-nums"],
     fontWeight: "800",
-    marginLeft: 10,
+    marginLeft: 8,
   },
   analyticsCategoryBarFill: {
     borderRadius: 999,
@@ -1955,8 +2086,8 @@ const styles = StyleSheet.create({
   analyticsCategoryBarRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 9,
-    marginTop: 6,
+    gap: 7,
+    marginTop: 5,
   },
   analyticsCategoryBarTrack: {
     backgroundColor: premiumTheme.colors.field,
@@ -1983,36 +2114,64 @@ const styles = StyleSheet.create({
   },
   analyticsCategoryIcon: {
     alignItems: "center",
-    borderRadius: 11,
-    height: 34,
+    borderRadius: 9,
+    height: 28,
     justifyContent: "center",
-    width: 34,
+    width: 28,
   },
   analyticsCategoryList: {
     gap: 4,
   },
+  analyticsCategorySheetContent: {
+    paddingBottom: 8,
+  },
+  analyticsCategorySplit: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  analyticsCategorySplitList: {
+    flex: 1,
+    gap: 4,
+  },
+  analyticsViewAllLabel: {
+    color: premiumTheme.colors.ink,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: -0.1,
+  },
+  analyticsViewAllPill: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.field,
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 3,
+    minHeight: 28,
+    paddingLeft: 12,
+    paddingRight: 8,
+  },
   analyticsCategoryName: {
     color: "#0f172a",
     flex: 1,
-    fontSize: 13.5,
+    fontSize: 12.5,
     fontWeight: "700",
     letterSpacing: -0.2,
     minWidth: 0,
   },
   analyticsCategoryPercent: {
     color: premiumTheme.colors.secondary,
-    fontSize: 11,
+    fontSize: 10.5,
     fontVariant: ["tabular-nums"],
     fontWeight: "700",
-    minWidth: 34,
+    minWidth: 30,
     textAlign: "right",
   },
   analyticsCategoryRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 11,
-    minHeight: 54,
-    paddingVertical: 8,
+    gap: 8,
+    minHeight: 44,
+    paddingVertical: 5,
   },
   analyticsChartCard: {
     backgroundColor: "#ffffff",
@@ -2279,13 +2438,36 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   analyticsInsightCard: {
-    backgroundColor: premiumTheme.colors.field,
     borderRadius: 18,
     flex: 1,
     gap: 5,
     minWidth: 0,
+    overflow: "hidden",
     paddingHorizontal: 10,
     paddingVertical: 12,
+  },
+  analyticsInsightCardBg: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  analyticsInsightPill: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 5,
+    marginTop: 2,
+    maxWidth: "100%",
+    minHeight: 22,
+    paddingHorizontal: 9,
+  },
+  analyticsInsightPillDot: {
+    borderRadius: 999,
+    height: 5,
+    width: 5,
   },
   analyticsInsightIcon: {
     alignItems: "center",
@@ -2305,8 +2487,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   analyticsInsightSubtitle: {
-    fontSize: 11,
-    fontWeight: "900",
+    flexShrink: 1,
+    fontSize: 10.5,
+    fontWeight: "800",
   },
   analyticsInsightValue: {
     color: "#0f172a",
