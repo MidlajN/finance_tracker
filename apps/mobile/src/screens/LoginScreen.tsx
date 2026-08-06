@@ -5,7 +5,6 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -40,15 +39,15 @@ export function LoginScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView className="flex-1 bg-canvas">
       {/* Edge-to-edge (Expo SDK 53+) disables Android adjustResize, so the
           KeyboardAvoidingView must be active on Android too. */}
-      <KeyboardAvoidingView behavior="padding" style={styles.keyboardView}>
+      <KeyboardAvoidingView behavior="padding" className="flex-1">
         <ScrollView
-          contentContainerStyle={styles.container}
+          contentContainerClassName="grow justify-center px-6 py-9"
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.brandMark}>
+          <View className="h-[52px] w-[52px] items-center justify-center rounded-[18px] bg-accent-soft">
             <Wallet
               color={premiumTheme.colors.accent}
               size={24}
@@ -56,68 +55,85 @@ export function LoginScreen() {
             />
           </View>
 
-          <View style={styles.intro}>
-            <Text style={styles.eyebrow}>FINANCE TRACKER</Text>
-            <Text style={styles.title}>Your money, clearly.</Text>
-            <Text style={styles.subtitle}>
+          <View className="mt-[22px]">
+            <Text className="text-[11px] font-black tracking-[1.1px] text-accent">
+              FINANCE TRACKER
+            </Text>
+            <Text className="mt-[7px] text-[34px] font-black tracking-[-0.8px] text-ink">
+              Your money, clearly.
+            </Text>
+            <Text className="mt-2 max-w-[330px] text-[14px] leading-[21px] text-secondary">
               A calm place to capture transactions and understand your finances.
             </Text>
           </View>
 
-          <View style={styles.formSurface}>
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Email</Text>
+          <View
+            className="mt-7 gap-3.5 rounded-surface bg-elevated p-4"
+            style={premiumTheme.shadow.floating}
+          >
+            <View className="gap-[7px]">
+              <Text className="px-0.5 text-[11px] font-extrabold text-secondary">
+                Email
+              </Text>
               <TextInput
                 autoCapitalize="none"
                 autoComplete="email"
+                className="min-h-[50px] rounded-control bg-field px-3.5 text-[14px] font-bold text-ink"
                 keyboardType="email-address"
                 onChangeText={setEmail}
                 placeholder="you@example.com"
                 placeholderTextColor={premiumTheme.colors.muted}
-                style={styles.input}
                 value={email}
               />
             </View>
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Password</Text>
+            <View className="gap-[7px]">
+              <Text className="px-0.5 text-[11px] font-extrabold text-secondary">
+                Password
+              </Text>
               <TextInput
+                className="min-h-[50px] rounded-control bg-field px-3.5 text-[14px] font-bold text-ink"
                 onChangeText={setPassword}
                 placeholder="Enter your password"
                 placeholderTextColor={premiumTheme.colors.muted}
                 secureTextEntry
-                style={styles.input}
                 value={password}
               />
             </View>
 
             {(formError || error) && (
-              <Text style={styles.error}>{formError ?? error}</Text>
+              <Text className="text-[12px] font-bold text-danger">
+                {formError ?? error}
+              </Text>
             )}
 
             <Pressable
+              className={`mt-1 min-h-[52px] flex-row items-center justify-center gap-[9px] rounded-2xl bg-ink ${
+                loading ? "opacity-[0.55]" : ""
+              }`}
               disabled={loading}
               onPress={handleSubmit}
-              style={[styles.button, loading && styles.buttonDisabled]}
             >
               {loading ? (
                 <ActivityIndicator color="#ffffff" />
               ) : (
                 <>
-                  <Text style={styles.buttonText}>Continue</Text>
+                  <Text className="text-[14px] font-black text-white">
+                    Continue
+                  </Text>
                   <ArrowRight color="#ffffff" size={18} strokeWidth={2.6} />
                 </>
               )}
             </Pressable>
           </View>
 
-          <View style={styles.securityNote}>
+          <View className="mt-[18px] flex-row items-center justify-center gap-[7px] px-3">
             <ShieldCheck
               color={premiumTheme.colors.secondary}
               size={16}
               strokeWidth={2.3}
             />
-            <Text style={styles.securityText}>
+            <Text className="shrink text-[11px] leading-4 text-secondary">
               Your financial data stays private and securely synced.
             </Text>
           </View>
@@ -126,113 +142,3 @@ export function LoginScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  brandMark: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.accentSoft,
-    borderRadius: 18,
-    height: 52,
-    justifyContent: "center",
-    width: 52,
-  },
-  button: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 16,
-    flexDirection: "row",
-    gap: 9,
-    justifyContent: "center",
-    marginTop: 4,
-    minHeight: 52,
-  },
-  buttonDisabled: {
-    opacity: 0.55,
-  },
-  buttonText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  container: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 36,
-  },
-  error: {
-    color: premiumTheme.colors.danger,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  eyebrow: {
-    color: premiumTheme.colors.accent,
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 1.1,
-  },
-  fieldGroup: {
-    gap: 7,
-  },
-  fieldLabel: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 11,
-    fontWeight: "800",
-    paddingHorizontal: 2,
-  },
-  formSurface: {
-    backgroundColor: premiumTheme.colors.elevated,
-    borderRadius: premiumTheme.radius.surface,
-    gap: 14,
-    marginTop: 28,
-    padding: 16,
-    ...premiumTheme.shadow.floating,
-  },
-  input: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: premiumTheme.radius.control,
-    color: premiumTheme.colors.ink,
-    fontSize: 14,
-    fontWeight: "700",
-    minHeight: 50,
-    paddingHorizontal: 14,
-  },
-  intro: {
-    marginTop: 22,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  safeArea: {
-    backgroundColor: premiumTheme.colors.canvas,
-    flex: 1,
-  },
-  securityNote: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 7,
-    justifyContent: "center",
-    marginTop: 18,
-    paddingHorizontal: 12,
-  },
-  securityText: {
-    color: premiumTheme.colors.secondary,
-    flexShrink: 1,
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  subtitle: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 8,
-    maxWidth: 330,
-  },
-  title: {
-    color: premiumTheme.colors.ink,
-    fontSize: 34,
-    fontWeight: "900",
-    letterSpacing: -0.8,
-    marginTop: 7,
-  },
-});

@@ -1,3 +1,5 @@
+const { hairlineWidth } = require("nativewind/theme");
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ["./index.ts", "./src/**/*.{ts,tsx}"],
@@ -51,6 +53,9 @@ module.exports = {
         modal: "28px",
         section: "20px",
         surface: "24px",
+      },
+      borderWidth: {
+        hairline: hairlineWidth(),
       },
     },
   },

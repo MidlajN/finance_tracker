@@ -22,7 +22,6 @@ import {
   X,
 } from "lucide-react-native";
 import {
-  ActivityIndicator,
   Animated,
   Image,
   Modal,
@@ -31,7 +30,6 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
-  StyleSheet,
   StatusBar,
   Text,
   useWindowDimensions,
@@ -42,14 +40,11 @@ import Svg, { Path } from "react-native-svg";
 
 import appMark from "../../assets/icon.png";
 
+import { SavingOverlay } from "../components/finance/SavingOverlay";
 import { MobileDashboardService } from "../services/MobileDashboardService";
 import { useOfflineStore } from "../stores/offlineStore";
 import { useSyncStore } from "../stores/syncStore";
-import {
-  premiumHairline,
-  premiumSurface,
-  premiumTheme,
-} from "../theme/premiumTheme";
+import { premiumSurface, premiumTheme } from "../theme/premiumTheme";
 import type { RootStackParamList } from "../types/navigation";
 
 type DashboardScreenProps = NativeStackScreenProps<
@@ -69,6 +64,8 @@ type DashboardIcon = ComponentType<{
   strokeWidth?: number;
 }>;
 
+const pressedControl = "active:opacity-[0.82] active:scale-[0.98]";
+
 export function DashboardScreen({ navigation }: DashboardScreenProps) {
   const [quickAddVisible, setQuickAddVisible] = useState(false);
   const { width } = useWindowDimensions();
@@ -85,12 +82,19 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
   const offlineError = useOfflineStore((state) => state.error);
   const refreshOfflineData = useOfflineStore((state) => state.refresh);
   const syncError = useSyncStore((state) => state.error);
-  const syncing = useSyncStore((state) => state.syncing);
+  const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   // Offline-first: with a warm cache the dashboard renders instantly and
   // sync updates in the background. Only a fresh install/login has nothing
-  // to show, so that's the only time a loading state appears.
+  // to show, so that's the only time a loading state appears. Keyed on
+  // "no sync completed yet" rather than `syncing` so the overlay covers
+  // the frames before the first sync kicks off — gating on `syncing`
+  // flashed the empty dashboard first. A failed first sync drops the
+  // overlay via syncError so it can't get stuck.
   const isFirstLoad =
-    syncing && transactions.length === 0 && accounts.length === 0;
+    transactions.length === 0 &&
+    accounts.length === 0 &&
+    lastSyncedAt === null &&
+    syncError === null;
 
   const financialOverview = useMemo(
     () =>
@@ -189,40 +193,35 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView className="flex-1 bg-canvas">
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: androidStatusBarHeight + 12,
-          },
-        ]}
+        contentContainerClassName="px-5 pb-6"
+        contentContainerStyle={{
+          paddingTop: androidStatusBarHeight + 12,
+        }}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.topBar}>
-          <View style={styles.brandRow}>
-            <Image source={appMark} style={styles.brandMark} />
-            <Text style={styles.brandName}>FinAce</Text>
+        <View className="mb-7 flex-row items-center justify-between">
+          <View className="flex-row items-center gap-2.5">
+            <Image className="h-[38px] w-[38px] rounded-[11px]" source={appMark} />
+            <Text className="text-[20px] font-extrabold tracking-[-0.5px] text-ink">
+              FinAce
+            </Text>
           </View>
 
-          <View style={styles.topActions}>
+          <View className="flex-row gap-2.5">
             <Pressable
+              className={`min-h-[38px] flex-row items-center justify-center gap-1.5 rounded-full bg-ink px-[15px] ${pressedControl}`}
               onPress={() => setQuickAddVisible(true)}
-              style={({ pressed }) => [
-                styles.addButton,
-                pressed && styles.pressedControl,
-              ]}
+              style={premiumTheme.shadow.soft}
             >
               <Plus color="#ffffff" size={17} strokeWidth={2.6} />
-              <Text style={styles.addButtonText}>Add</Text>
+              <Text className="text-[13px] font-bold text-white">Add</Text>
             </Pressable>
 
             <Pressable
+              className={`h-[38px] w-[38px] items-center justify-center rounded-full border border-border bg-canvas ${pressedControl}`}
               onPress={() => navigation.navigate("Settings")}
-              style={({ pressed }) => [
-                styles.settingsButton,
-                pressed && styles.pressedControl,
-              ]}
             >
               <Settings
                 color={premiumTheme.colors.ink}
@@ -234,30 +233,23 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
         </View>
 
         {(offlineError || syncError) && (
-          <View style={styles.errorCard}>
-            <Text style={styles.errorText}>{offlineError ?? syncError}</Text>
+          <View className="mb-4 rounded-[18px] bg-danger-soft p-3.5">
+            <Text className="text-[13px] font-bold text-danger">
+              {offlineError ?? syncError}
+            </Text>
           </View>
         )}
 
-        {isFirstLoad ? (
-          <View style={styles.firstLoadCard}>
-            <ActivityIndicator
-              color={premiumTheme.colors.ink}
-              size="large"
-            />
-            <Text style={styles.firstLoadTitle}>Fetching your data</Text>
-            <Text style={styles.firstLoadText}>
-              Pulling accounts and transactions from your backup. This only
-              happens on first launch.
-            </Text>
-          </View>
-        ) : null}
-
         {!isFirstLoad && (
           <>
-          <View style={styles.heroCard}>
-            <View style={styles.heroHeader}>
-              <Text style={styles.heroLabel}>Total spend</Text>
+          <View
+            className="z-10 rounded-surface border border-border bg-white px-[18px] pb-1.5 pt-3.5"
+            style={premiumTheme.shadow.soft}
+          >
+            <View className="z-20 flex-row items-center justify-between">
+              <Text className="text-[10px] font-bold uppercase tracking-[1.1px] text-secondary">
+                Total spend
+              </Text>
               <MonthSelect
                 onSelect={setMonthOffset}
                 options={monthOptions}
@@ -267,9 +259,9 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
 
             <Text
               adjustsFontSizeToFit
+              className="mt-2 text-[30px] font-extrabold tracking-[-0.8px] text-ink tabular-nums"
               minimumFontScale={0.72}
               numberOfLines={1}
-              style={styles.heroAmount}
             >
               {MobileDashboardService.getFormattedBalance(
                 monthlySpend.currentExpenseTotal
@@ -282,7 +274,7 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
             />
           </View>
 
-          <View style={styles.summaryRow}>
+          <View className="mt-3.5 flex-row gap-3">
             <SummaryCard
               deltaGoodWhenUp
               deltaPercent={incomeDeltaPercent}
@@ -299,32 +291,43 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
             />
           </View>
 
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Accounts</Text>
+          <View className="mb-3.5 mt-[34px] flex-row items-center justify-between">
+            <Text className="text-[19px] font-extrabold tracking-[-0.4px] text-ink">
+              Accounts
+            </Text>
             {financialOverview.accounts.length > 4 && (
               <Pressable
+                className="rounded-full border border-border bg-white px-[13px] py-[7px]"
                 onPress={() => navigation.navigate("FinancialIntelligence")}
-                style={styles.viewAllPill}
               >
-                <Text style={styles.viewAllText}>View all</Text>
+                <Text className="text-[12px] font-semibold text-secondary">
+                  View all
+                </Text>
               </Pressable>
             )}
           </View>
 
-          <View style={styles.accountsCard}>
-            <View style={styles.accountsCardInner}>
+          <View
+            className="rounded-section border border-border bg-white"
+            style={premiumTheme.shadow.soft}
+          >
+            <View className="overflow-hidden rounded-section">
             {accountPreview.length === 0 ? (
-              <View style={styles.emptyAccountRow}>
-                <Text style={styles.emptyAccountTitle}>No accounts yet</Text>
-                <Text style={styles.emptyAccountText}>
+              <View className="p-5">
+                <Text className="text-[16px] font-bold text-ink">
+                  No accounts yet
+                </Text>
+                <Text className="mt-1.5 text-[14px] leading-5 text-secondary">
                   Add cash, bank accounts, cards, or wallets to see balances here.
                 </Text>
                 <Pressable
+                  className="mt-4 min-h-[42px] flex-row items-center gap-2 self-start rounded-full bg-ink px-4"
                   onPress={openAddAccount}
-                  style={styles.emptyAccountButton}
                 >
                   <Plus color="#ffffff" size={18} strokeWidth={2.5} />
-                  <Text style={styles.emptyAccountButtonText}>Add account</Text>
+                  <Text className="text-[14px] font-bold text-white">
+                    Add account
+                  </Text>
                 </Pressable>
               </View>
             ) : (
@@ -352,6 +355,12 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
         onClose={() => setQuickAddVisible(false)}
         visible={quickAddVisible}
       />
+
+      <SavingOverlay
+        subtitle="Syncing your accounts and transactions"
+        title="Fetching your data"
+        visible={isFirstLoad}
+      />
     </SafeAreaView>
   );
 }
@@ -360,6 +369,21 @@ interface MonthOption {
   label: string;
   offset: number;
 }
+
+// Animated.View is not NativeWind-interop'd, so the dropdown keeps a plain
+// style object.
+const monthMenuStyle = {
+  backgroundColor: "#ffffff",
+  borderRadius: 14,
+  minWidth: 150,
+  paddingVertical: 6,
+  position: "absolute",
+  right: 0,
+  top: 34,
+  zIndex: 30,
+  ...premiumSurface,
+  ...premiumTheme.shadow.soft,
+} as const;
 
 function MonthSelect({
   onSelect,
@@ -418,21 +442,20 @@ function MonthSelect({
   }
 
   return (
-    <View style={styles.monthSelectWrap}>
+    <View className="z-20">
       {open && (
         <Pressable
+          className="absolute -bottom-[1000px] -left-[1000px] -right-[1000px] -top-[1000px] z-[25]"
           onPress={() => closeMenu()}
-          style={styles.monthBackdrop}
         />
       )}
       <Pressable
+        className={`flex-row items-center gap-1 rounded-full border border-border bg-white px-2.5 py-[5px] ${pressedControl}`}
         onPress={() => (open ? closeMenu() : openMenu())}
-        style={({ pressed }) => [
-          styles.heroPeriodPill,
-          pressed && styles.pressedControl,
-        ]}
       >
-        <Text style={styles.heroPeriodText}>{selected.label}</Text>
+        <Text className="text-[11px] font-semibold text-secondary">
+          {selected.label}
+        </Text>
         <Animated.View
           style={{
             transform: [
@@ -453,7 +476,7 @@ function MonthSelect({
       {open && (
         <Animated.View
           style={[
-            styles.monthMenu,
+            monthMenuStyle,
             {
               opacity: progress,
               transform: [
@@ -472,18 +495,16 @@ function MonthSelect({
 
             return (
               <Pressable
+                className="min-h-9 flex-row items-center justify-between px-3.5 active:bg-field"
                 key={option.offset}
                 onPress={() => closeMenu(option.offset)}
-                style={({ pressed }) => [
-                  styles.monthOption,
-                  pressed && styles.monthOptionPressed,
-                ]}
               >
                 <Text
-                  style={[
-                    styles.monthOptionText,
-                    active && styles.monthOptionTextActive,
-                  ]}
+                  className={`text-[12px] ${
+                    active
+                      ? "font-bold text-ink"
+                      : "font-semibold text-secondary"
+                  }`}
                 >
                   {option.label}
                 </Text>
@@ -522,12 +543,14 @@ function DeltaChip({
         : premiumTheme.colors.danger;
 
   return (
-    <View style={styles.deltaChip}>
+    <View className="mt-[11px] flex-row items-center gap-1 self-start rounded-full bg-field px-[9px] py-1">
       <Icon color={color} size={11} strokeWidth={2.6} />
-      <Text style={[styles.deltaPercentText, { color }]}>
+      <Text className="text-[11px] font-bold tabular-nums" style={{ color }}>
         {Math.abs(percent)}%
       </Text>
-      <Text style={styles.deltaCaptionText}>vs last month</Text>
+      <Text className="text-[11px] font-medium text-secondary">
+        vs last month
+      </Text>
     </View>
   );
 }
@@ -537,9 +560,15 @@ function DeltaChip({
 // / count, which the scrub gesture inverts to find the nearest day.
 const CHART_PLOT_LEFT = 64;
 // Offset from the touch wrapper's left edge to the svg's left edge: the
-// wrapper centers a chart 8px narrower than itself (+4) and chartCanvas
+// wrapper centers a chart 8px narrower than itself (+4) and the canvas
 // shifts the svg left by 10, so the svg starts 6px left of the wrapper.
 const CHART_CANVAS_SHIFT = 6;
+
+// LineChart is a third-party component; its style prop stays a plain object.
+const chartCanvasStyle = {
+  marginLeft: -10,
+  paddingBottom: 10,
+} as const;
 
 function MonthlySpendChart({
   points,
@@ -586,7 +615,10 @@ function MonthlySpendChart({
   }, [values.length, width]);
 
   return (
-    <View style={styles.chart} {...panResponder.panHandlers}>
+    <View
+      className="-mx-1.5 mt-1.5 h-[168px] items-center"
+      {...panResponder.panHandlers}
+    >
       <LineChart
         bezier
         data={{
@@ -623,40 +655,36 @@ function MonthlySpendChart({
           return (
             <View key={`marker-${index}`} pointerEvents="none">
               <View
-                style={[
-                  styles.chartMarkerLine,
-                  {
-                    height: Math.max(0, 116 - y),
-                    left: x,
-                    top: y + 6,
-                  },
-                ]}
+                className="absolute w-px bg-divider"
+                style={{
+                  height: Math.max(0, 116 - y),
+                  left: x,
+                  top: y + 6,
+                }}
               />
               <View
-                style={[
-                  styles.chartMarkerDot,
-                  {
-                    left: x - 5.5,
-                    top: y - 5.5,
-                  },
-                ]}
+                className="absolute h-[11px] w-[11px] rounded-md border-2 border-white bg-ink"
+                style={{
+                  left: x - 5.5,
+                  top: y - 5.5,
+                }}
               />
               <View
-                style={[
-                  styles.chartTooltip,
-                  {
-                    left: clampedLeft,
-                    top: Math.max(2, y - 36),
-                  },
-                ]}
+                className="absolute rounded-full bg-ink px-[9px] py-[5px]"
+                style={{
+                  left: clampedLeft,
+                  top: Math.max(2, y - 36),
+                }}
               >
-                <Text style={styles.chartTooltipText}>{tooltipText}</Text>
+                <Text className="text-[11px] font-bold text-white tabular-nums">
+                  {tooltipText}
+                </Text>
               </View>
             </View>
           );
         }}
         segments={3}
-        style={styles.chartCanvas}
+        style={chartCanvasStyle}
         width={width}
         withDots
         withInnerLines
@@ -699,12 +727,22 @@ function formatCompact(value: number) {
   return value.toFixed(0);
 }
 
+// Svg is a third-party component; positioning stays a plain style object.
+const summaryWaveStyle = {
+  bottom: -1,
+  position: "absolute",
+  right: -1,
+} as const;
+
 function SummaryCornerWave() {
   return (
-    <View pointerEvents="none" style={styles.summaryCardBackdrop}>
+    <View
+      className="absolute inset-0 overflow-hidden rounded-[18px]"
+      pointerEvents="none"
+    >
       <Svg
         height={46}
-        style={styles.summaryWave}
+        style={summaryWaveStyle}
         viewBox="0 0 104 48"
         width={104}
       >
@@ -737,23 +775,28 @@ function SummaryCard({
   value: number;
 }) {
   return (
-    <View style={styles.summaryCard}>
+    <View
+      className="min-h-[96px] flex-1 rounded-[18px] border border-border bg-white p-3.5"
+      style={premiumTheme.shadow.soft}
+    >
       <SummaryCornerWave />
-      <View style={styles.summaryCardHeader}>
-        <View style={styles.summaryIcon}>
+      <View className="flex-row items-center gap-2">
+        <View className="h-[26px] w-[26px] items-center justify-center rounded-full bg-field">
           <Icon
             color={premiumTheme.colors.ink}
             size={13}
             strokeWidth={2.4}
           />
         </View>
-        <Text style={styles.summaryLabel}>{label}</Text>
+        <Text className="text-[10px] font-bold uppercase tracking-[0.8px] text-secondary">
+          {label}
+        </Text>
       </View>
       <Text
         adjustsFontSizeToFit
+        className="mt-2.5 text-[19px] font-extrabold tracking-[-0.3px] text-ink tabular-nums"
         minimumFontScale={0.72}
         numberOfLines={1}
-        style={styles.summaryValue}
       >
         {MobileDashboardService.getFormattedBalance(value)}
       </Text>
@@ -782,16 +825,24 @@ function QuickAddMenu({
       transparent
       visible={visible}
     >
-      <Pressable onPress={onClose} style={styles.quickAddBackdrop}>
-        <Pressable style={styles.quickAddPanel}>
-          <View style={styles.quickAddHeader}>
+      <Pressable
+        className="flex-1 justify-end bg-ink/[0.28]"
+        onPress={onClose}
+      >
+        <Pressable className="rounded-t-modal bg-canvas px-[22px] pb-7 pt-[22px]">
+          <View className="mb-[18px] flex-row items-start justify-between gap-4">
             <View>
-              <Text style={styles.quickAddTitle}>Add new</Text>
-              <Text style={styles.quickAddSubtitle}>
+              <Text className="text-[23px] font-extrabold tracking-[-0.4px] text-ink">
+                Add new
+              </Text>
+              <Text className="mt-1 text-[14px] leading-5 text-[#7b818c]">
                 Choose what you want to record.
               </Text>
             </View>
-            <Pressable onPress={onClose} style={styles.quickAddCloseButton}>
+            <Pressable
+              className="h-9 w-9 items-center justify-center rounded-[18px] bg-[#f1f5f9]"
+              onPress={onClose}
+            >
               <X color="#0f172a" size={20} strokeWidth={2.4} />
             </Pressable>
           </View>
@@ -842,20 +893,21 @@ function QuickAddOption({
   onPress: () => void;
 }) {
   return (
-    <Pressable onPress={onPress} style={styles.quickAddOption}>
+    <Pressable
+      className="min-h-[70px] flex-row items-center gap-3.5 border-t-hairline border-t-[#eef1f5] py-3"
+      onPress={onPress}
+    >
       <View
-        style={[
-          styles.quickAddOptionIcon,
-          {
-            backgroundColor: iconBackground,
-          },
-        ]}
+        className="h-11 w-11 items-center justify-center rounded-[18px]"
+        style={{ backgroundColor: iconBackground }}
       >
         <Icon color={iconColor} size={22} strokeWidth={2.4} />
       </View>
-      <View style={styles.quickAddOptionText}>
-        <Text style={styles.quickAddOptionLabel}>{label}</Text>
-        <Text style={styles.quickAddOptionDescription}>{description}</Text>
+      <View className="min-w-0 flex-1">
+        <Text className="text-[16px] font-bold text-ink">{label}</Text>
+        <Text className="mt-[3px] text-[13px] leading-[18px] text-[#7b818c]">
+          {description}
+        </Text>
       </View>
       <ChevronRight color="#a3a8b0" size={20} strokeWidth={2.2} />
     </Pressable>
@@ -880,29 +932,32 @@ function AccountRow({
 
   return (
     <Pressable
+      className={`min-h-[74px] flex-row items-center gap-3.5 px-4 active:bg-field ${
+        showDivider ? "border-b-hairline border-b-divider" : ""
+      }`}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.accountRow,
-        showDivider && styles.accountDivider,
-        pressed && styles.accountRowPressed,
-      ]}
     >
-      <View style={[styles.accountIcon, { backgroundColor: icon.background }]}>
+      <View
+        className="h-[46px] w-[46px] items-center justify-center rounded-control"
+        style={{ backgroundColor: icon.background }}
+      >
         <Icon color={icon.color} size={22} strokeWidth={2.4} />
       </View>
 
-      <View style={styles.accountDetails}>
-        <Text numberOfLines={1} style={styles.accountName}>
+      <View className="min-w-0 flex-1">
+        <Text className="text-[15px] font-bold text-ink" numberOfLines={1}>
           {name}
         </Text>
-        <Text style={styles.accountMeta}>{getAccountSubtitle(type)}</Text>
+        <Text className="mt-[3px] text-[12px] font-medium text-secondary">
+          {getAccountSubtitle(type)}
+        </Text>
       </View>
 
       <Text
         adjustsFontSizeToFit
+        className="ml-2 text-[15px] font-extrabold text-ink tabular-nums"
         minimumFontScale={0.76}
         numberOfLines={1}
-        style={styles.accountBalance}
       >
         {MobileDashboardService.getFormattedBalance(balance)}
       </Text>
@@ -953,487 +1008,3 @@ function getAccountSubtitle(type: string) {
 
   return "Bank account";
 }
-
-const styles = StyleSheet.create({
-  accountBalance: {
-    color: premiumTheme.colors.ink,
-    fontSize: 15,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-    marginLeft: 8,
-  },
-  accountDetails: {
-    flex: 1,
-    minWidth: 0,
-  },
-  accountDivider: {
-    borderBottomColor: premiumTheme.colors.divider,
-    borderBottomWidth: premiumHairline,
-  },
-  accountIcon: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 14,
-    height: 46,
-    justifyContent: "center",
-    width: 46,
-  },
-  accountMeta: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "500",
-    marginTop: 3,
-  },
-  accountName: {
-    color: premiumTheme.colors.ink,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  accountRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 14,
-    minHeight: 74,
-    paddingHorizontal: 16,
-  },
-  accountRowPressed: {
-    backgroundColor: premiumTheme.colors.field,
-  },
-  accountsCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: premiumTheme.radius.section,
-    ...premiumSurface,
-    ...premiumTheme.shadow.soft,
-  },
-  accountsCardInner: {
-    borderRadius: premiumTheme.radius.section,
-    overflow: "hidden",
-  },
-  addButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: premiumTheme.radius.pill,
-    flexDirection: "row",
-    gap: 6,
-    justifyContent: "center",
-    minHeight: 38,
-    paddingHorizontal: 15,
-    ...premiumTheme.shadow.soft,
-  },
-  addButtonText: {
-    color: "#ffffff",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  brandMark: {
-    borderRadius: 11,
-    height: 38,
-    width: 38,
-  },
-  brandName: {
-    color: premiumTheme.colors.ink,
-    fontSize: 20,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-  },
-  brandRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
-  chart: {
-    alignItems: "center",
-    height: 168,
-    marginHorizontal: -6,
-    marginTop: 6,
-  },
-  chartCanvas: {
-    marginLeft: -10,
-    paddingBottom: 10,
-  },
-  chartMarkerDot: {
-    backgroundColor: premiumTheme.colors.ink,
-    borderColor: "#ffffff",
-    borderRadius: 6,
-    borderWidth: 2,
-    height: 11,
-    position: "absolute",
-    width: 11,
-  },
-  chartMarkerLine: {
-    backgroundColor: premiumTheme.colors.divider,
-    position: "absolute",
-    width: 1,
-  },
-  chartTooltip: {
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: premiumTheme.radius.pill,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    position: "absolute",
-  },
-  chartTooltipText: {
-    color: "#ffffff",
-    fontSize: 11,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "700",
-  },
-  content: {
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-  },
-  emptyAccountRow: {
-    padding: 20,
-  },
-  emptyAccountButton: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 16,
-    minHeight: 42,
-    paddingHorizontal: 16,
-  },
-  emptyAccountButtonText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  emptyAccountText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 6,
-  },
-  emptyAccountTitle: {
-    color: premiumTheme.colors.ink,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  firstLoadCard: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderRadius: premiumTheme.radius.surface,
-    marginTop: 40,
-    paddingHorizontal: 26,
-    paddingVertical: 44,
-    ...premiumSurface,
-    ...premiumTheme.shadow.soft,
-  },
-  firstLoadText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 6,
-    textAlign: "center",
-  },
-  firstLoadTitle: {
-    color: premiumTheme.colors.ink,
-    fontSize: 16,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-    marginTop: 18,
-  },
-  errorCard: {
-    backgroundColor: premiumTheme.colors.dangerSoft,
-    borderRadius: 18,
-    marginBottom: 16,
-    padding: 14,
-  },
-  errorText: {
-    color: premiumTheme.colors.danger,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  heroAmount: {
-    color: premiumTheme.colors.ink,
-    fontSize: 30,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-    letterSpacing: -0.8,
-    marginTop: 8,
-  },
-  heroCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: premiumTheme.radius.surface,
-    paddingBottom: 6,
-    paddingHorizontal: 18,
-    paddingTop: 14,
-    zIndex: 10,
-    ...premiumSurface,
-    ...premiumTheme.shadow.soft,
-  },
-  deltaChip: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: premiumTheme.radius.pill,
-    flexDirection: "row",
-    gap: 4,
-    marginTop: 11,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  deltaCaptionText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 11,
-    fontWeight: "500",
-  },
-  deltaPercentText: {
-    color: premiumTheme.colors.ink,
-    fontSize: 11,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "700",
-  },
-  heroHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    zIndex: 20,
-  },
-  monthBackdrop: {
-    bottom: -1000,
-    left: -1000,
-    position: "absolute",
-    right: -1000,
-    top: -1000,
-    zIndex: 25,
-  },
-  monthMenu: {
-    backgroundColor: "#ffffff",
-    borderRadius: 14,
-    minWidth: 150,
-    paddingVertical: 6,
-    position: "absolute",
-    right: 0,
-    top: 34,
-    zIndex: 30,
-    ...premiumSurface,
-    ...premiumTheme.shadow.soft,
-  },
-  monthOption: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 36,
-    paddingHorizontal: 14,
-  },
-  monthOptionPressed: {
-    backgroundColor: premiumTheme.colors.field,
-  },
-  monthOptionText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  monthOptionTextActive: {
-    color: premiumTheme.colors.ink,
-    fontWeight: "700",
-  },
-  monthSelectWrap: {
-    zIndex: 20,
-  },
-  heroLabel: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
-  },
-  heroPeriodPill: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderRadius: premiumTheme.radius.pill,
-    flexDirection: "row",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    ...premiumSurface,
-  },
-  heroPeriodText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  quickAddBackdrop: {
-    backgroundColor: "rgba(15, 23, 42, 0.28)",
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  quickAddCloseButton: {
-    alignItems: "center",
-    backgroundColor: "#f1f5f9",
-    borderRadius: 18,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  quickAddHeader: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: 16,
-    justifyContent: "space-between",
-    marginBottom: 18,
-  },
-  quickAddOption: {
-    alignItems: "center",
-    borderTopColor: "#eef1f5",
-    borderTopWidth: premiumHairline,
-    flexDirection: "row",
-    gap: 14,
-    minHeight: 70,
-    paddingVertical: 12,
-  },
-  quickAddOptionDescription: {
-    color: "#7b818c",
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 3,
-  },
-  quickAddOptionIcon: {
-    alignItems: "center",
-    borderRadius: 18,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  quickAddOptionLabel: {
-    color: premiumTheme.colors.ink,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  quickAddOptionText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  quickAddPanel: {
-    backgroundColor: premiumTheme.colors.canvas,
-    borderTopLeftRadius: premiumTheme.radius.modal,
-    borderTopRightRadius: premiumTheme.radius.modal,
-    paddingBottom: 28,
-    paddingHorizontal: 22,
-    paddingTop: 22,
-  },
-  quickAddSubtitle: {
-    color: "#7b818c",
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 4,
-  },
-  quickAddTitle: {
-    color: premiumTheme.colors.ink,
-    fontSize: 23,
-    fontWeight: "800",
-    letterSpacing: -0.4,
-  },
-  safeArea: {
-    backgroundColor: premiumTheme.colors.canvas,
-    flex: 1,
-  },
-  pressedControl: {
-    opacity: 0.82,
-    transform: [{ scale: 0.98 }],
-  },
-  sectionHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 14,
-    marginTop: 34,
-  },
-  sectionTitle: {
-    color: premiumTheme.colors.ink,
-    fontSize: 19,
-    fontWeight: "800",
-    letterSpacing: -0.4,
-  },
-  settingsButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.canvas,
-    borderRadius: premiumTheme.radius.pill,
-    height: 38,
-    justifyContent: "center",
-    width: 38,
-    ...premiumSurface,
-  },
-  summaryCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 18,
-    flex: 1,
-    minHeight: 96,
-    padding: 14,
-    ...premiumSurface,
-    ...premiumTheme.shadow.soft,
-  },
-  summaryCardBackdrop: {
-    borderRadius: 18,
-    bottom: 0,
-    left: 0,
-    overflow: "hidden",
-    position: "absolute",
-    right: 0,
-    top: 0,
-  },
-  summaryCardHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-  },
-  summaryIcon: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: premiumTheme.radius.pill,
-    height: 26,
-    justifyContent: "center",
-    width: 26,
-  },
-  summaryLabel: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
-  summaryRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 14,
-  },
-  summaryValue: {
-    color: premiumTheme.colors.ink,
-    fontSize: 19,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-    letterSpacing: -0.3,
-    marginTop: 10,
-  },
-  summaryWave: {
-    bottom: -1,
-    position: "absolute",
-    right: -1,
-  },
-  topActions: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  topBar: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 28,
-  },
-  viewAllPill: {
-    backgroundColor: "#ffffff",
-    borderRadius: premiumTheme.radius.pill,
-    paddingHorizontal: 13,
-    paddingVertical: 7,
-    ...premiumSurface,
-  },
-  viewAllText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-});

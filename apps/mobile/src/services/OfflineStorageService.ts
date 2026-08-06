@@ -5,6 +5,7 @@ import type {
   CreateAssetSyncPayload,
   CreateBudgetSyncPayload,
   CreateCategorySyncPayload,
+  CreateFinancialRuleSyncPayload,
   CreateMerchantAliasSyncPayload,
   CreateMerchantSyncPayload,
   CreateGoalSyncPayload,
@@ -48,6 +49,7 @@ import type {
   CurrencyLike,
   ExchangeRateLike,
   FinancialEventInput,
+  FinancialRuleInput,
   GoalLike,
   InvestmentLike,
   Json,
@@ -637,6 +639,40 @@ export class OfflineStorageService {
     );
   }
 
+  static async persistFinancialRule(resource: FinancialRuleInput) {
+    const matchValue = resource.match_value?.trim() ?? "";
+
+    if (!matchValue) {
+      throw new Error("A rule needs a merchant name to match on.");
+    }
+
+    if (!resource.merchant_id && !resource.category_id) {
+      throw new Error(
+        "A rule needs a merchant or a category to apply."
+      );
+    }
+
+    const cached = toCachedFinancialRule({
+      ...resource,
+      match_value: matchValue,
+    });
+    await LocalRuleRepository.upsert(cached);
+
+    const queueItem = await enqueueResource<CreateFinancialRuleSyncPayload>(
+      "create_rule",
+      {
+        localId: cached.id,
+        resource: cached,
+      },
+      `create_rule:${cached.id}`
+    );
+
+    return {
+      queueItem,
+      rule: cached,
+    };
+  }
+
   static async persistMerchant(resource: MerchantLike) {
     const cached = toCachedMerchant(resource);
     await LocalMerchantRepository.upsert(cached);
@@ -997,6 +1033,24 @@ function toCachedCategory(resource: CategoryLike): CachedCategory {
     ...resource,
     is_system: false,
   });
+}
+
+function toCachedFinancialRule(
+  resource: FinancialRuleInput
+): CachedFinancialRule {
+  return {
+    ...withTimestamps({}),
+    auto_confirm: resource.auto_confirm ?? false,
+    category: null,
+    category_id: resource.category_id ?? null,
+    enabled: resource.enabled ?? true,
+    match_operator: resource.match_operator ?? "equals",
+    match_value: resource.match_value ?? "",
+    merchant: null,
+    merchant_id: resource.merchant_id ?? null,
+    name: resource.name ?? resource.match_value ?? "Untitled rule",
+    priority: resource.priority ?? 100,
+  };
 }
 
 function toCachedMerchant(resource: MerchantLike): CachedMerchant {

@@ -444,12 +444,42 @@ const PROMO_HINT_PATTERN =
 
 const URL_PATTERN = /(?:https?:\/\/|www\.)\S+/i;
 
+// Link shorteners hide the destination — a phishing signal no matter
+// what wording surrounds them.
+const URL_SHORTENER_PATTERN =
+    /\b(?:bit\.ly|tinyurl\.com|t\.co|goo\.gl|rb\.gy|cutt\.ly|is\.gd|tiny\.cc|rebrand\.ly)\/\S+/i;
+
+// Fraud-disclaimer boilerplate ("Trxn. not done by you? Report at ...")
+// only appears in alerts for completed transactions — promos never
+// invite you to dispute a charge. Its presence is positive evidence,
+// and it explains a bank's report URL, so that URL is not penalized.
+const FRAUD_DISCLAIMER_PATTERN =
+    /\b(?:not\s+(?:you|done\s+by\s+you)|dispute|unauthori[sz]ed|fraud|report\s+(?:at|to|this))\b/i;
+
+// A source whose own name declares a financial identity (card issuer,
+// bank, UPI wallet). The name is self-declared — any app can call
+// itself "X Bank" — so this only softens the unknown-source penalty;
+// it never grants the trusted tier and never bypasses blocked sources.
+const FINANCIAL_SOURCE_NAME_PATTERN =
+    /\b(?:bank(?:ing)?|cards?|credit|debit|pay(?:ments?)?|upi|wallet|finan(?:ce|cial)|money|nbfc|insurance)\b/i;
+
+const FINANCIAL_PACKAGE_TOKENS = [
+    "bank",
+    "card",
+    "upi",
+    "wallet",
+    "financ",
+    "pay",
+];
+
 const APPROXIMATE_AMOUNT_PATTERN =
     /\b(?:upto|up\s+to)\s*$/i;
 
 const BASE_CONFIDENCE = 0.72;
 
 const CONFIDENCE_FLOOR = 0.2;
+
+const CONFIDENCE_CEILING = 0.95;
 
 function parseAmount(text: string) {
     // The verb-anchored amount is the transaction by definition; prefer
@@ -520,22 +550,54 @@ function isPromotionalNotification(
     );
 }
 
+// True when the app's label or package id reads as a financial
+// institution ("SBI CARDS AND PAYMENT SERVICES", com.idbi.mobilebanking).
+function sourceLooksFinancial(payload: {
+    applicationName?: string | null;
+    packageName?: string | null;
+}) {
+    if (
+        payload.applicationName &&
+        FINANCIAL_SOURCE_NAME_PATTERN.test(
+            payload.applicationName
+        )
+    ) {
+        return true;
+    }
+
+    const pkg =
+        payload.packageName?.toLowerCase() ?? "";
+
+    return FINANCIAL_PACKAGE_TOKENS.some((token) =>
+        pkg.includes(token)
+    );
+}
+
 function scoreConfidence(
     text: string,
     accountHint: ParsedAccountHint | null,
-    sourceTrust: NotificationSourceTrust
+    sourceTrust: NotificationSourceTrust,
+    financialSource: boolean,
+    hasParsedReference: boolean
 ) {
     let confidence = BASE_CONFIDENCE;
 
     if (sourceTrust === "unknown") {
-        confidence -= 0.2;
+        // A financial-sounding name softens the penalty but can never
+        // equal package-verified trust — names are self-declared.
+        confidence -= financialSource ? 0.05 : 0.2;
     }
 
     if (PROMO_HINT_PATTERN.test(text)) {
         confidence -= 0.2;
     }
 
-    if (URL_PATTERN.test(text)) {
+    if (URL_SHORTENER_PATTERN.test(text)) {
+        confidence -= 0.25;
+    } else if (
+        URL_PATTERN.test(text) &&
+        !FRAUD_DISCLAIMER_PATTERN.test(text)
+    ) {
         confidence -= 0.15;
     }
 
@@ -543,9 +605,22 @@ function scoreConfidence(
         confidence -= 0.1;
     }
 
-    return Math.max(
-        CONFIDENCE_FLOOR,
-        Math.round(confidence * 100) / 100
+    // Structured evidence promos lack: fraud-disclaimer boilerplate
+    // and a transaction reference each mark a genuine completed alert.
+    if (FRAUD_DISCLAIMER_PATTERN.test(text)) {
+        confidence += 0.05;
+    }
+
+    if (hasParsedReference) {
+        confidence += 0.08;
+    }
+
+    return Math.min(
+        CONFIDENCE_CEILING,
+        Math.max(
+            CONFIDENCE_FLOOR,
+            Math.round(confidence * 100) / 100
+        )
     );
 }
 
@@ -886,6 +961,8 @@ export function explainNotificationParse(
     }
 
     const accountHint = parseAccountHint(rawText);
+    const parsedReference =
+        parseTransactionReference(rawText);
 
     const event: ParsedFinancialEvent = {
         source: "android_notification",
@@ -898,14 +975,14 @@ export function explainNotificationParse(
         direction,
         occurredAt:
             occurredAt.toISOString(),
-        reference:
-            parseTransactionReference(rawText) ??
-            payload.id,
+        reference: parsedReference ?? payload.id,
         accountHint,
         confidence: scoreConfidence(
             rawText,
             accountHint,
-            sourceTrust
+            sourceTrust,
+            sourceLooksFinancial(payload),
+            parsedReference !== null
         ),
         rawPayload: JSON.stringify(payload),
     };

@@ -20,7 +20,6 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   useWindowDimensions,
   View,
@@ -109,6 +108,37 @@ const analyticsRangeMonthOffsets: Partial<Record<AnalyticsRange, number>> = {
   month: 0,
 };
 
+// MotiView is not NativeWind-interop'd, so the dropdown and sheet panels keep
+// plain style objects.
+const periodMenuStyle = {
+  backgroundColor: "#ffffff",
+  borderColor: premiumTheme.colors.border,
+  borderRadius: 14,
+  borderWidth: 1,
+  left: 12,
+  minWidth: 176,
+  paddingVertical: 6,
+  position: "absolute",
+  top: 52,
+  zIndex: 30,
+  ...premiumTheme.shadow.soft,
+} as const;
+
+const pickerPanelStyle = {
+  backgroundColor: "#ffffff",
+  borderTopLeftRadius: 28,
+  borderTopRightRadius: 28,
+  gap: 18,
+  padding: 18,
+  paddingBottom: 30,
+} as const;
+
+// Svg is a third-party component; positioning stays a plain style object.
+const summaryWaveStyle = {
+  bottom: 0,
+  position: "absolute",
+  right: 0,
+} as const;
 
 export function AnalyticsScreen() {
   const { width } = useWindowDimensions();
@@ -512,17 +542,21 @@ export function AnalyticsScreen() {
       : null;
 
   return (
-    <ScrollView contentContainerStyle={styles.analyticsContainer}>
-      <View style={styles.analyticsHeaderCard}>
-        <View style={styles.analyticsPeriodWrap}>
+    <ScrollView contentContainerClassName="gap-3.5 bg-canvas p-5 pb-7">
+      <View
+        className="z-30 rounded-[18px] border border-border bg-white"
+        style={premiumTheme.shadow.soft}
+      >
+        <View className="z-30">
           {periodOpen ? (
             <Pressable
+              className="absolute -bottom-[1000px] -left-[1000px] -right-[1000px] -top-[1000px] z-[25]"
               onPress={() => setPeriodOpen(false)}
-              style={styles.analyticsPeriodBackdrop}
             />
           ) : null}
-          <View style={styles.analyticsHeaderTop}>
+          <View className="flex-row items-center gap-2 rounded-t-[17px] bg-field pr-3">
             <Pressable
+              className="min-w-0 flex-1 flex-row items-center gap-2.5 px-3 py-2.5 active:opacity-85"
               disabled={analyticsRange === "all"}
               onPress={() => {
                 if (analyticsRange === "custom") {
@@ -532,19 +566,18 @@ export function AnalyticsScreen() {
 
                 setPeriodOpen((open) => !open);
               }}
-              style={({ pressed }) => [
-                styles.analyticsDateRow,
-                pressed && styles.analyticsPressed,
-              ]}
             >
-              <View style={styles.analyticsDateIconTile}>
+              <View className="h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-border">
                 <CalendarDays
                   color={premiumTheme.colors.ink}
                   size={16}
                   strokeWidth={2.2}
                 />
               </View>
-              <Text numberOfLines={1} style={styles.analyticsDateText}>
+              <Text
+                className="shrink text-[15px] font-extrabold text-ink tabular-nums"
+                numberOfLines={1}
+              >
                 {formatAnalyticsRange(analyticsRange, anchorDate, customRange)}
               </Text>
               {analyticsRange !== "all" ? (
@@ -557,16 +590,15 @@ export function AnalyticsScreen() {
             </Pressable>
 
             <Pressable
+              className={`min-h-8 flex-row items-center gap-[5px] rounded-[11px] border active:opacity-85 ${
+                analyticsRange === "custom"
+                  ? "border-ink bg-ink"
+                  : "border-border bg-white"
+              } px-[11px]`}
               onPress={() => {
                 setPeriodOpen(false);
                 setCustomOpen(true);
               }}
-              style={({ pressed }) => [
-                styles.analyticsCustomButton,
-                analyticsRange === "custom" &&
-                  styles.analyticsCustomButtonActive,
-                pressed && styles.analyticsPressed,
-              ]}
             >
               <CalendarDays
                 color={
@@ -578,11 +610,9 @@ export function AnalyticsScreen() {
                 strokeWidth={2.3}
               />
               <Text
-                style={[
-                  styles.analyticsCustomText,
-                  analyticsRange === "custom" &&
-                    styles.analyticsCustomTextActive,
-                ]}
+                className={`text-[11px] font-bold ${
+                  analyticsRange === "custom" ? "text-white" : "text-ink"
+                }`}
               >
                 Custom
               </Text>
@@ -593,33 +623,28 @@ export function AnalyticsScreen() {
             <MotiView
               animate={{ opacity: 1, translateY: 0 }}
               from={{ opacity: 0, translateY: -6 }}
-              style={styles.analyticsPeriodMenu}
+              style={periodMenuStyle}
               transition={{ duration: 140, type: "timing" }}
             >
-              <ScrollView
-                nestedScrollEnabled
-                style={styles.analyticsPeriodViewport}
-              >
+              <ScrollView className="max-h-[264px]" nestedScrollEnabled>
                 {periodOptions.map((option) => {
                   const active = option.offset === anchorOffset;
 
                   return (
                     <Pressable
+                      className="min-h-[38px] flex-row items-center justify-between gap-2.5 px-3.5 active:opacity-85"
                       key={option.offset}
                       onPress={() => {
                         setAnchorOffset(option.offset);
                         setPeriodOpen(false);
                       }}
-                      style={({ pressed }) => [
-                        styles.analyticsPeriodOption,
-                        pressed && styles.analyticsPressed,
-                      ]}
                     >
                       <Text
-                        style={[
-                          styles.analyticsPeriodOptionText,
-                          active && styles.analyticsPeriodOptionTextActive,
-                        ]}
+                        className={`text-[12px] ${
+                          active
+                            ? "font-bold text-ink"
+                            : "font-semibold text-secondary"
+                        }`}
                       >
                         {option.offset === 0
                           ? "This month"
@@ -640,13 +665,19 @@ export function AnalyticsScreen() {
           ) : null}
         </View>
 
-        <View style={styles.analyticsRangeSelector}>
+        <View className="flex-row items-center gap-1 border-t-hairline border-t-border px-2 py-[7px]">
           {analyticsRangeOptions.map((option, index) => (
             <Fragment key={option.value}>
               {index > 0 ? (
-                <View style={styles.analyticsRangeDivider} />
+                <View
+                  className="h-3.5 self-center bg-border"
+                  style={{ width: premiumHairline }}
+                />
               ) : null}
               <Pressable
+                className={`min-h-[30px] flex-1 items-center justify-center rounded-[11px] ${
+                  analyticsRange === option.value ? "bg-ink" : ""
+                }`}
                 onPress={() => {
                   setAnalyticsRange(option.value);
 
@@ -654,18 +685,13 @@ export function AnalyticsScreen() {
                     setPeriodOpen(false);
                   }
                 }}
-                style={[
-                  styles.analyticsRangeButton,
-                  analyticsRange === option.value &&
-                    styles.analyticsRangeButtonActive,
-                ]}
               >
                 <Text
-                  style={[
-                    styles.analyticsRangeText,
-                    analyticsRange === option.value &&
-                      styles.analyticsRangeTextActive,
-                  ]}
+                  className={`text-[11px] ${
+                    analyticsRange === option.value
+                      ? "font-bold text-white"
+                      : "font-semibold text-secondary"
+                  }`}
                 >
                   {option.label}
                 </Text>
@@ -687,49 +713,54 @@ export function AnalyticsScreen() {
         />
       ) : null}
 
-      <View style={styles.analyticsSummaryCard}>
-        <View style={styles.analyticsSummaryTopWrap}>
+      <View
+        className="rounded-[18px] border border-border bg-white"
+        style={premiumTheme.shadow.soft}
+      >
+        <View className="overflow-hidden rounded-t-[17px]">
           <AnalyticsSummaryWave />
-          <View style={styles.analyticsSummaryTop}>
-            <View style={styles.analyticsSummaryCopy}>
-              <Text style={styles.analyticsSummaryTitle}>{summaryTitle}</Text>
-              <Text style={styles.analyticsSummaryAmount}>
+          <View className="flex-row gap-3 p-4">
+            <View className="min-w-0 flex-1">
+              <Text className="text-[12px] font-bold text-secondary">
+                {summaryTitle}
+              </Text>
+              <Text className="mt-1.5 text-[30px] font-extrabold tracking-[-0.5px] text-ink tabular-nums">
                 {MobileDashboardService.getFormattedBalance(
                   analytics.totalExpenses
                 )}
               </Text>
-              <Text style={styles.analyticsSummarySub}>spent</Text>
+              <Text className="mt-0.5 text-[13px] font-semibold text-secondary">
+                spent
+              </Text>
               {spendComparison ? (
-                <View style={styles.analyticsSummaryDeltaRow}>
+                <View className="mt-2.5 flex-row items-center gap-1">
                   {spendComparison.changePercent <= 0 ? (
                     <ArrowDown color="#16a34a" size={14} strokeWidth={2.5} />
                   ) : (
                     <ArrowUp color="#dc2626" size={14} strokeWidth={2.5} />
                   )}
                   <Text
-                    style={[
-                      styles.analyticsSummaryDeltaText,
+                    className={`text-[12px] font-bold tabular-nums ${
                       spendComparison.changePercent <= 0
-                        ? styles.analyticsSummaryDeltaGood
-                        : styles.analyticsSummaryDeltaBad,
-                    ]}
+                        ? "text-success"
+                        : "text-danger"
+                    }`}
                   >
                     {Math.abs(spendComparison.changePercent).toFixed(0)}%
                   </Text>
                   <Text
-                    style={[
-                      styles.analyticsSummaryDeltaLabel,
+                    className={`text-[12px] font-semibold ${
                       spendComparison.changePercent <= 0
-                        ? styles.analyticsSummaryDeltaGood
-                        : styles.analyticsSummaryDeltaBad,
-                    ]}
+                        ? "text-success"
+                        : "text-danger"
+                    }`}
                   >
                     {spendComparison.label}
                   </Text>
                 </View>
               ) : null}
             </View>
-            <View style={styles.analyticsSummaryIconTile}>
+            <View className="h-11 w-11 items-center justify-center rounded-full bg-[#ece9fb]">
               <ChartNoAxesCombined
                 color="#6d5ae6"
                 size={20}
@@ -739,8 +770,8 @@ export function AnalyticsScreen() {
           </View>
         </View>
 
-        <View style={styles.analyticsSummaryStats}>
-          <View pointerEvents="none" style={styles.analyticsSummaryStatsBg}>
+        <View className="flex-row gap-3 overflow-hidden rounded-b-[17px] border-t-hairline border-t-border px-4 py-[13px]">
+          <View className="absolute inset-0" pointerEvents="none">
             <Svg height="100%" preserveAspectRatio="none" width="100%">
               <Defs>
                 <LinearGradient
@@ -766,7 +797,10 @@ export function AnalyticsScreen() {
               analytics.totalIncome
             )}
           />
-          <View style={styles.analyticsSummaryStatDivider} />
+          <View
+            className="my-0.5 self-stretch bg-border"
+            style={{ width: premiumHairline }}
+          />
           <AnalyticsSummaryStat
             accent="#d97706"
             Icon={IndianRupee}
@@ -776,7 +810,10 @@ export function AnalyticsScreen() {
               analytics.netBalance
             )}
           />
-          <View style={styles.analyticsSummaryStatDivider} />
+          <View
+            className="my-0.5 self-stretch bg-border"
+            style={{ width: premiumHairline }}
+          />
           <AnalyticsSummaryStat
             accent="#64748b"
             Icon={ReceiptText}
@@ -787,8 +824,11 @@ export function AnalyticsScreen() {
         </View>
       </View>
 
-      <View style={styles.analyticsChartCard}>
-        <View pointerEvents="none" style={styles.analyticsChartCardBg}>
+      <View
+        className="gap-3 overflow-hidden rounded-section bg-white p-3.5"
+        style={premiumTheme.shadow.floating}
+      >
+        <View className="absolute inset-0" pointerEvents="none">
           <Svg height="100%" preserveAspectRatio="none" width="100%">
             <Defs>
               <LinearGradient
@@ -810,28 +850,22 @@ export function AnalyticsScreen() {
             />
           </Svg>
         </View>
-        <View style={styles.analyticsCardHeader}>
-          <Text style={styles.analyticsSectionTitle}>
+        <View className="flex-row items-center justify-between gap-3">
+          <Text className="flex-1 text-[16px] font-black text-ink">
             Income vs Expense
           </Text>
-          <View style={styles.analyticsLegendRow}>
-            <View style={styles.analyticsLegendItem}>
-              <View
-                style={[
-                  styles.analyticsLegendDot,
-                  { backgroundColor: "#16a34a" },
-                ]}
-              />
-              <Text style={styles.analyticsLegendText}>Income</Text>
+          <View className="flex-row items-center gap-3">
+            <View className="flex-row items-center gap-1.5">
+              <View className="h-2.5 w-2.5 rounded-[5px] bg-success" />
+              <Text className="text-[12px] font-extrabold text-[#475569]">
+                Income
+              </Text>
             </View>
-            <View style={styles.analyticsLegendItem}>
-              <View
-                style={[
-                  styles.analyticsLegendDot,
-                  { backgroundColor: premiumTheme.colors.ink },
-                ]}
-              />
-              <Text style={styles.analyticsLegendText}>Expense</Text>
+            <View className="flex-row items-center gap-1.5">
+              <View className="h-2.5 w-2.5 rounded-[5px] bg-ink" />
+              <Text className="text-[12px] font-extrabold text-[#475569]">
+                Expense
+              </Text>
             </View>
           </View>
         </View>
@@ -839,7 +873,7 @@ export function AnalyticsScreen() {
         <CashFlowLineChart series={chartSeries} width={chartWidth} />
 
         {spendStats ? (
-          <View style={styles.analyticsChartStats}>
+          <View className="mt-0.5 flex-row gap-4 border-t-hairline border-t-divider pt-3.5">
           <AnalyticsSummaryStat
             accent={premiumTheme.colors.accent}
             Icon={TrendingUp}
@@ -874,17 +908,22 @@ export function AnalyticsScreen() {
         ) : null}
       </View>
 
-      <View style={styles.analyticsCategoryCard}>
-        <View style={styles.analyticsCardHeader}>
-          <Text style={styles.analyticsSectionTitle}>
+      <View
+        className="gap-[18px] rounded-section bg-elevated p-3.5"
+        style={premiumTheme.shadow.floating}
+      >
+        <View className="flex-row items-center justify-between gap-3">
+          <Text className="flex-1 text-[16px] font-black text-ink">
             Spending by Category
           </Text>
           {expenseCategories.length > 0 ? (
             <Pressable
+              className="min-h-7 flex-row items-center gap-[3px] rounded-full bg-field pl-3 pr-2"
               onPress={() => setCategoryModalOpen(true)}
-              style={styles.analyticsViewAllPill}
             >
-              <Text style={styles.analyticsViewAllLabel}>View all</Text>
+              <Text className="text-[12px] font-bold tracking-[-0.1px] text-ink">
+                View all
+              </Text>
               <ChevronRight
                 color={premiumTheme.colors.ink}
                 size={13}
@@ -895,17 +934,17 @@ export function AnalyticsScreen() {
         </View>
 
         {listedCategories.length === 0 ? (
-          <Text style={styles.analyticsEmptyText}>
+          <Text className="text-[13px] font-bold text-secondary">
             No expense categories yet.
           </Text>
         ) : (
-          <View style={styles.analyticsCategorySplit}>
+          <View className="flex-row items-center gap-2.5">
             <CategoryDonutChart
               categories={visibleCategories}
               size={pieSize}
               total={analytics.totalExpenses}
             />
-            <View style={styles.analyticsCategorySplitList}>
+            <View className="flex-1 gap-1">
               {listedCategories.map((category, index) => (
                 <AnalyticsCategoryRow
                   category={category}
@@ -927,7 +966,7 @@ export function AnalyticsScreen() {
         />
       ) : null}
 
-      <View style={styles.analyticsInsightRow}>
+      <View className="flex-row gap-2.5">
         <AnalyticsInsightCard
           Icon={TrendingUp}
           accent="#8b5cf6"
@@ -959,7 +998,7 @@ export function AnalyticsScreen() {
 
 function AnalyticsSummaryWave() {
   return (
-    <View pointerEvents="none" style={styles.analyticsSummaryWaveWrap}>
+    <View className="absolute inset-0" pointerEvents="none">
       <Svg height="100%" preserveAspectRatio="none" width="100%">
         <Defs>
           <LinearGradient id="analyticsHeroBg" x1="0" x2="0" y1="0" y2="1">
@@ -971,7 +1010,7 @@ function AnalyticsSummaryWave() {
       </Svg>
       <Svg
         height={72}
-        style={styles.analyticsSummaryWave}
+        style={summaryWaveStyle}
         viewBox="0 0 240 72"
         width={244}
       >
@@ -1018,17 +1057,20 @@ function AnalyticsSummaryStat({
   value: string;
 }) {
   return (
-    <View style={styles.analyticsSummaryStat}>
+    <View className="min-w-0 flex-1 flex-row items-start gap-2">
       <View
-        style={[
-          styles.analyticsSummaryStatIcon,
-          round && styles.analyticsSummaryStatIconRound,
-          tinted && styles.analyticsSummaryStatIconFilled,
-          (tinted ||
-            (round && accent !== premiumTheme.colors.ink)) && {
-            backgroundColor: `${accent}14`,
-          },
-        ]}
+        className={`items-center justify-center ${
+          tinted
+            ? "h-7 w-7 rounded-lg"
+            : round
+              ? "h-8 w-8 rounded-[9px] bg-border"
+              : "h-8 w-8 rounded-[9px] border border-border bg-white"
+        }`}
+        style={
+          tinted || (round && accent !== premiumTheme.colors.ink)
+            ? { backgroundColor: `${accent}14` }
+            : null
+        }
       >
         <Icon
           color={accent}
@@ -1036,20 +1078,26 @@ function AnalyticsSummaryStat({
           strokeWidth={2.3}
         />
       </View>
-      <View style={styles.analyticsSummaryStatCopy}>
-        <Text numberOfLines={1} style={styles.analyticsSummaryStatLabel}>
+      <View className="min-w-0 flex-1 gap-0.5">
+        <Text
+          className="text-[10px] font-semibold text-secondary"
+          numberOfLines={1}
+        >
           {label}
         </Text>
         <Text
           adjustsFontSizeToFit
+          className="text-[14px] font-extrabold text-ink tabular-nums"
           minimumFontScale={0.72}
           numberOfLines={1}
-          style={styles.analyticsSummaryStatValue}
         >
           {value}
         </Text>
         {sub ? (
-          <Text numberOfLines={1} style={styles.analyticsSummaryStatSub}>
+          <Text
+            className="text-[10px] font-semibold text-secondary"
+            numberOfLines={1}
+          >
             {sub}
           </Text>
         ) : null}
@@ -1181,7 +1229,7 @@ function CashFlowLineChart({
       ];
 
   return (
-    <View style={styles.analyticsLineChartWrap}>
+    <View className="-mb-0.5 overflow-hidden">
       <Svg height={height} width={width}>
         <Defs>
           <LinearGradient id="cashFlowIncomeFill" x1="0" x2="0" y1="0" y2="1">
@@ -1324,13 +1372,11 @@ function CategoryDonutChart({
 
   return (
     <View
-      style={[
-        styles.analyticsDonutWrap,
-        {
-          height: size,
-          width: size,
-        },
-      ]}
+      className="items-center justify-center overflow-hidden"
+      style={{
+        height: size,
+        width: size,
+      }}
     >
       <Svg height={size} width={size}>
         <Circle
@@ -1361,16 +1407,18 @@ function CategoryDonutChart({
           />
         ))}
       </Svg>
-      <View style={styles.analyticsDonutCenter}>
+      <View className="absolute left-[26%] top-[26%] h-[48%] w-[48%] items-center justify-center rounded-full bg-white px-2">
         <Text
           adjustsFontSizeToFit
+          className="text-center text-[13px] font-black text-ink"
           minimumFontScale={0.72}
           numberOfLines={1}
-          style={styles.analyticsDonutValue}
         >
           {MobileDashboardService.getFormattedBalance(total)}
         </Text>
-        <Text style={styles.analyticsDonutLabel}>Total</Text>
+        <Text className="mt-0.5 text-[11px] font-bold text-secondary">
+          Total
+        </Text>
       </View>
     </View>
   );
@@ -1392,39 +1440,38 @@ function AnalyticsCategoryRow({
   );
 
   return (
-    <View style={styles.analyticsCategoryRow}>
+    <View className="min-h-11 flex-row items-center gap-2 py-[5px]">
       <View
-        style={[
-          styles.analyticsCategoryIcon,
-          {
-            backgroundColor: `${color}1f`,
-          },
-        ]}
+        className="h-7 w-7 items-center justify-center rounded-[9px]"
+        style={{
+          backgroundColor: `${color}1f`,
+        }}
       >
         <Icon color={color} size={13} strokeWidth={2.4} />
       </View>
-      <View style={styles.analyticsCategoryCopy}>
-        <View style={styles.analyticsCategoryTopRow}>
-          <Text numberOfLines={1} style={styles.analyticsCategoryName}>
+      <View className="min-w-0 flex-1">
+        <View className="flex-row items-center justify-between">
+          <Text
+            className="min-w-0 flex-1 text-[12.5px] font-bold tracking-[-0.2px] text-ink"
+            numberOfLines={1}
+          >
             {category.name}
           </Text>
-          <Text style={styles.analyticsCategoryAmount}>
+          <Text className="ml-2 text-[12px] font-extrabold text-ink tabular-nums">
             {MobileDashboardService.getFormattedBalance(category.expenses)}
           </Text>
         </View>
-        <View style={styles.analyticsCategoryBarRow}>
-          <View style={styles.analyticsCategoryBarTrack}>
+        <View className="mt-[5px] flex-row items-center gap-[7px]">
+          <View className="h-[5px] flex-1 overflow-hidden rounded-full bg-field">
             <View
-              style={[
-                styles.analyticsCategoryBarFill,
-                {
-                  backgroundColor: color,
-                  width: `${share}%`,
-                },
-              ]}
+              className="h-full rounded-full"
+              style={{
+                backgroundColor: color,
+                width: `${share}%`,
+              }}
             />
           </View>
-          <Text style={styles.analyticsCategoryPercent}>
+          <Text className="min-w-[30px] text-right text-[10.5px] font-bold text-secondary tabular-nums">
             {Math.round(category.percentageOfExpenses)}%
           </Text>
         </View>
@@ -1451,8 +1498,8 @@ function AnalyticsInsightCard({
   const gradientId = `insightBg${accent.replace("#", "")}`;
 
   return (
-    <View style={styles.analyticsInsightCard}>
-      <View pointerEvents="none" style={styles.analyticsInsightCardBg}>
+    <View className="min-w-0 flex-1 gap-[5px] overflow-hidden rounded-[18px] px-2.5 py-3">
+      <View className="absolute inset-0" pointerEvents="none">
         <Svg height="100%" preserveAspectRatio="none" width="100%">
           <Defs>
             <LinearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
@@ -1465,50 +1512,45 @@ function AnalyticsInsightCard({
         </Svg>
       </View>
       <View
-        style={[
-          styles.analyticsInsightIcon,
-          {
-            backgroundColor: background,
-          },
-        ]}
+        className="mb-[3px] h-[34px] w-[34px] items-center justify-center rounded-[17px]"
+        style={{
+          backgroundColor: background,
+        }}
       >
         <Icon color={accent} size={18} strokeWidth={2.5} />
       </View>
-      <Text numberOfLines={1} style={styles.analyticsInsightLabel}>
+      <Text
+        className="text-[10px] font-extrabold text-secondary"
+        numberOfLines={1}
+      >
         {label}
       </Text>
       <Text
         adjustsFontSizeToFit
+        className="text-[14px] font-black text-ink"
         minimumFontScale={0.72}
         numberOfLines={1}
-        style={styles.analyticsInsightValue}
       >
         {MobileDashboardService.getFormattedBalance(value)}
       </Text>
       <View
-        style={[
-          styles.analyticsInsightPill,
-          {
-            backgroundColor: `${accent}17`,
-          },
-        ]}
+        className="mt-0.5 min-h-[22px] max-w-full flex-row items-center gap-[5px] self-start rounded-full px-[9px]"
+        style={{
+          backgroundColor: `${accent}17`,
+        }}
       >
         <View
-          style={[
-            styles.analyticsInsightPillDot,
-            {
-              backgroundColor: accent,
-            },
-          ]}
+          className="h-[5px] w-[5px] rounded-full"
+          style={{
+            backgroundColor: accent,
+          }}
         />
         <Text
+          className="shrink text-[10.5px] font-extrabold"
           numberOfLines={1}
-          style={[
-            styles.analyticsInsightSubtitle,
-            {
-              color: accent,
-            },
-          ]}
+          style={{
+            color: accent,
+          }}
         >
           {subtitle}
         </Text>
@@ -1821,7 +1863,7 @@ function AnalyticsCategoryModal({
         <MotiView
           animate={{ opacity: 1, translateY: 0 }}
           from={{ opacity: 0, translateY: 24 }}
-          style={styles.analyticsPickerPanel}
+          style={pickerPanelStyle}
           transition={{
             damping: 18,
             mass: 0.8,
@@ -1829,7 +1871,7 @@ function AnalyticsCategoryModal({
             type: "spring",
           }}
         >
-          <View style={styles.analyticsPickerHeader}>
+          <View className="flex-row items-start justify-between">
             <View>
               <Text style={financeStyles.merchantPickerTitle}>
                 Spending by Category
@@ -1845,15 +1887,15 @@ function AnalyticsCategoryModal({
           </View>
 
           <ScrollView
-            contentContainerStyle={styles.analyticsCategorySheetContent}
+            className="grow-0"
+            contentContainerClassName="pb-2"
             nestedScrollEnabled
             showsVerticalScrollIndicator={false}
             style={{
-              flexGrow: 0,
               maxHeight: Math.max(320, height * 0.62),
             }}
           >
-            <View style={styles.analyticsDonutContainer}>
+            <View className="items-center pb-1.5 pt-1">
               <CategoryDonutChart
                 categories={categories}
                 size={160}
@@ -1861,7 +1903,7 @@ function AnalyticsCategoryModal({
               />
             </View>
 
-            <View style={styles.analyticsCategoryList}>
+            <View className="gap-1">
               {categories.map((category, index) => (
                 <AnalyticsCategoryRow
                   category={category}
@@ -1930,7 +1972,7 @@ function AnalyticsCustomRangeModal({
         <MotiView
           animate={{ opacity: 1, translateY: 0 }}
           from={{ opacity: 0, translateY: 24 }}
-          style={styles.analyticsPickerPanel}
+          style={pickerPanelStyle}
           transition={{
             damping: 18,
             mass: 0.8,
@@ -1938,7 +1980,7 @@ function AnalyticsCustomRangeModal({
             type: "spring",
           }}
         >
-          <View style={styles.analyticsPickerHeader}>
+          <View className="flex-row items-start justify-between">
             <View>
               <Text style={financeStyles.merchantPickerTitle}>
                 Custom range
@@ -1952,8 +1994,9 @@ function AnalyticsCustomRangeModal({
             </Pressable>
           </View>
 
-          <View style={styles.analyticsPickerMonthRow}>
+          <View className="flex-row items-center justify-between">
             <Pressable
+              className="h-[38px] w-[38px] items-center justify-center rounded-control bg-field"
               onPress={() =>
                 setMonthCursor(
                   new Date(
@@ -1963,17 +2006,19 @@ function AnalyticsCustomRangeModal({
                   )
                 )
               }
-              style={styles.analyticsPickerNavButton}
             >
               <ChevronLeft color="#0f172a" size={19} strokeWidth={2.5} />
             </Pressable>
-            <Text style={styles.analyticsPickerMonth}>
+            <Text className="flex-1 text-center text-[15px] font-extrabold text-ink">
               {monthCursor.toLocaleDateString("en-IN", {
                 month: "long",
                 year: "numeric",
               })}
             </Text>
             <Pressable
+              className={`h-[38px] w-[38px] items-center justify-center rounded-control bg-field ${
+                isCurrentMonth(monthCursor) ? "opacity-35" : ""
+              }`}
               disabled={isCurrentMonth(monthCursor)}
               onPress={() =>
                 setMonthCursor(
@@ -1984,21 +2029,16 @@ function AnalyticsCustomRangeModal({
                   )
                 )
               }
-              style={[
-                styles.analyticsPickerNavButton,
-                isCurrentMonth(monthCursor) &&
-                  styles.analyticsPickerNavButtonDisabled,
-              ]}
             >
               <ChevronRight color="#0f172a" size={19} strokeWidth={2.5} />
             </Pressable>
           </View>
 
-          <View style={styles.analyticsPickerGrid}>
+          <View className="flex-row flex-wrap">
             {["S", "M", "T", "W", "T", "F", "S"].map((label, index) => (
               <Text
+                className="basis-[14.285%] py-[7px] text-center text-[11px] font-extrabold text-muted"
                 key={`${label}-${index}`}
-                style={styles.analyticsPickerWeekday}
               >
                 {label}
               </Text>
@@ -2016,25 +2056,25 @@ function AnalyticsCustomRangeModal({
 
               return (
                 <View
+                  className="h-[42px] basis-[14.285%] items-center justify-center"
                   key={date?.toISOString() ?? `blank-${index}`}
-                  style={styles.analyticsPickerCell}
                 >
                   {date ? (
                     <Pressable
+                      className={`h-[34px] w-[34px] items-center justify-center rounded-[16px] ${
+                        isEdge ? "bg-ink" : inRange ? "bg-field" : ""
+                      }`}
                       disabled={future}
                       onPress={() => selectDay(date)}
-                      style={[
-                        styles.analyticsPickerDay,
-                        inRange && styles.analyticsPickerDayInRange,
-                        isEdge && styles.analyticsPickerDaySelected,
-                      ]}
                     >
                       <Text
-                        style={[
-                          styles.analyticsPickerDayText,
-                          future && styles.analyticsPickerDayTextDisabled,
-                          isEdge && styles.analyticsPickerDayTextSelected,
-                        ]}
+                        className={`text-[13px] font-extrabold ${
+                          isEdge
+                            ? "text-white"
+                            : future
+                              ? "text-[#cbd5e1]"
+                              : "text-[#334155]"
+                        }`}
                       >
                         {date.getDate()}
                       </Text>
@@ -2046,684 +2086,22 @@ function AnalyticsCustomRangeModal({
           </View>
 
           <Pressable
+            className={`min-h-12 items-center justify-center rounded-[15px] bg-ink ${
+              !draftStart || !draftEnd ? "opacity-40" : ""
+            }`}
             disabled={!draftStart || !draftEnd}
             onPress={() => {
               if (draftStart && draftEnd) {
                 onApply({ end: draftEnd, start: draftStart });
               }
             }}
-            style={[
-              styles.analyticsPickerApply,
-              (!draftStart || !draftEnd) && styles.analyticsPickerApplyDisabled,
-            ]}
           >
-            <Text style={styles.analyticsPickerApplyText}>Apply range</Text>
+            <Text className="text-[14px] font-extrabold text-white">
+              Apply range
+            </Text>
           </Pressable>
         </MotiView>
       </View>
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  analyticsCardHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
-  },
-  analyticsCategoryAmount: {
-    color: "#0f172a",
-    fontSize: 12,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-    marginLeft: 8,
-  },
-  analyticsCategoryBarFill: {
-    borderRadius: 999,
-    height: "100%",
-  },
-  analyticsCategoryBarRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 7,
-    marginTop: 5,
-  },
-  analyticsCategoryBarTrack: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 999,
-    flex: 1,
-    height: 5,
-    overflow: "hidden",
-  },
-  analyticsCategoryCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  analyticsCategoryTopRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  analyticsCategoryCard: {
-    backgroundColor: premiumTheme.colors.elevated,
-    borderRadius: premiumTheme.radius.section,
-    gap: 18,
-    padding: 14,
-    ...premiumTheme.shadow.floating,
-  },
-  analyticsCategoryIcon: {
-    alignItems: "center",
-    borderRadius: 9,
-    height: 28,
-    justifyContent: "center",
-    width: 28,
-  },
-  analyticsCategoryList: {
-    gap: 4,
-  },
-  analyticsCategorySheetContent: {
-    paddingBottom: 8,
-  },
-  analyticsCategorySplit: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
-  analyticsCategorySplitList: {
-    flex: 1,
-    gap: 4,
-  },
-  analyticsViewAllLabel: {
-    color: premiumTheme.colors.ink,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: -0.1,
-  },
-  analyticsViewAllPill: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 3,
-    minHeight: 28,
-    paddingLeft: 12,
-    paddingRight: 8,
-  },
-  analyticsCategoryName: {
-    color: "#0f172a",
-    flex: 1,
-    fontSize: 12.5,
-    fontWeight: "700",
-    letterSpacing: -0.2,
-    minWidth: 0,
-  },
-  analyticsCategoryPercent: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 10.5,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "700",
-    minWidth: 30,
-    textAlign: "right",
-  },
-  analyticsCategoryRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-    minHeight: 44,
-    paddingVertical: 5,
-  },
-  analyticsChartCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: premiumTheme.radius.section,
-    gap: 12,
-    overflow: "hidden",
-    padding: 14,
-    ...premiumTheme.shadow.floating,
-  },
-  analyticsChartCardBg: {
-    bottom: 0,
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0,
-  },
-  analyticsContainer: {
-    backgroundColor: premiumTheme.colors.canvas,
-    gap: 14,
-    padding: 20,
-    paddingBottom: 28,
-  },
-  analyticsCustomButton: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 11,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 5,
-    minHeight: 32,
-    paddingHorizontal: 11,
-  },
-  analyticsCustomButtonActive: {
-    backgroundColor: premiumTheme.colors.ink,
-    borderColor: premiumTheme.colors.ink,
-  },
-  analyticsCustomText: {
-    color: premiumTheme.colors.ink,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  analyticsCustomTextActive: {
-    color: "#ffffff",
-  },
-  analyticsDateIconTile: {
-    alignItems: "center",
-    backgroundColor: "#e9ebf1",
-    borderRadius: 10,
-    height: 34,
-    justifyContent: "center",
-    width: 34,
-  },
-  analyticsDateRow: {
-    alignItems: "center",
-    flex: 1,
-    flexDirection: "row",
-    gap: 10,
-    minWidth: 0,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  analyticsDateText: {
-    color: "#0f172a",
-    flexShrink: 1,
-    fontSize: 15,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-  },
-  analyticsHeaderCard: {
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 18,
-    borderWidth: 1,
-    zIndex: 30,
-    ...premiumTheme.shadow.soft,
-  },
-  analyticsHeaderTop: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderTopLeftRadius: 17,
-    borderTopRightRadius: 17,
-    flexDirection: "row",
-    gap: 8,
-    paddingRight: 12,
-  },
-  analyticsPeriodBackdrop: {
-    bottom: -1000,
-    left: -1000,
-    position: "absolute",
-    right: -1000,
-    top: -1000,
-    zIndex: 25,
-  },
-  analyticsPeriodMenu: {
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 14,
-    borderWidth: 1,
-    left: 12,
-    minWidth: 176,
-    paddingVertical: 6,
-    position: "absolute",
-    top: 52,
-    zIndex: 30,
-    ...premiumTheme.shadow.soft,
-  },
-  analyticsPeriodOption: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-    justifyContent: "space-between",
-    minHeight: 38,
-    paddingHorizontal: 14,
-  },
-  analyticsPeriodOptionText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  analyticsPeriodOptionTextActive: {
-    color: premiumTheme.colors.ink,
-    fontWeight: "700",
-  },
-  analyticsPeriodViewport: {
-    maxHeight: 264,
-  },
-  analyticsPeriodWrap: {
-    zIndex: 30,
-  },
-  analyticsPickerApply: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 15,
-    justifyContent: "center",
-    minHeight: 48,
-  },
-  analyticsPickerApplyDisabled: {
-    opacity: 0.4,
-  },
-  analyticsPickerApplyText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  analyticsPickerCell: {
-    alignItems: "center",
-    flexBasis: "14.285%",
-    height: 42,
-    justifyContent: "center",
-  },
-  analyticsPickerDay: {
-    alignItems: "center",
-    borderRadius: 16,
-    height: 34,
-    justifyContent: "center",
-    width: 34,
-  },
-  analyticsPickerDayInRange: {
-    backgroundColor: premiumTheme.colors.field,
-  },
-  analyticsPickerDaySelected: {
-    backgroundColor: premiumTheme.colors.ink,
-  },
-  analyticsPickerDayText: {
-    color: "#334155",
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  analyticsPickerDayTextDisabled: {
-    color: "#cbd5e1",
-  },
-  analyticsPickerDayTextSelected: {
-    color: "#ffffff",
-  },
-  analyticsPickerGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  analyticsPickerHeader: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  analyticsPickerMonth: {
-    color: "#0f172a",
-    flex: 1,
-    fontSize: 15,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-  analyticsPickerMonthRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  analyticsPickerNavButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 14,
-    height: 38,
-    justifyContent: "center",
-    width: 38,
-  },
-  analyticsPickerNavButtonDisabled: {
-    opacity: 0.35,
-  },
-  analyticsPickerPanel: {
-    backgroundColor: "#ffffff",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    gap: 18,
-    padding: 18,
-    paddingBottom: 30,
-  },
-  analyticsPickerWeekday: {
-    color: "#94a3b8",
-    flexBasis: "14.285%",
-    fontSize: 11,
-    fontWeight: "800",
-    paddingVertical: 7,
-    textAlign: "center",
-  },
-  analyticsPressed: {
-    opacity: 0.85,
-  },
-  analyticsDonutCenter: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderRadius: 999,
-    height: "48%",
-    justifyContent: "center",
-    left: "26%",
-    paddingHorizontal: 8,
-    position: "absolute",
-    top: "26%",
-    width: "48%",
-  },
-  analyticsDonutContainer: {
-    alignItems: "center",
-    paddingBottom: 6,
-    paddingTop: 4,
-  },
-  analyticsDonutLabel: {
-    color: "#64748b",
-    fontSize: 11,
-    fontWeight: "700",
-    marginTop: 2,
-  },
-  analyticsDonutValue: {
-    color: "#0f172a",
-    fontSize: 13,
-    fontWeight: "900",
-    textAlign: "center",
-  },
-  analyticsDonutWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  analyticsEmptyText: {
-    color: "#64748b",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  analyticsInsightCard: {
-    borderRadius: 18,
-    flex: 1,
-    gap: 5,
-    minWidth: 0,
-    overflow: "hidden",
-    paddingHorizontal: 10,
-    paddingVertical: 12,
-  },
-  analyticsInsightCardBg: {
-    bottom: 0,
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0,
-  },
-  analyticsInsightPill: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 5,
-    marginTop: 2,
-    maxWidth: "100%",
-    minHeight: 22,
-    paddingHorizontal: 9,
-  },
-  analyticsInsightPillDot: {
-    borderRadius: 999,
-    height: 5,
-    width: 5,
-  },
-  analyticsInsightIcon: {
-    alignItems: "center",
-    borderRadius: 17,
-    height: 34,
-    justifyContent: "center",
-    marginBottom: 3,
-    width: 34,
-  },
-  analyticsInsightLabel: {
-    color: "#64748b",
-    fontSize: 10,
-    fontWeight: "800",
-  },
-  analyticsInsightRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  analyticsInsightSubtitle: {
-    flexShrink: 1,
-    fontSize: 10.5,
-    fontWeight: "800",
-  },
-  analyticsInsightValue: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  analyticsLegendDot: {
-    borderRadius: 5,
-    height: 10,
-    width: 10,
-  },
-  analyticsLegendItem: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 6,
-  },
-  analyticsLegendRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-  },
-  analyticsLegendText: {
-    color: "#475569",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  analyticsLineChartWrap: {
-    marginBottom: -2,
-    overflow: "hidden",
-  },
-  analyticsSummaryAmount: {
-    color: "#0f172a",
-    fontSize: 30,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-    letterSpacing: -0.5,
-    marginTop: 6,
-  },
-  analyticsSummaryCard: {
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 18,
-    borderWidth: 1,
-    ...premiumTheme.shadow.soft,
-  },
-  analyticsSummaryCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  analyticsSummaryDeltaBad: {
-    color: "#dc2626",
-  },
-  analyticsSummaryDeltaGood: {
-    color: "#16a34a",
-  },
-  analyticsSummaryDeltaLabel: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  analyticsSummaryDeltaRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 4,
-    marginTop: 10,
-  },
-  analyticsSummaryDeltaText: {
-    fontSize: 12,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "700",
-  },
-  analyticsSummaryIconTile: {
-    alignItems: "center",
-    backgroundColor: "#ece9fb",
-    borderRadius: 999,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  analyticsSummaryStat: {
-    alignItems: "flex-start",
-    flex: 1,
-    flexDirection: "row",
-    gap: 8,
-    minWidth: 0,
-  },
-  analyticsSummaryStatCopy: {
-    flex: 1,
-    gap: 2,
-    minWidth: 0,
-  },
-  analyticsSummaryStatDivider: {
-    alignSelf: "stretch",
-    backgroundColor: premiumTheme.colors.border,
-    marginVertical: 2,
-    width: premiumHairline,
-  },
-  analyticsSummaryStatIcon: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 9,
-    borderWidth: 1,
-    height: 32,
-    justifyContent: "center",
-    width: 32,
-  },
-  analyticsSummaryStatIconFilled: {
-    borderRadius: 8,
-    borderWidth: 0,
-    height: 28,
-    width: 28,
-  },
-  analyticsSummaryStatIconRound: {
-    backgroundColor: "#e9ebf1",
-    borderRadius: 9,
-    borderWidth: 0,
-    height: 32,
-    width: 32,
-  },
-  analyticsChartStats: {
-    borderTopColor: premiumTheme.colors.divider,
-    borderTopWidth: premiumHairline,
-    flexDirection: "row",
-    gap: 16,
-    marginTop: 2,
-    paddingTop: 14,
-  },
-
-  analyticsSummaryStatSub: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 10,
-    fontWeight: "600",
-  },
-  analyticsSummaryStatLabel: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 10,
-    fontWeight: "600",
-  },
-  analyticsSummaryStats: {
-    borderBottomLeftRadius: 17,
-    borderBottomRightRadius: 17,
-    borderTopColor: premiumTheme.colors.border,
-    borderTopWidth: premiumHairline,
-    flexDirection: "row",
-    gap: 12,
-    overflow: "hidden",
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-  },
-  analyticsSummaryStatsBg: {
-    bottom: 0,
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0,
-  },
-  analyticsSummaryStatValue: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-  },
-  analyticsSummarySub: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 13,
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  analyticsSummaryTitle: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  analyticsSummaryTop: {
-    flexDirection: "row",
-    gap: 12,
-    padding: 16,
-  },
-  analyticsSummaryTopWrap: {
-    borderTopLeftRadius: 17,
-    borderTopRightRadius: 17,
-    overflow: "hidden",
-  },
-  analyticsSummaryWave: {
-    bottom: 0,
-    position: "absolute",
-    right: 0,
-  },
-  analyticsSummaryWaveWrap: {
-    bottom: 0,
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0,
-  },
-  analyticsRangeButton: {
-    alignItems: "center",
-    borderRadius: 11,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 30,
-  },
-  analyticsRangeButtonActive: {
-    backgroundColor: premiumTheme.colors.ink,
-  },
-  analyticsRangeDivider: {
-    alignSelf: "center",
-    backgroundColor: premiumTheme.colors.border,
-    height: 14,
-    width: premiumHairline,
-  },
-  analyticsRangeSelector: {
-    alignItems: "center",
-    borderTopColor: premiumTheme.colors.border,
-    borderTopWidth: premiumHairline,
-    flexDirection: "row",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 7,
-  },
-  analyticsRangeText: {
-    color: "#64748b",
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  analyticsRangeTextActive: {
-    color: "#ffffff",
-    fontWeight: "700",
-  },
-  analyticsSectionTitle: {
-    color: "#0f172a",
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "900",
-  },
-});

@@ -23,6 +23,7 @@ import type {
   CurrencyLike,
   ExchangeRateLike,
   FinancialEventInput,
+  FinancialRuleInput,
   GoalLike,
   InvestmentLike,
   LiabilityLike,
@@ -102,6 +103,7 @@ interface OfflineState {
     name: string,
     rawName?: string | null
   ) => Promise<void>;
+  createFinancialRule: (input: FinancialRuleInput) => Promise<void>;
   addMerchantAlias: (
     merchantId: string,
     alias: string
@@ -516,6 +518,21 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
           error instanceof Error
             ? error.message
             : "Unable to create the merchant.",
+      });
+      throw error;
+    }
+  },
+
+  async createFinancialRule(input) {
+    try {
+      await OfflineStorageService.persistFinancialRule(input);
+      await get().refresh();
+    } catch (error) {
+      set({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to create the rule.",
       });
       throw error;
     }

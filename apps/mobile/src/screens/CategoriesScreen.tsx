@@ -6,7 +6,6 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -17,7 +16,7 @@ import type { CachedCategory } from "@finance/shared-types";
 import { financeStyles } from "../components/finance/financeStyles";
 import { useOfflineStore } from "../stores/offlineStore";
 import { useSyncStore } from "../stores/syncStore";
-import { premiumHairline, premiumTheme } from "../theme/premiumTheme";
+import { premiumTheme } from "../theme/premiumTheme";
 import { titleCase } from "../utils/financeFormat";
 import {
   categoryIconOptions,
@@ -35,6 +34,18 @@ const categoryColorOptions = [
   "#db2777",
   "#64748b",
 ] as const;
+
+// Custom filter-pill shadow (not part of premiumTheme.shadow), so it stays a
+// plain style object.
+const filterActiveShadow = {
+  shadowColor: premiumTheme.colors.ink,
+  shadowOffset: {
+    height: 5,
+    width: 0,
+  },
+  shadowOpacity: 0.05,
+  shadowRadius: 10,
+} as const;
 
 export function CategoriesScreen() {
   const categories = useOfflineStore((state) => state.categories);
@@ -125,57 +136,53 @@ export function CategoriesScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <View className="flex-1 bg-canvas">
       <ScrollView
-        contentContainerStyle={styles.categoriesContainer}
+        contentContainerClassName="bg-canvas gap-4 p-5 pb-9"
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.categoriesHero}>
-          <View style={styles.categoriesHeroCopy}>
-            <Text style={styles.categoriesSubtitle}>
+        <View className="flex-row items-start justify-between gap-3.5">
+          <View className="min-w-0 flex-1">
+            <Text className="mt-1 text-[13px] leading-[19px] text-secondary">
               Organize transactions with system and custom categories.
             </Text>
           </View>
           <Pressable
             accessibilityLabel="Add new category"
             accessibilityRole="button"
+            className="min-h-[43px] flex-row items-center gap-1.5 rounded-[15px] bg-ink px-3.5 active:opacity-[0.78]"
             onPress={() => setModalVisible(true)}
-            style={({ pressed }) => [
-              styles.categoryAddButton,
-              pressed && styles.categoryAddButtonPressed,
-            ]}
           >
             <Plus color="#ffffff" size={19} strokeWidth={2.8} />
-            <Text style={styles.categoryAddButtonText}>New</Text>
+            <Text className="text-[13px] font-black text-white">New</Text>
           </Pressable>
         </View>
 
-        <View style={styles.categorySearchBar}>
+        <View className="min-h-[49px] flex-row items-center gap-2.5 rounded-[16px] bg-field px-3.5">
           <Search color="#94a3b8" size={20} strokeWidth={2.3} />
           <TextInput
+            className="min-h-12 flex-1 py-0 text-[14px] text-ink"
             onChangeText={setSearchQuery}
             placeholder="Search categories"
             placeholderTextColor="#94a3b8"
-            style={styles.categorySearchInput}
             value={searchQuery}
           />
         </View>
 
-        <View style={styles.categoryFilterBar}>
+        <View className="flex-row gap-1 rounded-[17px] bg-field p-[5px]">
           {(["all", "system", "custom"] as const).map((item) => (
             <Pressable
+              className={`min-h-9 flex-1 items-center justify-center rounded-[13px] ${
+                filter === item ? "bg-canvas" : ""
+              }`}
               key={item}
               onPress={() => setFilter(item)}
-              style={[
-                styles.categoryFilterButton,
-                filter === item && styles.categoryFilterButtonActive,
-              ]}
+              style={filter === item ? filterActiveShadow : undefined}
             >
               <Text
-                style={[
-                  styles.categoryFilterText,
-                  filter === item && styles.categoryFilterTextActive,
-                ]}
+                className={`text-[12px] font-extrabold ${
+                  filter === item ? "text-ink" : "text-secondary"
+                }`}
               >
                 {titleCase(item)}
               </Text>
@@ -183,16 +190,19 @@ export function CategoriesScreen() {
           ))}
         </View>
 
-        <View style={styles.categoryListHeader}>
-          <Text style={styles.categoryListTitle}>
+        <View className="flex-row items-center justify-between px-[3px]">
+          <Text className="text-[12px] font-black uppercase tracking-[0.5px] text-secondary">
             {filter === "all" ? "All categories" : titleCase(filter) + " categories"}
           </Text>
-          <Text style={styles.categoryListCount}>
+          <Text className="text-[12px] font-black text-secondary">
             {filteredCategories.length}
           </Text>
         </View>
 
-        <View style={styles.categoryListCard}>
+        <View
+          className="overflow-hidden rounded-section bg-elevated"
+          style={premiumTheme.shadow.floating}
+        >
           {filteredCategories.map((category, index) => (
             <CategoryListRow
               category={category}
@@ -202,9 +212,11 @@ export function CategoriesScreen() {
             />
           ))}
           {filteredCategories.length === 0 ? (
-            <View style={styles.categoryEmptyState}>
-              <Text style={styles.categoryEmptyTitle}>No categories found</Text>
-              <Text style={styles.categoryEmptyText}>
+            <View className="items-center p-6">
+              <Text className="text-[15px] font-black text-ink">
+                No categories found
+              </Text>
+              <Text className="mt-[5px] text-center text-[13px] text-secondary">
                 {searchQuery.trim()
                   ? "Try a different search or filter."
                   : "Create a custom category to get started."}
@@ -235,9 +247,9 @@ export function CategoriesScreen() {
             style={financeStyles.modalPanel}
             transition={{ duration: 220, type: "timing" }}
           >
-            <ScrollView contentContainerStyle={styles.modalContent}>
+            <ScrollView contentContainerClassName="gap-3.5 p-[18px] pb-[30px]">
               <View style={financeStyles.modalHeader}>
-                <View style={styles.rowTitleBlock}>
+                <View className="flex-1">
                   <Text style={financeStyles.sectionTitle}>New category</Text>
                   <Text style={financeStyles.muted}>
                     Choose a name and visual style for this category.
@@ -255,18 +267,20 @@ export function CategoriesScreen() {
 
               <TextInput
                 autoFocus
+                className="min-h-[52px] rounded-[15px] bg-field px-3.5 text-[15px] font-bold text-ink"
                 onChangeText={(value) => {
                   setName(value);
                   setFormError(null);
                 }}
                 placeholder="Category name"
                 placeholderTextColor="#94a3b8"
-                style={styles.categoryNameInput}
                 value={name}
               />
 
-              <Text style={styles.accountSectionLabel}>Choose an icon</Text>
-              <View style={styles.categoryOptionGrid}>
+              <Text className="text-[14px] font-black text-ink">
+                Choose an icon
+              </Text>
+              <View className="flex-row flex-wrap gap-2.5">
                 {categoryIconOptions.map((option) => {
                   const Icon = option.Icon;
                   const selected = icon === option.key;
@@ -274,15 +288,17 @@ export function CategoriesScreen() {
                   return (
                     <Pressable
                       accessibilityLabel={option.key}
+                      className="h-12 w-12 items-center justify-center rounded-[15px] bg-field"
                       key={option.key}
                       onPress={() => setIcon(option.key)}
-                      style={[
-                        styles.categoryIconOption,
-                        selected && {
-                          backgroundColor: color + "14",
-                          borderColor: color,
-                        },
-                      ]}
+                      style={
+                        selected
+                          ? {
+                              backgroundColor: color + "14",
+                              borderColor: color,
+                            }
+                          : undefined
+                      }
                     >
                       <Icon
                         color={selected ? color : "#64748b"}
@@ -294,18 +310,19 @@ export function CategoriesScreen() {
                 })}
               </View>
 
-              <Text style={styles.accountSectionLabel}>Choose a color</Text>
-              <View style={styles.categoryColorOptions}>
+              <Text className="text-[14px] font-black text-ink">
+                Choose a color
+              </Text>
+              <View className="flex-row flex-wrap gap-2.5">
                 {categoryColorOptions.map((option) => (
                   <Pressable
                     accessibilityLabel={"Use color " + option}
+                    className={`h-[38px] w-[38px] items-center justify-center rounded-full border-[3px] ${
+                      color === option ? "border-ink" : "border-white"
+                    }`}
                     key={option}
                     onPress={() => setColor(option)}
-                    style={[
-                      styles.categoryColorOption,
-                      { backgroundColor: option },
-                      color === option && styles.categoryColorOptionSelected,
-                    ]}
+                    style={{ backgroundColor: option }}
                   >
                     {color === option ? (
                       <Check color="#ffffff" size={17} strokeWidth={3} />
@@ -315,25 +332,23 @@ export function CategoriesScreen() {
               </View>
 
               {formError ? <Text style={financeStyles.error}>{formError}</Text> : null}
-              <View style={styles.actions}>
+              <View className="mt-3.5 flex-row flex-wrap gap-2.5">
                 <Pressable
+                  className="min-h-[52px] items-center justify-center rounded-full bg-ink px-[18px]"
                   disabled={isSaving}
                   onPress={() => void handleCreateCategory()}
-                  style={[
-                    styles.primaryButton,
-                    isSaving && financeStyles.saveButtonDisabled,
-                  ]}
+                  style={isSaving ? financeStyles.saveButtonDisabled : undefined}
                 >
-                  <Text style={styles.primaryButtonText}>
+                  <Text className="text-[16px] font-black text-white">
                     {isSaving ? "Creating..." : "Create category"}
                   </Text>
                 </Pressable>
                 <Pressable
+                  className="rounded-full bg-field px-3.5 py-2.5"
                   disabled={isSaving}
                   onPress={closeModal}
-                  style={styles.secondaryButton}
                 >
-                  <Text style={styles.secondaryButtonText}>Cancel</Text>
+                  <Text className="font-black text-ink">Cancel</Text>
                 </Pressable>
               </View>
             </ScrollView>
@@ -358,293 +373,30 @@ function CategoryListRow({
 
   return (
     <View
-      style={[
-        styles.categoryListRow,
-        showDivider && styles.categoryListRowDivider,
-      ]}
+      className={`min-h-[68px] flex-row items-center gap-3 px-3.5 ${
+        showDivider ? "border-b-hairline border-b-divider" : ""
+      }`}
     >
       <View
-        style={[
-          styles.categoryListIcon,
-          { backgroundColor: visual.color + "14" },
-        ]}
+        className="h-11 w-11 items-center justify-center rounded-[15px]"
+        style={{ backgroundColor: visual.color + "14" }}
       >
         <Icon color={visual.color} size={21} strokeWidth={2.4} />
       </View>
-      <View style={styles.categoryListCopy}>
-        <Text style={styles.categoryListName}>{category.name}</Text>
-        <Text style={styles.categoryListMeta}>
+      <View className="min-w-0 flex-1">
+        <Text className="text-[15px] font-black text-ink">{category.name}</Text>
+        <Text className="mt-[3px] text-[12px] text-secondary">
           {category.is_system ? "System category" : "Custom category"}
         </Text>
       </View>
       <View
-        style={[
-          styles.categoryUsageBadge,
-          { backgroundColor: visual.color + "12" },
-        ]}
+        className="h-8 min-w-8 items-center justify-center rounded-full px-[9px]"
+        style={{ backgroundColor: visual.color + "12" }}
       >
-        <Text style={[styles.categoryUsageText, { color: visual.color }]}>
+        <Text className="text-[12px] font-black" style={{ color: visual.color }}>
           {usageCount}
         </Text>
       </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  accountSectionLabel: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  actions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginTop: 14,
-  },
-  categoriesContainer: {
-    backgroundColor: premiumTheme.colors.canvas,
-    gap: 16,
-    padding: 20,
-    paddingBottom: 36,
-  },
-  categoriesHero: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: 14,
-    justifyContent: "space-between",
-  },
-  categoriesHeroCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  categoriesSubtitle: {
-    color: "#64748b",
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 4,
-  },
-  categoryAddButton: {
-    alignItems: "center",
-    backgroundColor: "#0f172a",
-    borderRadius: 15,
-    flexDirection: "row",
-    gap: 6,
-    minHeight: 43,
-    paddingHorizontal: 14,
-  },
-  categoryAddButtonPressed: {
-    opacity: 0.78,
-  },
-  categoryAddButtonText: {
-    color: "#ffffff",
-    fontSize: 13,
-    fontWeight: "900",
-  },
-  categoryColorOption: {
-    alignItems: "center",
-    borderColor: "#ffffff",
-    borderRadius: 999,
-    borderWidth: 3,
-    height: 38,
-    justifyContent: "center",
-    width: 38,
-  },
-  categoryColorOptionSelected: {
-    borderColor: "#0f172a",
-  },
-  categoryColorOptions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  categoryEmptyState: {
-    alignItems: "center",
-    padding: 24,
-  },
-  categoryEmptyText: {
-    color: "#64748b",
-    fontSize: 13,
-    marginTop: 5,
-    textAlign: "center",
-  },
-  categoryEmptyTitle: {
-    color: "#0f172a",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  categoryFilterBar: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 17,
-    flexDirection: "row",
-    gap: 4,
-    padding: 5,
-  },
-  categoryFilterButton: {
-    alignItems: "center",
-    borderRadius: 13,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 36,
-  },
-  categoryFilterButtonActive: {
-    backgroundColor: premiumTheme.colors.canvas,
-    shadowColor: premiumTheme.colors.ink,
-    shadowOffset: {
-      height: 5,
-      width: 0,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-  },
-  categoryFilterText: {
-    color: "#64748b",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  categoryFilterTextActive: {
-    color: "#0f172a",
-  },
-  categoryIconOption: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 15,
-    height: 48,
-    justifyContent: "center",
-    width: 48,
-  },
-  categoryListCard: {
-    backgroundColor: premiumTheme.colors.elevated,
-    borderRadius: premiumTheme.radius.section,
-    overflow: "hidden",
-    ...premiumTheme.shadow.floating,
-  },
-  categoryListCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  categoryListCount: {
-    color: "#64748b",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-  categoryListHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 3,
-  },
-  categoryListIcon: {
-    alignItems: "center",
-    borderRadius: 15,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  categoryListMeta: {
-    color: "#64748b",
-    fontSize: 12,
-    marginTop: 3,
-  },
-  categoryListName: {
-    color: "#0f172a",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  categoryListRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-    minHeight: 68,
-    paddingHorizontal: 14,
-  },
-  categoryListRowDivider: {
-    borderBottomColor: premiumTheme.colors.divider,
-    borderBottomWidth: premiumHairline,
-  },
-  categoryListTitle: {
-    color: "#64748b",
-    fontSize: 12,
-    fontWeight: "900",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  categoryNameInput: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 15,
-    color: "#0f172a",
-    fontSize: 15,
-    fontWeight: "700",
-    minHeight: 52,
-    paddingHorizontal: 14,
-  },
-  categoryOptionGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  categorySearchBar: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 16,
-    flexDirection: "row",
-    gap: 10,
-    minHeight: 49,
-    paddingHorizontal: 14,
-  },
-  categorySearchInput: {
-    color: "#0f172a",
-    flex: 1,
-    fontSize: 14,
-    minHeight: 48,
-    paddingVertical: 0,
-  },
-  categoryUsageBadge: {
-    alignItems: "center",
-    borderRadius: 999,
-    height: 32,
-    justifyContent: "center",
-    minWidth: 32,
-    paddingHorizontal: 9,
-  },
-  categoryUsageText: {
-    fontSize: 12,
-    fontWeight: "900",
-  },
-  modalContent: {
-    gap: 14,
-    padding: 18,
-    paddingBottom: 30,
-  },
-  primaryButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 999,
-    minHeight: 52,
-    justifyContent: "center",
-    paddingHorizontal: 18,
-  },
-  primaryButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  rowTitleBlock: {
-    flex: 1,
-  },
-  screen: {
-    backgroundColor: premiumTheme.colors.canvas,
-    flex: 1,
-  },
-  secondaryButton: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  secondaryButtonText: {
-    color: "#0f172a",
-    fontWeight: "900",
-  },
-});

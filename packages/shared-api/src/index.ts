@@ -2,6 +2,7 @@ import type {
     AccountLike,
     AssetLike,
     BudgetLike,
+    CachedFinancialRule,
     CategoryLike,
     FinancialEventInput,
     GoalLike,
@@ -135,6 +136,8 @@ export type UpdateMerchantSyncPayload =
     UpdateResourceSyncPayload<MerchantLike>;
 export type CreateMerchantAliasSyncPayload =
     CreateResourceSyncPayload<MerchantAliasLike>;
+export type CreateFinancialRuleSyncPayload =
+    CreateResourceSyncPayload<CachedFinancialRule>;
 export type UpdateAccountSyncPayload =
     UpdateResourceSyncPayload<AccountLike>;
 export type CreateAssetSyncPayload =
@@ -193,7 +196,8 @@ export type SyncOperation =
     | "update_merchant"
     | "update_transaction"
     | "create_category"
-    | "create_budget";
+    | "create_budget"
+    | "create_rule";
 
 export type SyncQueueStatus =
     | "pending"

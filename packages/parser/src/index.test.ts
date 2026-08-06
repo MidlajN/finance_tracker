@@ -133,9 +133,11 @@ test("rejects an offer where upto precedes the amount", () => {
     assert.equal(parsed, null);
 });
 
-test("keeps a real alert with a dispute link, at lower confidence", () => {
-    // com.sbi.card is not in the trusted set, so the unknown-source
-    // penalty applies on top of the URL penalty.
+test("scores a card-issuer alert with a dispute link near base", () => {
+    // com.sbi.card is not in the trusted set, but the financial source
+    // name softens the unknown penalty (-0.05), the fraud disclaimer
+    // explains the URL (no link penalty, +0.05) and the parsed
+    // reference adds evidence (+0.08): 0.72 - 0.05 + 0.05 + 0.08.
     const parsed = parseNotificationPayload({
         id: "dispute-link-key",
         packageName: "com.sbi.card",
@@ -148,7 +150,55 @@ test("keeps a real alert with a dispute link, at lower confidence", () => {
 
     assert.ok(parsed);
     assert.equal(parsed.direction, "debit");
-    assert.equal(parsed.confidence, 0.37);
+    assert.equal(parsed.confidence, 0.8);
+});
+
+test("softens the unknown penalty for a financial app label alone", () => {
+    // Neutral package id; only the label declares the issuer. The label
+    // is self-declared, so the penalty shrinks instead of vanishing:
+    // 0.72 - 0.05 + 0.05 + 0.08.
+    const parsed = parseNotificationPayload({
+        id: "label-only-key",
+        packageName: "com.example.alerts",
+        applicationName: "SBI CARDS AND PAYMENT SERVICES",
+        title: "Transaction alert",
+        text: SBI_SPEND_MESSAGE,
+        subText: null,
+        postedAt: "2026-07-23T07:30:00.000Z",
+    });
+
+    assert.equal(parsed?.confidence, 0.8);
+});
+
+test("keeps the full unknown penalty for a non-financial source", () => {
+    // No financial name anywhere: full -0.2 unknown penalty, plus the
+    // disclaimer and reference evidence: 0.72 - 0.2 + 0.05 + 0.08.
+    const parsed = parseNotificationPayload({
+        id: "neutral-source-key",
+        packageName: "com.example.alerts",
+        applicationName: "Alert Center",
+        title: "Transaction alert",
+        text: SBI_SPEND_MESSAGE,
+        subText: null,
+        postedAt: "2026-07-23T07:30:00.000Z",
+    });
+
+    assert.equal(parsed?.confidence, 0.65);
+});
+
+test("penalizes a shortened link even with a dispute disclaimer", () => {
+    const parsed = parseNotificationPayload({
+        id: "shortener-key",
+        packageName: "com.sbi.card",
+        applicationName: "SBI Card",
+        title: "Transaction alert",
+        text: "Rs.47.00 spent on your SBI Credit Card ending with 0345 at THEBLOOMSCOCHINPREMI on 22-07-26 via UPI (Ref No. 656911848080). Trxn. not done by you? Report at https://bit.ly/3xYz",
+        subText: null,
+        postedAt: "2026-07-23T07:30:00.000Z",
+    });
+
+    // 0.72 - 0.05 (unknown, financial) - 0.25 (shortener) + 0.05 + 0.08.
+    assert.equal(parsed?.confidence, 0.55);
 });
 
 test("keeps a scratch-card cashback credit, at low confidence", () => {
@@ -167,7 +217,8 @@ test("keeps a scratch-card cashback credit, at low confidence", () => {
     assert.equal(parsed.confidence, 0.42);
 });
 
-test("keeps full base confidence when an account hint is present", () => {
+test("adds reference evidence on top of base confidence", () => {
+    // Trusted source, account hint present, parsed reference: 0.72 + 0.08.
     const parsed = parseNotificationPayload({
         id: "hint-confidence-key",
         packageName: "com.csam.icici.bank.imobile",
@@ -178,7 +229,7 @@ test("keeps full base confidence when an account hint is present", () => {
         postedAt: "2026-07-22T07:30:00.000Z",
     });
 
-    assert.equal(parsed?.confidence, 0.72);
+    assert.equal(parsed?.confidence, 0.8);
 });
 
 test("penalizes a missing account hint", () => {
@@ -192,7 +243,8 @@ test("penalizes a missing account hint", () => {
         postedAt: "2026-07-22T07:30:00.000Z",
     });
 
-    assert.equal(parsed?.confidence, 0.62);
+    // 0.72 - 0.1 (no hint) + 0.08 (reference).
+    assert.equal(parsed?.confidence, 0.7);
 });
 
 test("rejects a credit-score payment reminder", () => {
@@ -399,7 +451,9 @@ test("blocks promotional-route DLT senders", () => {
     );
 });
 
-test("parses an unknown bank app at reduced confidence", () => {
+test("parses an unknown bank app at mildly reduced confidence", () => {
+    // Unlisted package, but both label and package read financial, so
+    // the unknown penalty softens: 0.72 - 0.05 + 0.08 (reference).
     const parsed = parseNotificationPayload({
         id: "unknown-bank-key",
         packageName: "com.idbi.mobilebanking",
@@ -410,7 +464,7 @@ test("parses an unknown bank app at reduced confidence", () => {
         postedAt: "2026-07-31T10:00:00.000Z",
     });
 
-    assert.equal(parsed?.confidence, 0.52);
+    assert.equal(parsed?.confidence, 0.75);
 });
 
 test("drops blocked sources before parsing", () => {

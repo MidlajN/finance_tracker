@@ -14,7 +14,6 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -30,7 +29,7 @@ import { financeStyles } from "../components/finance/financeStyles";
 import { MobileDashboardService } from "../services/MobileDashboardService";
 import { useOfflineStore } from "../stores/offlineStore";
 import { useSyncStore } from "../stores/syncStore";
-import { premiumHairline, premiumTheme } from "../theme/premiumTheme";
+import { premiumTheme } from "../theme/premiumTheme";
 import { formatMonthRange, getFrequentCategoryIds } from "../utils/financeFormat";
 import { darkenColor, getCategoryVisual } from "../utils/financeVisuals";
 
@@ -50,6 +49,20 @@ const BUDGET_PERIOD_LABELS: Record<BudgetPeriod, string> = {
   weekly: "Weekly",
   yearly: "Yearly",
 };
+
+const pressedControl = "active:opacity-[0.62]";
+
+// Custom dark-card shadow (not part of premiumTheme.shadow), so it stays a
+// plain style object.
+const summaryCardShadow = {
+  shadowColor: "#111827",
+  shadowOffset: {
+    height: 10,
+    width: 0,
+  },
+  shadowOpacity: 0.12,
+  shadowRadius: 24,
+} as const;
 
 function formatLocalIsoDate(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
@@ -238,23 +251,28 @@ export function BudgetsScreen() {
 
   return (
     <ScrollView
-      contentContainerStyle={styles.budgetsContainer}
+      contentContainerClassName="bg-canvas gap-4 p-5 pb-9"
       keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.budgetsHero}>
-        <Text style={styles.budgetsSubtitle}>
+      <View className="gap-1">
+        <Text className="text-[13px] text-secondary">
           Plan your spending and stay in control.
         </Text>
       </View>
 
-      <View style={styles.budgetSummaryCard}>
-        <View style={styles.budgetSummaryMain}>
-          <View style={styles.budgetSummaryCopy}>
-            <Text style={styles.budgetSummaryLabel}>Remaining this month</Text>
-            <Text style={styles.budgetSummaryValue}>
+      <View
+        className="overflow-hidden rounded-[22px] bg-ink"
+        style={summaryCardShadow}
+      >
+        <View className="flex-row items-center gap-3.5 p-[17px]">
+          <View className="min-w-0 flex-1">
+            <Text className="text-[12px] font-bold text-[#cbd5e1]">
+              Remaining this month
+            </Text>
+            <Text className="mt-[5px] text-[27px] font-black text-white">
               {MobileDashboardService.getFormattedBalance(overview.remaining)}
             </Text>
-            <Text style={styles.budgetSummaryTotal}>
+            <Text className="mt-[5px] text-[12px] text-[#cbd5e1]">
               of{" "}
               {MobileDashboardService.getFormattedBalance(
                 overview.totalBudgeted
@@ -263,60 +281,63 @@ export function BudgetsScreen() {
           </View>
           <BudgetSummaryRing percentage={remainingPercentage} />
         </View>
-        <View style={styles.budgetSummaryFooter}>
+        <View className="min-h-11 flex-row items-center gap-2 border-t-hairline border-t-white/10 bg-white/[0.04] px-4">
           <CalendarDays color="#cbd5e1" size={17} strokeWidth={2.2} />
-          <Text style={styles.budgetSummaryDate}>
+          <Text className="text-[12px] font-extrabold text-[#e2e8f0]">
             {formatMonthRange(monthDate)}
           </Text>
         </View>
       </View>
 
-      <View style={styles.budgetListSection}>
-        <View style={styles.budgetListHeader}>
-          <View style={styles.budgetListTitleRow}>
+      <View className="gap-2.5">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center gap-2">
             <Text style={financeStyles.sectionTitle}>Your budgets</Text>
             {overview.budgets.length > 0 ? (
-              <Text style={styles.budgetListCount}>
+              <Text className="items-center overflow-hidden rounded-full bg-[#eef2f7] px-[9px] py-1 text-[12px] font-black text-[#475569]">
                 {overview.budgets.length}
               </Text>
             ) : null}
           </View>
           <Pressable
+            className={`min-h-9 flex-row items-center gap-[5px] rounded-full bg-ink px-[13px] ${pressedControl}`}
             onPress={() => setBudgetFormVisible(true)}
-            style={({ pressed }) => [
-              styles.budgetAddButton,
-              pressed && financeStyles.saveButtonDisabled,
-            ]}
+            style={premiumTheme.shadow.soft}
           >
             <Plus color="#ffffff" size={15} strokeWidth={2.7} />
-            <Text style={styles.budgetAddButtonText}>Add</Text>
+            <Text className="text-[12px] font-bold text-white">Add</Text>
           </Pressable>
         </View>
         {overview.budgets.length === 0 ? (
-          <View style={styles.budgetEmptyCard}>
-            <View style={styles.budgetEmptyIcon}>
+          <View
+            className="items-center rounded-section border border-border bg-white p-6"
+            style={premiumTheme.shadow.soft}
+          >
+            <View className="h-[58px] w-[58px] items-center justify-center rounded-section bg-field">
               <PiggyBank
                 color={premiumTheme.colors.ink}
                 size={30}
                 strokeWidth={2.2}
               />
             </View>
-            <Text style={styles.budgetEmptyTitle}>No budgets yet</Text>
-            <Text style={styles.budgetEmptyText}>
+            <Text className="mt-3 text-[16px] font-black text-ink">
+              No budgets yet
+            </Text>
+            <Text className="mt-[5px] text-center text-[13px] text-secondary">
               Add a category budget to track monthly spending.
             </Text>
             <Pressable
+              className="mt-2.5 min-h-11 flex-row items-center justify-center gap-[7px] rounded-full bg-ink px-[18px]"
               onPress={() => setBudgetFormVisible(true)}
-              style={styles.budgetEmptyButton}
             >
               <Plus color="#ffffff" size={17} strokeWidth={2.7} />
-              <Text style={styles.budgetEmptyButtonText}>
+              <Text className="text-[13px] font-bold text-white">
                 Add your first budget
               </Text>
             </Pressable>
           </View>
         ) : (
-          <View style={styles.budgetList}>
+          <View className="gap-2.5">
             {overview.budgets.map((item) => (
               <BudgetProgressRow
                 category={
@@ -357,7 +378,7 @@ export function BudgetsScreen() {
               type: "spring",
             }}
           >
-            <View style={styles.budgetFormContent}>
+            <View className="max-h-full gap-3.5 px-5 pb-[26px] pt-5">
               <View style={financeStyles.modalHeader}>
                 <View style={financeStyles.merchantPickerTitleBlock}>
                   <Text style={financeStyles.merchantPickerTitle}>Add budget</Text>
@@ -374,17 +395,18 @@ export function BudgetsScreen() {
               </View>
 
               <ScrollView
+                className="grow-0"
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
-                style={styles.budgetFormScroll}
               >
-                <View style={styles.budgetLimitCard}>
-                  <Text style={styles.budgetLimitLabel}>
+                <View className="mb-2.5 gap-1 rounded-[16px] bg-field px-3.5 py-[11px]">
+                  <Text className="text-[10px] font-bold uppercase tracking-[0.8px] text-secondary">
                     {BUDGET_PERIOD_LABELS[budgetPeriod]} limit
                   </Text>
-                  <View style={styles.budgetLimitRow}>
-                    <Text style={styles.budgetLimitCurrency}>₹</Text>
+                  <View className="flex-row items-center gap-[7px]">
+                    <Text className="text-[17px] font-bold text-secondary">₹</Text>
                     <TextInput
+                      className="min-h-[38px] flex-1 py-0 text-[26px] font-extrabold tracking-[-0.6px] text-ink tabular-nums"
                       keyboardType="decimal-pad"
                       onChangeText={(value) => {
                         setBudgetAmount(value);
@@ -392,46 +414,47 @@ export function BudgetsScreen() {
                       }}
                       placeholder="0.00"
                       placeholderTextColor="#94a3b8"
-                      style={styles.budgetLimitInput}
                       value={budgetAmount}
                     />
                   </View>
                 </View>
 
-                <View style={styles.budgetQuickRow}>
+                <View className="mb-4 flex-row gap-[7px]">
                   {[500, 1000, 2000, 5000].map((value) => (
                     <Pressable
+                      className={`min-h-8 flex-1 items-center justify-center rounded-full bg-field ${pressedControl}`}
                       key={value}
                       onPress={() => addQuickAmount(value)}
-                      style={({ pressed }) => [
-                        styles.budgetQuickChip,
-                        pressed && financeStyles.saveButtonDisabled,
-                      ]}
                     >
-                      <Text style={styles.budgetQuickChipText}>
+                      <Text className="text-[11px] font-bold text-ink tabular-nums">
                         +₹{value.toLocaleString("en-IN")}
                       </Text>
                     </Pressable>
                   ))}
                 </View>
 
-                <View style={styles.budgetPeriodRow}>
+                <View className="mb-3 flex-row gap-1 rounded-control bg-field p-1">
                   {BUDGET_PERIOD_OPTIONS.map((option) => (
                     <Pressable
+                      className={`min-h-[34px] flex-1 items-center justify-center rounded-[10px] border ${
+                        budgetPeriod === option.value
+                          ? "border-border bg-white"
+                          : "border-transparent"
+                      }`}
                       key={option.value}
                       onPress={() => setBudgetPeriod(option.value)}
-                      style={[
-                        styles.budgetPeriodButton,
-                        budgetPeriod === option.value &&
-                          styles.budgetPeriodButtonActive,
-                      ]}
+                      style={
+                        budgetPeriod === option.value
+                          ? premiumTheme.shadow.soft
+                          : undefined
+                      }
                     >
                       <Text
-                        style={[
-                          styles.budgetPeriodText,
-                          budgetPeriod === option.value &&
-                            styles.budgetPeriodTextActive,
-                        ]}
+                        className={`text-[12px] font-bold ${
+                          budgetPeriod === option.value
+                            ? "text-ink"
+                            : "text-secondary"
+                        }`}
                       >
                         {option.label}
                       </Text>
@@ -442,49 +465,50 @@ export function BudgetsScreen() {
                 <Pressable
                   accessibilityRole="switch"
                   accessibilityState={{ checked: budgetAutoRenew }}
+                  className="mb-4 flex-row items-center gap-3 rounded-[16px] bg-field px-3.5 py-[11px]"
                   onPress={() => setBudgetAutoRenew(!budgetAutoRenew)}
-                  style={styles.budgetRenewRow}
                 >
-                  <View style={styles.budgetRenewCopy}>
-                    <Text style={styles.budgetRenewTitle}>Auto renew</Text>
-                    <Text style={styles.budgetRenewText}>
+                  <View className="min-w-0 flex-1">
+                    <Text className="text-[13.5px] font-bold text-ink">
+                      Auto renew
+                    </Text>
+                    <Text className="mt-0.5 text-[11.5px] text-secondary">
                       {budgetAutoRenew
                         ? "Repeats automatically each period."
                         : "Runs for one period, then ends."}
                     </Text>
                   </View>
                   <View
-                    style={[
-                      styles.budgetRenewTrack,
-                      budgetAutoRenew && styles.budgetRenewTrackOn,
-                    ]}
+                    className={`h-[26px] w-11 rounded-full p-0.5 ${
+                      budgetAutoRenew ? "bg-ink" : "bg-[#d7dbe3]"
+                    }`}
                   >
                     <View
-                      style={[
-                        styles.budgetRenewKnob,
-                        budgetAutoRenew && styles.budgetRenewKnobOn,
-                      ]}
+                      className={`h-[22px] w-[22px] rounded-full bg-white ${
+                        budgetAutoRenew ? "self-end" : ""
+                      }`}
+                      style={premiumTheme.shadow.soft}
                     />
                   </View>
                 </Pressable>
 
-                <View style={styles.budgetCategoryHeaderRow}>
-                  <Text style={styles.budgetCategoryTitle}>
+                <View className="mb-3 flex-row items-center justify-between gap-3">
+                  <Text className="text-[15px] font-bold text-ink">
                     Choose a category
                   </Text>
-                  <View style={styles.budgetCategorySearch}>
+                  <View className="min-h-[34px] max-w-40 flex-1 flex-row items-center gap-[7px] rounded-full bg-field px-3">
                     <Search color="#7b818c" size={15} strokeWidth={2.3} />
                     <TextInput
+                      className="flex-1 py-0 text-[12px] font-semibold text-ink"
                       onChangeText={setBudgetCategorySearch}
                       placeholder="Search"
                       placeholderTextColor="#8b929d"
-                      style={styles.budgetCategorySearchInput}
                       value={budgetCategorySearch}
                     />
                   </View>
                 </View>
 
-                <View style={styles.budgetCategoryGrid}>
+                <View className="mb-1.5 flex-row flex-wrap gap-x-2.5 gap-y-3.5">
                   {visibleBudgetCategories.map((category) => (
                     <BudgetCategoryOption
                       category={category}
@@ -498,24 +522,19 @@ export function BudgetsScreen() {
                   ))}
                   {showMoreCategoriesTile && (
                     <Pressable
+                      className="w-[22%] items-center gap-[5px]"
                       onPress={() => setBudgetCategoryPickerVisible(true)}
-                      style={styles.budgetCategoryItem}
                     >
-                      <View
-                        style={[
-                          styles.budgetCategoryCircle,
-                          {
-                            backgroundColor: premiumTheme.colors.field,
-                          },
-                        ]}
-                      >
+                      <View className="h-11 w-11 items-center justify-center rounded-full border-2 border-transparent bg-field">
                         <Ellipsis
                           color={premiumTheme.colors.secondary}
                           size={18}
                           strokeWidth={2.4}
                         />
                       </View>
-                      <Text style={styles.budgetCategoryLabel}>More</Text>
+                      <Text className="max-w-full text-[10px] font-semibold text-secondary">
+                        More
+                      </Text>
                     </Pressable>
                   )}
                 </View>
@@ -538,11 +557,11 @@ export function BudgetsScreen() {
                 )}
 
                 <Pressable
+                  className="mt-4"
                   disabled={isSavingBudget}
                   onPress={handleCreateBudget}
                   style={[
                     financeStyles.accountSaveButton,
-                    styles.budgetSaveSpacing,
                     isSavingBudget && financeStyles.saveButtonDisabled,
                   ]}
                 >
@@ -581,7 +600,7 @@ export function BudgetsScreen() {
               type: "spring",
             }}
           >
-            <View style={styles.categoryPickerContent}>
+            <View className="gap-3.5 p-[18px] pb-7">
               <View style={financeStyles.modalHeader}>
                 <View style={financeStyles.merchantPickerTitleBlock}>
                   <Text style={financeStyles.merchantPickerTitle}>
@@ -611,9 +630,9 @@ export function BudgetsScreen() {
               </View>
 
               <ScrollView
-                contentContainerStyle={styles.categoryPickerList}
+                className="max-h-[370px]"
+                contentContainerClassName="gap-[9px] pb-1"
                 keyboardShouldPersistTaps="handled"
-                style={styles.categoryPickerViewport}
               >
                 {pickerBudgetCategories.map((category) => (
                   <CategoryPickerOption
@@ -654,7 +673,10 @@ function BudgetSummaryRing({ percentage }: { percentage: number }) {
   const progress = Math.max(0, Math.min(100, percentage));
 
   return (
-    <View style={[styles.budgetRing, { height: size, width: size }]}>
+    <View
+      className="relative items-center justify-center"
+      style={{ height: size, width: size }}
+    >
       <Svg height={size} width={size}>
         <Circle
           cx={size / 2}
@@ -679,9 +701,11 @@ function BudgetSummaryRing({ percentage }: { percentage: number }) {
           strokeWidth={strokeWidth}
         />
       </Svg>
-      <View style={styles.budgetRingLabel}>
-        <Text style={styles.budgetRingValue}>{Math.round(progress)}%</Text>
-        <Text style={styles.budgetRingText}>left</Text>
+      <View className="absolute inset-0 items-center justify-center">
+        <Text className="text-[18px] font-black text-white">
+          {Math.round(progress)}%
+        </Text>
+        <Text className="text-[10px] font-bold text-[#cbd5e1]">left</Text>
       </View>
     </View>
   );
@@ -702,12 +726,12 @@ function BudgetCategoryOption({
   return (
     <Pressable
       accessibilityRole="button"
+      className="w-[22%] items-center gap-[5px]"
       onPress={onPress}
-      style={styles.budgetCategoryItem}
     >
       <View
+        className="h-11 w-11 items-center justify-center rounded-full border-2 border-transparent"
         style={[
-          styles.budgetCategoryCircle,
           {
             backgroundColor: `${visual.color}14`,
           },
@@ -719,14 +743,16 @@ function BudgetCategoryOption({
         <Icon color={visual.color} size={18} strokeWidth={2.3} />
       </View>
       <Text
+        className="max-w-full text-[10px] font-semibold text-secondary"
         numberOfLines={1}
-        style={[
-          styles.budgetCategoryLabel,
-          selected && {
-            color: darkenColor(visual.color),
-            fontWeight: "700",
-          },
-        ]}
+        style={
+          selected
+            ? {
+                color: darkenColor(visual.color),
+                fontWeight: "700",
+              }
+            : undefined
+        }
       >
         {category.name}
       </Text>
@@ -762,517 +788,50 @@ function BudgetProgressRow({
       "%") as DimensionValue;
 
   return (
-    <View style={styles.budgetProgressRow}>
-      <View style={styles.budgetProgressHeader}>
+    <View className="gap-2.5 rounded-[18px] bg-field p-4">
+      <View className="flex-row items-center gap-[11px]">
         <View
-          style={[
-            styles.budgetProgressIcon,
-            { backgroundColor: visual.color + "14" },
-          ]}
+          className="h-[42px] w-[42px] items-center justify-center rounded-control"
+          style={{ backgroundColor: visual.color + "14" }}
         >
           <Icon color={visual.color} size={20} strokeWidth={2.4} />
         </View>
-        <View style={styles.budgetProgressCopy}>
-          <Text style={styles.budgetProgressName}>
+        <View className="min-w-0 flex-1">
+          <Text className="text-[14px] font-black text-ink">
             {category?.name ?? item.budget.category?.name ?? "Uncategorized"}
           </Text>
-          <Text style={styles.budgetProgressAmount}>
+          <Text className="mt-[3px] text-[12px] text-secondary">
             {MobileDashboardService.getFormattedBalance(item.spent)} of{" "}
             {MobileDashboardService.getFormattedBalance(item.budget.amount)}
           </Text>
-          <Text style={styles.budgetProgressMeta}>
+          <Text className="mt-0.5 text-[11px] font-semibold text-muted">
             {BUDGET_PERIOD_LABELS[item.budget.period ?? "monthly"]}
             {(item.budget.auto_renew ?? true) ? " · Auto renew ✓" : " · One period"}
           </Text>
         </View>
         <View
-          style={[
-            styles.budgetStatusBadge,
-            { backgroundColor: statusColor + "12" },
-          ]}
+          className="rounded-full px-2 py-[5px]"
+          style={{ backgroundColor: statusColor + "12" }}
         >
-          <Text style={[styles.budgetStatusText, { color: statusColor }]}>
+          <Text className="text-[10px] font-black" style={{ color: statusColor }}>
             {statusLabel}
           </Text>
         </View>
       </View>
-      <View style={styles.budgetProgressTrack}>
+      <View className="h-[7px] overflow-hidden rounded-full bg-white">
         <View
-          style={[
-            styles.budgetProgressFill,
-            { backgroundColor: statusColor, width: progressWidth },
-          ]}
+          className="h-full rounded-full"
+          style={{ backgroundColor: statusColor, width: progressWidth }}
         />
       </View>
-      <View style={styles.budgetProgressFooter}>
-        <Text style={styles.budgetProgressPercent}>
+      <View className="flex-row justify-between">
+        <Text className="text-[11px] font-bold text-secondary">
           {Math.round(item.percentage)}% used
         </Text>
-        <Text style={styles.budgetProgressRemaining}>
+        <Text className="text-[11px] font-extrabold text-[#334155]">
           {MobileDashboardService.getFormattedBalance(item.remaining)} left
         </Text>
       </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  budgetAddButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: premiumTheme.radius.pill,
-    flexDirection: "row",
-    gap: 5,
-    minHeight: 36,
-    paddingHorizontal: 13,
-    ...premiumTheme.shadow.soft,
-  },
-  budgetAddButtonText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  budgetCategoryCircle: {
-    alignItems: "center",
-    borderColor: "transparent",
-    borderRadius: premiumTheme.radius.pill,
-    borderWidth: 2,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  budgetCategoryGrid: {
-    columnGap: 10,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 6,
-    rowGap: 14,
-  },
-  budgetCategoryHeaderRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  budgetCategoryItem: {
-    alignItems: "center",
-    gap: 5,
-    width: "22%",
-  },
-  budgetCategoryLabel: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 10,
-    fontWeight: "600",
-    maxWidth: "100%",
-  },
-  budgetCategorySearch: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: premiumTheme.radius.pill,
-    flex: 1,
-    flexDirection: "row",
-    gap: 7,
-    maxWidth: 160,
-    minHeight: 34,
-    paddingHorizontal: 12,
-  },
-  budgetCategorySearchInput: {
-    color: "#0f172a",
-    flex: 1,
-    fontSize: 12,
-    fontWeight: "600",
-    paddingVertical: 0,
-  },
-  budgetCategoryTitle: {
-    color: "#0f172a",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  budgetEmptyButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: premiumTheme.radius.pill,
-    flexDirection: "row",
-    gap: 7,
-    justifyContent: "center",
-    marginTop: 10,
-    minHeight: 44,
-    paddingHorizontal: 18,
-  },
-  budgetEmptyButtonText: {
-    color: "#ffffff",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  budgetEmptyCard: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 24,
-    ...premiumTheme.shadow.soft,
-  },
-  budgetEmptyIcon: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 20,
-    height: 58,
-    justifyContent: "center",
-    width: 58,
-  },
-  budgetEmptyText: {
-    color: "#64748b",
-    fontSize: 13,
-    marginTop: 5,
-    textAlign: "center",
-  },
-  budgetEmptyTitle: {
-    color: "#0f172a",
-    fontSize: 16,
-    fontWeight: "900",
-    marginTop: 12,
-  },
-  budgetFormContent: {
-    gap: 14,
-    maxHeight: "100%",
-    paddingBottom: 26,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
-  budgetFormScroll: {
-    flexGrow: 0,
-  },
-  budgetLimitCard: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 16,
-    gap: 4,
-    marginBottom: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-  },
-  budgetLimitCurrency: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 17,
-    fontWeight: "700",
-  },
-  budgetLimitInput: {
-    color: "#0f172a",
-    flex: 1,
-    fontSize: 26,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-    letterSpacing: -0.6,
-    minHeight: 38,
-    paddingVertical: 0,
-  },
-  budgetLimitLabel: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
-  budgetLimitRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 7,
-  },
-  budgetList: {
-    gap: 10,
-  },
-  budgetListCount: {
-    alignItems: "center",
-    backgroundColor: "#eef2f7",
-    borderRadius: 999,
-    color: "#475569",
-    fontSize: 12,
-    fontWeight: "900",
-    overflow: "hidden",
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  budgetListHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  budgetListSection: {
-    gap: 10,
-  },
-  budgetListTitleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-  },
-  budgetProgressAmount: {
-    color: "#64748b",
-    fontSize: 12,
-    marginTop: 3,
-  },
-  budgetProgressCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  budgetProgressFill: {
-    borderRadius: 999,
-    height: "100%",
-  },
-  budgetProgressFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  budgetProgressHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 11,
-  },
-  budgetProgressIcon: {
-    alignItems: "center",
-    borderRadius: 14,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
-  budgetPeriodButton: {
-    alignItems: "center",
-    borderColor: "transparent",
-    borderRadius: 10,
-    borderWidth: 1,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 34,
-  },
-  budgetPeriodButtonActive: {
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    ...premiumTheme.shadow.soft,
-  },
-  budgetPeriodRow: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 14,
-    flexDirection: "row",
-    gap: 4,
-    marginBottom: 12,
-    padding: 4,
-  },
-  budgetPeriodText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  budgetPeriodTextActive: {
-    color: premiumTheme.colors.ink,
-  },
-  budgetProgressMeta: {
-    color: premiumTheme.colors.muted,
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  budgetProgressName: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  budgetProgressPercent: {
-    color: "#64748b",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  budgetProgressRemaining: {
-    color: "#334155",
-    fontSize: 11,
-    fontWeight: "800",
-  },
-  budgetProgressRow: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 18,
-    gap: 10,
-    padding: 16,
-  },
-  budgetProgressTrack: {
-    backgroundColor: "#ffffff",
-    borderRadius: 999,
-    height: 7,
-    overflow: "hidden",
-  },
-  budgetQuickChip: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: premiumTheme.radius.pill,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 32,
-  },
-  budgetQuickChipText: {
-    color: "#0f172a",
-    fontSize: 11,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "700",
-  },
-  budgetQuickRow: {
-    flexDirection: "row",
-    gap: 7,
-    marginBottom: 16,
-  },
-  budgetRenewCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  budgetRenewKnob: {
-    backgroundColor: "#ffffff",
-    borderRadius: 999,
-    height: 22,
-    width: 22,
-    ...premiumTheme.shadow.soft,
-  },
-  budgetRenewKnobOn: {
-    alignSelf: "flex-end",
-  },
-  budgetRenewRow: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 16,
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-  },
-  budgetRenewText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 11.5,
-    marginTop: 2,
-  },
-  budgetRenewTitle: {
-    color: premiumTheme.colors.ink,
-    fontSize: 13.5,
-    fontWeight: "700",
-  },
-  budgetRenewTrack: {
-    backgroundColor: "#d7dbe3",
-    borderRadius: 999,
-    height: 26,
-    padding: 2,
-    width: 44,
-  },
-  budgetRenewTrackOn: {
-    backgroundColor: premiumTheme.colors.ink,
-  },
-  budgetRing: {
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-  },
-  budgetRingLabel: {
-    alignItems: "center",
-    bottom: 0,
-    justifyContent: "center",
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0,
-  },
-  budgetRingText: {
-    color: "#cbd5e1",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  budgetRingValue: {
-    color: "#ffffff",
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  budgetSaveSpacing: {
-    marginTop: 16,
-  },
-  budgetStatusBadge: {
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
-  budgetStatusText: {
-    fontSize: 10,
-    fontWeight: "900",
-  },
-  budgetSummaryCard: {
-    backgroundColor: "#0f172a",
-    borderRadius: 22,
-    overflow: "hidden",
-    shadowColor: "#111827",
-    shadowOffset: {
-      height: 10,
-      width: 0,
-    },
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-  },
-  budgetSummaryCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  budgetSummaryDate: {
-    color: "#e2e8f0",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  budgetSummaryFooter: {
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    borderTopColor: "rgba(255, 255, 255, 0.1)",
-    borderTopWidth: premiumHairline,
-    flexDirection: "row",
-    gap: 8,
-    minHeight: 44,
-    paddingHorizontal: 16,
-  },
-  budgetSummaryLabel: {
-    color: "#cbd5e1",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  budgetSummaryMain: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 14,
-    padding: 17,
-  },
-  budgetSummaryTotal: {
-    color: "#cbd5e1",
-    fontSize: 12,
-    marginTop: 5,
-  },
-  budgetSummaryValue: {
-    color: "#ffffff",
-    fontSize: 27,
-    fontWeight: "900",
-    marginTop: 5,
-  },
-  budgetsContainer: {
-    backgroundColor: premiumTheme.colors.canvas,
-    gap: 16,
-    padding: 20,
-    paddingBottom: 36,
-  },
-  budgetsHero: {
-    gap: 4,
-  },
-  budgetsSubtitle: {
-    color: "#64748b",
-    fontSize: 13,
-  },
-  categoryPickerContent: {
-    gap: 14,
-    padding: 18,
-    paddingBottom: 28,
-  },
-  categoryPickerList: {
-    gap: 9,
-    paddingBottom: 4,
-  },
-  categoryPickerViewport: {
-    maxHeight: 370,
-  },
-});

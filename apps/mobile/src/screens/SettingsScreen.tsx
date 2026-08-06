@@ -26,23 +26,21 @@ import {
   Store,
   Tags,
 } from "lucide-react-native";
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { NotificationParseMiss } from "@finance/shared-types";
 
+import {
+  ExportOptionsModal,
+  type ExportOptions,
+} from "../components/finance/ExportOptionsModal";
 import { FinancialDataExportService } from "../services/FinancialDataExportService";
 import { useAuthStore } from "../stores/authStore";
 import { useNotificationStore } from "../stores/notificationStore";
 import { useOfflineStore } from "../stores/offlineStore";
 import { useSyncStore } from "../stores/syncStore";
-import { premiumHairline, premiumTheme } from "../theme/premiumTheme";
+import { premiumTheme } from "../theme/premiumTheme";
 import type { RootStackParamList } from "../types/navigation";
 
 type SettingsScreenProps = NativeStackScreenProps<RootStackParamList, "Settings">;
@@ -89,6 +87,7 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
   const syncError = useSyncStore((state) => state.error);
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const [exporting, setExporting] = useState(false);
+  const [exportOptionsVisible, setExportOptionsVisible] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [testNotificationStatus, setTestNotificationStatus] =
     useState<string | null>(null);
@@ -129,17 +128,39 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
       ? "Last synced " + formatRelativeSyncTime(lastSyncedAt)
       : "Sync your local changes across devices";
 
-  async function handleExport() {
+  async function handleExport(options: ExportOptions) {
     if (exporting) return;
 
     setExporting(true);
     setExportStatus(null);
 
     try {
+      const filtered = transactions.filter((transaction) => {
+        if (options.accountId && transaction.account_id !== options.accountId) {
+          return false;
+        }
+
+        const occurredAt = new Date(transaction.occurred_at).getTime();
+
+        if (options.from && occurredAt < options.from.getTime()) {
+          return false;
+        }
+
+        return !(options.to && occurredAt > options.to.getTime());
+      });
+
+      if (filtered.length === 0) {
+        setExportStatus("No transactions match the selected period.");
+        return;
+      }
+
       const fileName = await FinancialDataExportService.exportTransactions(
-        transactions,
-        accounts
+        filtered,
+        options.accountId
+          ? accounts.filter((account) => account.id === options.accountId)
+          : accounts
       );
+      setExportOptionsVisible(false);
       setExportStatus("Created " + fileName);
     } catch (error) {
       setExportStatus(
@@ -165,28 +186,32 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
   }
 
   return (
+    <>
     <ScrollView
-      contentContainerStyle={[
-        styles.container,
-        { paddingTop: insets.top + 12 },
-      ]}
+      contentContainerClassName="gap-5 bg-canvas p-5 pb-8"
+      contentContainerStyle={{ paddingTop: insets.top + 12 }}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.profileCard}>
-        <View style={styles.profileGlow} />
-        <View style={styles.profileTop}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials || "U"}</Text>
+      <View
+        className="overflow-hidden rounded-surface bg-elevated"
+        style={premiumTheme.shadow.raised}
+      >
+        <View className="absolute -right-12 -top-[72px] h-[150px] w-[150px] rounded-full bg-accent/[0.08]" />
+        <View className="flex-row items-center gap-3.5 p-4">
+          <View className="h-[54px] w-[54px] items-center justify-center rounded-full bg-accent-soft">
+            <Text className="text-[19px] font-black text-accent">
+              {initials || "U"}
+            </Text>
           </View>
-          <View style={styles.profileCopy}>
-            <Text numberOfLines={1} style={styles.profileName}>
+          <View className="min-w-0 flex-1">
+            <Text className="text-[19px] font-black text-ink" numberOfLines={1}>
               {displayName}
             </Text>
-            <Text numberOfLines={1} style={styles.profileEmail}>
+            <Text className="mt-1 text-[13px] text-secondary" numberOfLines={1}>
               {email}
             </Text>
           </View>
-          <View style={styles.profileSecurityBadge}>
+          <View className="h-10 w-10 items-center justify-center rounded-control bg-success-soft">
             <ShieldCheck
               color={premiumTheme.colors.success}
               size={21}
@@ -195,21 +220,21 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
           </View>
         </View>
 
-        <View style={styles.profileMetrics}>
+        <View className="flex-row items-center border-t-hairline border-t-divider bg-canvas px-2 py-[13px]">
           <ProfileMetric
             Icon={Landmark}
             color="#6d4aff"
             label="Accounts"
             value={accounts.length}
           />
-          <View style={styles.metricDivider} />
+          <View className="h-11 w-px bg-divider" />
           <ProfileMetric
             Icon={ReceiptText}
             color="#16a34a"
             label="Transactions"
             value={transactions.length}
           />
-          <View style={styles.metricDivider} />
+          <View className="h-11 w-px bg-divider" />
           <ProfileMetric
             Icon={PiggyBank}
             color="#f59e0b"
@@ -224,7 +249,7 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
           Icon={Download}
           color="#16a34a"
           disabled={exporting}
-          onPress={() => void handleExport()}
+          onPress={() => setExportOptionsVisible(true)}
           subtitle={
             exportStatus ??
             "Export confirmed transactions as a CSV for Excel or Sheets"
@@ -327,13 +352,15 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
         />
       </SettingsSection>
 
-      <View style={styles.securityCard}>
-        <View style={styles.securityIcon}>
+      <View className="flex-row items-center gap-[13px] rounded-section bg-[#f2f5ff] p-[17px]">
+        <View className="h-[46px] w-[46px] items-center justify-center rounded-[15px] bg-white">
           <ShieldCheck color="#315efb" size={25} strokeWidth={2.3} />
         </View>
-        <View style={styles.securityCopy}>
-          <Text style={styles.securityTitle}>Your data stays available</Text>
-          <Text style={styles.securityText}>
+        <View className="flex-1">
+          <Text className="text-[14px] font-black text-ink">
+            Your data stays available
+          </Text>
+          <Text className="mt-[3px] text-[12px] leading-[18px] text-[#526079]">
             Financial data is cached for offline use and synced to your signed-in
             account.
           </Text>
@@ -341,20 +368,27 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
       </View>
 
       <Pressable
+        className={`min-h-[52px] flex-row items-center justify-center gap-[9px] rounded-[17px] bg-danger-soft active:bg-field ${
+          authLoading ? "opacity-[0.58]" : ""
+        }`}
         disabled={authLoading}
         onPress={() => void signOut()}
-        style={({ pressed }) => [
-          styles.signOutButton,
-          pressed && styles.rowPressed,
-          authLoading && styles.disabled,
-        ]}
       >
         <LogOut color="#dc2626" size={19} strokeWidth={2.4} />
-        <Text style={styles.signOutText}>
+        <Text className="text-[14px] font-black text-danger">
           {authLoading ? "Signing out..." : "Sign out"}
         </Text>
       </Pressable>
     </ScrollView>
+
+    <ExportOptionsModal
+      accounts={accounts}
+      exporting={exporting}
+      onClose={() => setExportOptionsVisible(false)}
+      onExport={(options) => void handleExport(options)}
+      visible={exportOptionsVisible}
+    />
+    </>
   );
 }
 
@@ -379,29 +413,43 @@ function ParseMissCard({
   }
 
   return (
-    <View style={styles.parseMissCard}>
-      <View style={styles.parseMissHeader}>
-        <View style={styles.rowCopy}>
-          <Text style={styles.rowTitle}>Skipped notifications</Text>
-          <Text style={styles.rowSubtitle}>
+    <View className="gap-3 border-t-hairline border-t-divider p-4">
+      <View className="flex-row items-center gap-2.5">
+        <View className="min-w-0 flex-1">
+          <Text className="text-[15px] font-black text-ink">
+            Skipped notifications
+          </Text>
+          <Text className="mt-[3px] text-[12px] leading-[17px] text-secondary">
             Recent captures that were not turned into transactions.
           </Text>
         </View>
-        <Pressable onPress={onClear} style={styles.parseMissClear}>
-          <Text style={styles.parseMissClearText}>Clear</Text>
+        <Pressable
+          className="rounded-full bg-field px-3 py-1.5"
+          onPress={onClear}
+        >
+          <Text className="text-[11px] font-bold text-ink">Clear</Text>
         </Pressable>
       </View>
 
       {misses.slice(0, 5).map((miss) => (
-        <View key={miss.id} style={styles.parseMissRow}>
-          <Text numberOfLines={1} style={styles.parseMissPackage}>
+        <View
+          className="border-t-hairline border-t-divider pt-2.5"
+          key={miss.id}
+        >
+          <Text
+            className="text-[12px] font-bold text-ink"
+            numberOfLines={1}
+          >
             {miss.package_name ?? "Unknown app"}
           </Text>
-          <Text style={styles.parseMissReason}>
+          <Text className="mt-px text-[11px] font-semibold text-secondary">
             {parseMissReasonLabels[miss.reason] ?? miss.reason}
           </Text>
           {miss.body_preview ? (
-            <Text numberOfLines={2} style={styles.parseMissPreview}>
+            <Text
+              className="mt-0.5 text-[11px] text-muted"
+              numberOfLines={2}
+            >
               {miss.body_preview}
             </Text>
           ) : null}
@@ -420,8 +468,8 @@ function NotificationDiagnosticsCard({
 }) {
   if (!diagnostics) {
     return (
-      <View style={styles.diagnosticsLoading}>
-        <Text style={styles.rowSubtitle}>
+      <View className="min-h-[76px] justify-center px-4">
+        <Text className="mt-[3px] text-[12px] leading-[17px] text-secondary">
           Checking Android notification readiness...
         </Text>
       </View>
@@ -433,15 +481,12 @@ function NotificationDiagnosticsCard({
     diagnostics.postNotificationsGranted;
 
   return (
-    <View style={styles.diagnosticsCard}>
-      <View style={styles.diagnosticsHeader}>
+    <View className="gap-3.5 p-4">
+      <View className="flex-row items-center gap-3">
         <View
-          style={[
-            styles.diagnosticsStatusIcon,
-            {
-              backgroundColor: ready ? "#dcfce7" : "#fff7ed",
-            },
-          ]}
+          className={`h-[42px] w-[42px] items-center justify-center rounded-control ${
+            ready ? "bg-[#dcfce7]" : "bg-[#fff7ed]"
+          }`}
         >
           {ready ? (
             <Check color="#16a34a" size={19} strokeWidth={2.8} />
@@ -449,11 +494,11 @@ function NotificationDiagnosticsCard({
             <ShieldAlert color="#ea580c" size={19} strokeWidth={2.5} />
           )}
         </View>
-        <View style={styles.rowCopy}>
-          <Text style={styles.rowTitle}>
+        <View className="min-w-0 flex-1">
+          <Text className="text-[15px] font-black text-ink">
             {ready ? "Background alerts ready" : "Action required"}
           </Text>
-          <Text style={styles.rowSubtitle}>
+          <Text className="mt-[3px] text-[12px] leading-[17px] text-secondary">
             {ready
               ? "Likely transaction messages can trigger an immediate review alert."
               : "Enable both Android notification permissions for automatic detection."}
@@ -461,7 +506,7 @@ function NotificationDiagnosticsCard({
         </View>
       </View>
 
-      <View style={styles.diagnosticsGrid}>
+      <View className="flex-row flex-wrap gap-2">
         <DiagnosticValue
           label="Notification access"
           value={
@@ -492,9 +537,9 @@ function NotificationDiagnosticsCard({
         />
       </View>
 
-      <View style={styles.diagnosticsFooter}>
+      <View className="flex-row items-center gap-[7px]">
         <Battery color="#64748b" size={15} strokeWidth={2.2} />
-        <Text style={styles.diagnosticsFooterText}>
+        <Text className="flex-1 text-[11px] font-bold text-secondary">
           {diagnostics.lastCapturedAt
             ? "Last captured " +
               formatRelativeSyncTime(diagnostics.lastCapturedAt)
@@ -513,9 +558,9 @@ function DiagnosticValue({
   value: string;
 }) {
   return (
-    <View style={styles.diagnosticValue}>
-      <Text style={styles.diagnosticValueLabel}>{label}</Text>
-      <Text style={styles.diagnosticValueText}>{value}</Text>
+    <View className="basis-[47%] grow gap-[3px] rounded-[13px] bg-field p-[11px]">
+      <Text className="text-[10px] font-extrabold text-secondary">{label}</Text>
+      <Text className="text-[12px] font-black text-ink">{value}</Text>
     </View>
   );
 }
@@ -528,9 +573,16 @@ function SettingsSection({
   label: string;
 }) {
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionLabel}>{label}</Text>
-      <View style={styles.sectionCard}>{children}</View>
+    <View className="gap-[9px]">
+      <Text className="px-1 text-[11px] font-black uppercase tracking-[0.7px] text-secondary">
+        {label}
+      </Text>
+      <View
+        className="overflow-hidden rounded-section bg-elevated"
+        style={premiumTheme.shadow.floating}
+      >
+        {children}
+      </View>
     </View>
   );
 }
@@ -556,36 +608,43 @@ function MoreActionRow({
 }) {
   const content = (
     <>
-      <View style={[styles.rowIcon, { backgroundColor: color + "14" }]}>
+      <View
+        className="h-10 w-10 items-center justify-center rounded-control"
+        style={{ backgroundColor: color + "14" }}
+      >
         <Icon color={color} size={21} strokeWidth={2.3} />
       </View>
-      <View style={styles.rowCopy}>
-        <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowSubtitle}>{subtitle}</Text>
+      <View className="min-w-0 flex-1">
+        <Text className="text-[15px] font-black text-ink">{title}</Text>
+        <Text className="mt-[3px] text-[12px] leading-[17px] text-secondary">
+          {subtitle}
+        </Text>
       </View>
       {trailingText ? (
-        <Text style={styles.trailingText}>{trailingText}</Text>
+        <Text className="ml-1 text-[11px] font-extrabold text-secondary">
+          {trailingText}
+        </Text>
       ) : onPress ? (
         <ChevronRight color="#94a3b8" size={20} strokeWidth={2.4} />
       ) : null}
     </>
   );
-  const rowStyle = [styles.actionRow, showDivider && styles.actionRowDivider];
+  const rowClassName = `min-h-[68px] flex-row items-center gap-[13px] px-3.5 py-2.5 ${
+    showDivider ? "border-t-hairline border-t-divider" : ""
+  }`;
 
   if (!onPress) {
-    return <View style={rowStyle}>{content}</View>;
+    return <View className={rowClassName}>{content}</View>;
   }
 
   return (
     <Pressable
       accessibilityRole="button"
+      className={`${rowClassName} active:bg-field ${
+        disabled ? "opacity-[0.58]" : ""
+      }`}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [
-        ...rowStyle,
-        pressed && styles.rowPressed,
-        disabled && styles.disabled,
-      ]}
     >
       {content}
     </Pressable>
@@ -604,12 +663,17 @@ function ProfileMetric({
   value: number;
 }) {
   return (
-    <View style={styles.profileMetric}>
-      <View style={[styles.metricIcon, { backgroundColor: color + "14" }]}>
+    <View className="flex-1 items-center gap-[3px]">
+      <View
+        className="h-[30px] w-[30px] items-center justify-center rounded-xl"
+        style={{ backgroundColor: color + "14" }}
+      >
         <Icon color={color} size={18} strokeWidth={2.4} />
       </View>
-      <Text style={styles.metricValue}>{value.toLocaleString("en-IN")}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+      <Text className="text-[15px] font-black text-ink">
+        {value.toLocaleString("en-IN")}
+      </Text>
+      <Text className="text-[11px] font-bold text-secondary">{label}</Text>
     </View>
   );
 }
@@ -631,309 +695,3 @@ function formatRelativeSyncTime(value: string) {
     month: "short",
   });
 }
-
-const styles = StyleSheet.create({
-  actionRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 13,
-    minHeight: 68,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  actionRowDivider: {
-    borderTopColor: premiumTheme.colors.divider,
-    borderTopWidth: premiumHairline,
-  },
-  avatar: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.accentSoft,
-    borderRadius: 999,
-    height: 54,
-    justifyContent: "center",
-    width: 54,
-  },
-  avatarText: {
-    color: premiumTheme.colors.accent,
-    fontSize: 19,
-    fontWeight: "900",
-  },
-  container: {
-    backgroundColor: premiumTheme.colors.canvas,
-    gap: 20,
-    padding: 20,
-    paddingBottom: 32,
-  },
-  disabled: {
-    opacity: 0.58,
-  },
-  diagnosticValue: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 13,
-    flexBasis: "47%",
-    flexGrow: 1,
-    gap: 3,
-    padding: 11,
-  },
-  diagnosticValueLabel: {
-    color: "#64748b",
-    fontSize: 10,
-    fontWeight: "800",
-  },
-  diagnosticValueText: {
-    color: "#0f172a",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-  diagnosticsCard: {
-    gap: 14,
-    padding: 16,
-  },
-  diagnosticsFooter: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 7,
-  },
-  diagnosticsFooterText: {
-    color: "#64748b",
-    flex: 1,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  diagnosticsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  diagnosticsHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-  },
-  diagnosticsLoading: {
-    minHeight: 76,
-    justifyContent: "center",
-    paddingHorizontal: 16,
-  },
-  diagnosticsStatusIcon: {
-    alignItems: "center",
-    borderRadius: 14,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
-  metricDivider: {
-    backgroundColor: premiumTheme.colors.divider,
-    height: 44,
-    width: 1,
-  },
-  metricIcon: {
-    alignItems: "center",
-    borderRadius: 12,
-    height: 30,
-    justifyContent: "center",
-    width: 30,
-  },
-  metricLabel: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  metricValue: {
-    color: premiumTheme.colors.ink,
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  profileCard: {
-    backgroundColor: premiumTheme.colors.elevated,
-    borderRadius: premiumTheme.radius.surface,
-    overflow: "hidden",
-    ...premiumTheme.shadow.raised,
-  },
-  profileCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  profileEmail: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 13,
-    marginTop: 4,
-  },
-  profileGlow: {
-    backgroundColor: "rgba(109, 74, 255, 0.08)",
-    borderRadius: 999,
-    height: 150,
-    position: "absolute",
-    right: -48,
-    top: -72,
-    width: 150,
-  },
-  parseMissCard: {
-    borderTopColor: premiumTheme.colors.divider,
-    borderTopWidth: premiumHairline,
-    gap: 12,
-    padding: 16,
-  },
-  parseMissClear: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: premiumTheme.radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  parseMissClearText: {
-    color: premiumTheme.colors.ink,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  parseMissHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
-  parseMissPackage: {
-    color: premiumTheme.colors.ink,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  parseMissPreview: {
-    color: "#94a3b8",
-    fontSize: 11,
-    marginTop: 2,
-  },
-  parseMissReason: {
-    color: "#64748b",
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 1,
-  },
-  parseMissRow: {
-    borderTopColor: premiumTheme.colors.divider,
-    borderTopWidth: premiumHairline,
-    paddingTop: 10,
-  },
-  profileMetric: {
-    alignItems: "center",
-    flex: 1,
-    gap: 3,
-  },
-  profileMetrics: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.canvas,
-    borderTopColor: premiumTheme.colors.divider,
-    borderTopWidth: premiumHairline,
-    flexDirection: "row",
-    paddingHorizontal: 8,
-    paddingVertical: 13,
-  },
-  profileName: {
-    color: premiumTheme.colors.ink,
-    fontSize: 19,
-    fontWeight: "900",
-  },
-  profileSecurityBadge: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.successSoft,
-    borderRadius: 14,
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  profileTop: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 14,
-    padding: 16,
-  },
-  rowCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  rowIcon: {
-    alignItems: "center",
-    borderRadius: 14,
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  rowPressed: {
-    backgroundColor: premiumTheme.colors.field,
-  },
-  rowSubtitle: {
-    color: "#64748b",
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 3,
-  },
-  rowTitle: {
-    color: "#0f172a",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  section: {
-    gap: 9,
-  },
-  sectionCard: {
-    backgroundColor: premiumTheme.colors.elevated,
-    borderRadius: premiumTheme.radius.section,
-    overflow: "hidden",
-    ...premiumTheme.shadow.floating,
-  },
-  sectionLabel: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 0.7,
-    paddingHorizontal: 4,
-    textTransform: "uppercase",
-  },
-  securityCard: {
-    alignItems: "center",
-    backgroundColor: "#f2f5ff",
-    borderRadius: premiumTheme.radius.section,
-    flexDirection: "row",
-    gap: 13,
-    padding: 17,
-  },
-  securityCopy: {
-    flex: 1,
-  },
-  securityIcon: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderRadius: 15,
-    height: 46,
-    justifyContent: "center",
-    width: 46,
-  },
-  securityText: {
-    color: "#526079",
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 3,
-  },
-  securityTitle: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  signOutButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.dangerSoft,
-    borderRadius: 17,
-    flexDirection: "row",
-    gap: 9,
-    justifyContent: "center",
-    minHeight: 52,
-  },
-  signOutText: {
-    color: "#dc2626",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  trailingText: {
-    color: "#64748b",
-    fontSize: 11,
-    fontWeight: "800",
-    marginLeft: 4,
-  },
-});

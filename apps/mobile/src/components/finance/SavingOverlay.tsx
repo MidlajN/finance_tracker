@@ -122,7 +122,10 @@ export function SavingOverlay({
   }
 
   return (
-    <Modal animationType="fade" statusBarTranslucent transparent visible>
+    // animationType "none": the opaque cover must land on the first frame —
+    // a fade lets the screen behind show through mid-transition. The inner
+    // entrance spring provides the polish instead.
+    <Modal animationType="none" statusBarTranslucent transparent visible>
       <View style={styles.screen}>
         <Animated.View
           style={[

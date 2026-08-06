@@ -37,7 +37,6 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -127,6 +126,36 @@ type FinancialIntelligenceScreenProps = NativeStackScreenProps<
   RootStackParamList,
   "FinancialIntelligence"
 >;
+
+// Press feedback matching financeStyles.saveButtonDisabled (opacity 0.62).
+const pressedDim = "active:opacity-[0.62]";
+
+// Transforms stay as a plain style object.
+const illustrationCardTiltStyle = {
+  transform: [{ rotate: "8deg" }],
+} as const;
+
+// Custom shadow for the active account-type card; shadows stay style objects.
+const accountTypeActiveShadowStyle = {
+  shadowColor: "#101828",
+  shadowOffset: {
+    height: 4,
+    width: 0,
+  },
+  shadowOpacity: 0.07,
+  shadowRadius: 10,
+} as const;
+
+// Animated.Text is not NativeWind-interop'd, so the floating label keeps a
+// plain style object; the animated color/size/position merge in at render.
+const accountFieldFloatLabelStyle = {
+  backgroundColor: "#ffffff",
+  borderRadius: 4,
+  fontWeight: "600",
+  paddingHorizontal: 4,
+  position: "absolute",
+  zIndex: 2,
+} as const;
 
 function getDefaultResourceType(resource: IntelligenceResource) {
   if (resource === "account") return "bank";
@@ -303,17 +332,15 @@ export function FinancialIntelligenceScreen({
       headerRight: () => (
         <Pressable
           accessibilityRole="button"
+          className={`min-h-9 flex-row items-center gap-[5px] rounded-full bg-ink px-[13px] ${pressedDim}`}
           onPress={() => {
             resetForm("account");
             setAccountModalVisible(true);
           }}
-          style={({ pressed }) => [
-            styles.addAccountButton,
-            pressed && financeStyles.saveButtonDisabled,
-          ]}
+          style={premiumTheme.shadow.soft}
         >
           <Plus color="#ffffff" size={15} strokeWidth={2.7} />
-          <Text style={styles.addAccountButtonText}>Add</Text>
+          <Text className="text-[12px] font-bold text-white">Add</Text>
         </Pressable>
       ),
     });
@@ -678,7 +705,7 @@ export function FinancialIntelligenceScreen({
 
     return (
       <>
-        <Text style={styles.accountSectionLabel}>
+        <Text className="mt-1 text-[16px] font-extrabold tracking-[-0.2px] text-ink">
           1.  {titleCase(resourceLabels[resource])} details
         </Text>
         {resource !== "loan" && (
@@ -745,7 +772,7 @@ export function FinancialIntelligenceScreen({
           />
         )}
 
-        <Text style={styles.accountSectionLabel}>2.  Amounts</Text>
+        <Text className="mt-1 text-[16px] font-extrabold tracking-[-0.2px] text-ink">2.  Amounts</Text>
         {["asset", "investment"].includes(resource) && (
           <AccountInputField
             icon={<Hash color="#64748b" size={16} strokeWidth={2.2} />}
@@ -813,7 +840,7 @@ export function FinancialIntelligenceScreen({
 
         {showDates && (
           <>
-            <Text style={styles.accountSectionLabel}>3.  Dates</Text>
+            <Text className="mt-1 text-[16px] font-extrabold tracking-[-0.2px] text-ink">3.  Dates</Text>
             <AccountInputField
               icon={
                 <CalendarDays color="#64748b" size={16} strokeWidth={2.2} />
@@ -842,33 +869,38 @@ export function FinancialIntelligenceScreen({
 
   return (
     <>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.addAccountHeader}>
-          <Text style={styles.addAccountTitle}>Accounts</Text>
-          <Text style={styles.pageIntro}>
+      <ScrollView contentContainerClassName="gap-[18px] bg-canvas p-5 pb-9">
+        <View className="gap-2">
+          <Text className="text-[25px] font-black text-ink">Accounts</Text>
+          <Text className="text-[13px] leading-[19px] text-secondary">
             The money you use every day — cash, bank accounts, cards, and
             wallets.
           </Text>
         </View>
 
-        <View style={styles.accountBalanceCard}>
-          <View style={styles.accountBalanceCopy}>
-            <Text style={styles.accountBalanceLabel}>Total account balance</Text>
-            <Text style={styles.accountBalanceValue}>
+        <View className="flex-row items-center gap-3 overflow-hidden rounded-[18px] bg-ink px-4 py-3.5">
+          <View className="min-w-0 flex-1">
+            <Text className="text-[12px] font-extrabold text-[#cbd5e1]">
+              Total account balance
+            </Text>
+            <Text className="mt-[7px] text-[31px] font-extrabold tracking-[-0.5px] text-white tabular-nums">
               {MobileDashboardService.getFormattedBalance(totalAccountBalance)}
             </Text>
-            <Text style={styles.accountBalanceHint}>
+            <Text className="mt-3 self-start overflow-hidden rounded-full bg-white/[0.12] px-3 py-1.5 text-[12px] font-semibold text-[#e2e8f0]">
               Cash, bank, cards and wallets
             </Text>
           </View>
-          <View style={styles.balanceIllustration}>
-            <View style={styles.illustrationBank}>
+          <View className="relative h-[72px] w-[88px] items-center justify-center">
+            <View className="absolute right-3.5 top-1 h-[54px] w-[54px] items-center justify-center rounded-[15px] bg-[#dbe4ff]">
               <Landmark color="#0f172a" size={23} strokeWidth={2.6} />
             </View>
-            <View style={styles.illustrationCard}>
+            <View
+              className="absolute right-0 top-8 h-[30px] w-10 items-center justify-center rounded-lg bg-[#65c783]"
+              style={illustrationCardTiltStyle}
+            >
               <CreditCard color="#ffffff" size={17} strokeWidth={2.6} />
             </View>
-            <View style={styles.illustrationCoin}>
+            <View className="absolute bottom-2 right-4 h-[22px] w-[22px] items-center justify-center rounded-[11px] bg-[#e6c84f]">
               <IndianRupee color="#ffffff" size={11} strokeWidth={3} />
             </View>
           </View>
@@ -878,16 +910,22 @@ export function FinancialIntelligenceScreen({
           <Text style={financeStyles.sectionTitle}>Your accounts</Text>
         )}
         {overview.accounts.length === 0 ? (
-          <View style={styles.row}>
-            <Text style={styles.rowTitle}>No accounts yet</Text>
+          <View
+            className="rounded-[18px] bg-elevated p-[15px]"
+            style={premiumTheme.shadow.floating}
+          >
+            <Text className="flex-1 text-[16px] font-black text-ink">
+              No accounts yet
+            </Text>
             <Text style={financeStyles.muted}>
               Add your cash, bank account, card, or wallet to start tracking
               balances.
             </Text>
             <Pressable
               accessibilityRole="button"
+              className="mt-3"
               onPress={openAddAccount}
-              style={[financeStyles.accountSaveButton, styles.emptyAddButton]}
+              style={financeStyles.accountSaveButton}
             >
               <Text style={financeStyles.accountSaveButtonText}>
                 Add your first account
@@ -912,22 +950,29 @@ export function FinancialIntelligenceScreen({
           ))
         )}
 
-        <View style={styles.optionalSection}>
-          <View style={styles.optionalHeader}>
-            <View style={styles.optionalHeaderIcon}>
+        <View
+          className="gap-3 rounded-section border border-border bg-white p-3.5"
+          style={premiumTheme.shadow.soft}
+        >
+          <View className="flex-row items-start justify-between gap-3">
+            <View className="h-9 w-9 items-center justify-center rounded-full bg-ink">
               <TrendingUp color="#ffffff" size={17} strokeWidth={2.6} />
             </View>
-            <View style={styles.rowTitleBlock}>
-              <Text style={styles.optionalTitle}>Net worth tracking</Text>
-              <Text style={styles.optionalText}>
+            <View className="flex-1">
+              <Text className="text-[16px] font-black text-ink">
+                Net worth tracking
+              </Text>
+              <Text className="mt-1 text-[13px] leading-[18px] text-secondary">
                 Track your assets and liabilities in one place.
               </Text>
             </View>
-            <View style={styles.optionalBadge}>
-              <Text style={styles.optionalBadgeText}>Optional</Text>
+            <View className="self-start rounded-full bg-field px-2.5 py-[5px]">
+              <Text className="text-[11px] font-extrabold text-secondary">
+                Optional
+              </Text>
             </View>
           </View>
-          <View style={styles.compactMetricRow}>
+          <View className="flex-row gap-2.5">
             <CompactMetric
               label="Net worth"
               tone="positive"
@@ -940,9 +985,11 @@ export function FinancialIntelligenceScreen({
             />
           </View>
 
-          <View style={styles.trackDivider} />
-          <Text style={styles.trackHeading}>Track your financials</Text>
-          <View style={styles.trackGrid}>
+          <View className="mt-0.5 border-b-hairline border-b-border" />
+          <Text className="text-[14px] font-extrabold tracking-[-0.2px] text-ink">
+            Track your financials
+          </Text>
+          <View className="flex-row flex-wrap gap-[9px]">
             {advancedResourceTabs.map((tab) => {
               const visual = trackResourceVisuals[tab];
               const Icon = visual.Icon;
@@ -950,15 +997,15 @@ export function FinancialIntelligenceScreen({
               return (
                 <Pressable
                   accessibilityRole="button"
+                  className={`min-h-9 flex-row items-center gap-[5px] rounded-xl border-[1.2px] border-transparent bg-field px-2.5 ${pressedDim}`}
                   key={tab}
                   onPress={() => openAdvancedForm(tab)}
-                  style={({ pressed }) => [
-                    styles.trackCard,
-                    pressed && financeStyles.saveButtonDisabled,
-                  ]}
                 >
                   <Icon color={visual.color} size={13} strokeWidth={2.4} />
-                  <Text numberOfLines={1} style={styles.trackCardText}>
+                  <Text
+                    className="text-[12px] font-semibold text-secondary"
+                    numberOfLines={1}
+                  >
                     {titleCase(tab)}
                   </Text>
                 </Pressable>
@@ -1086,14 +1133,14 @@ export function FinancialIntelligenceScreen({
               type: "spring",
             }}
           >
-            <ScrollView contentContainerStyle={styles.modalContent}>
-              <View style={styles.accountModalHandle} />
+            <ScrollView contentContainerClassName="gap-3.5 p-[18px] pb-[30px]">
+              <View className="-mt-1.5 mb-2.5 h-1 w-11 self-center rounded-full bg-[#d6dae2]" />
               <View style={financeStyles.modalHeader}>
-                <View style={styles.rowTitleBlock}>
-                  <Text style={styles.accountModalTitle}>
+                <View className="flex-1">
+                  <Text className="text-[24px] font-extrabold tracking-[-0.5px] text-ink">
                     {editing ? "Edit account" : "Add account"}
                   </Text>
-                  <Text style={styles.accountModalSubtitle}>
+                  <Text className="mt-[5px] text-[13.5px] text-secondary">
                     {editing
                       ? `Update the prefilled details for ${
                           (editing as CachedAccount | null)?.name ??
@@ -1113,10 +1160,10 @@ export function FinancialIntelligenceScreen({
                 </Pressable>
               </View>
 
-              <Text style={styles.accountSectionLabel}>
+              <Text className="mt-1 text-[16px] font-extrabold tracking-[-0.2px] text-ink">
                 1.  Choose account type
               </Text>
-              <View style={styles.accountTypeGrid}>
+              <View className="flex-row flex-nowrap gap-[9px] pt-[7px]">
                 {accountTypeOptions.map((accountType) => (
                   <AccountTypeOption
                     accountType={accountType}
@@ -1127,7 +1174,7 @@ export function FinancialIntelligenceScreen({
                 ))}
               </View>
 
-              <Text style={styles.accountSectionLabel}>
+              <Text className="mt-1 text-[16px] font-extrabold tracking-[-0.2px] text-ink">
                 2.  Account details
               </Text>
               <AccountInputField
@@ -1137,15 +1184,20 @@ export function FinancialIntelligenceScreen({
                 placeholder="e.g. Cash or HDFC Bank"
                 value={name}
               />
-              <View style={styles.accountFieldCard}>
-                <Text style={styles.accountFieldStaticFloatLabel}>
+              <View
+                className="min-h-[56px] flex-row items-center gap-[11px] rounded-[16px] border border-border bg-white px-[13px] py-1.5"
+                style={premiumTheme.shadow.soft}
+              >
+                <Text className="absolute -top-[9px] left-3.5 z-[2] rounded bg-white px-1 text-[11px] font-semibold text-secondary">
                   Currency
                 </Text>
-                <View style={styles.accountFieldIcon}>
+                <View className="h-[34px] w-[34px] items-center justify-center rounded-full bg-field">
                   <IndianRupee color="#64748b" size={16} strokeWidth={2.4} />
                 </View>
-                <View style={styles.accountFieldCopy}>
-                  <Text style={styles.accountFieldValue}>{currency}</Text>
+                <View className="min-w-0 flex-1 justify-center">
+                  <Text className="text-[14.5px] font-semibold text-ink">
+                    {currency}
+                  </Text>
                 </View>
               </View>
               <AccountInputField
@@ -1167,23 +1219,25 @@ export function FinancialIntelligenceScreen({
               {resource === "account" && error ? (
                 <Text style={financeStyles.error}>{error}</Text>
               ) : null}
-              <View style={styles.accountModalActions}>
+              <View className="mt-2 flex-row gap-3">
                 <Pressable
+                  className="min-h-[54px] flex-1 items-center justify-center rounded-[16px] bg-field"
                   disabled={isSavingResource}
                   onPress={closeAccountEdit}
-                  style={styles.accountCancelButton}
                 >
-                  <Text style={styles.accountCancelButtonText}>Cancel</Text>
+                  <Text className="text-[15px] font-bold text-ink">Cancel</Text>
                 </Pressable>
                 <Pressable
+                  className="min-h-[54px] flex-[1.5] flex-row items-center justify-center gap-2 rounded-[16px] bg-ink"
                   disabled={isSavingResource}
                   onPress={() => void handleSave()}
-                  style={[
-                    styles.accountSubmitButton,
-                    isSavingResource && financeStyles.saveButtonDisabled,
-                  ]}
+                  style={
+                    isSavingResource
+                      ? financeStyles.saveButtonDisabled
+                      : undefined
+                  }
                 >
-                  <Text style={styles.accountSubmitButtonText}>
+                  <Text className="text-[15px] font-extrabold text-white">
                     {isSavingResource
                       ? "Saving..."
                       : editing
@@ -1239,14 +1293,14 @@ export function FinancialIntelligenceScreen({
               type: "spring",
             }}
           >
-            <ScrollView contentContainerStyle={styles.modalContent}>
-              <View style={styles.accountModalHandle} />
+            <ScrollView contentContainerClassName="gap-3.5 p-[18px] pb-[30px]">
+              <View className="-mt-1.5 mb-2.5 h-1 w-11 self-center rounded-full bg-[#d6dae2]" />
               <View style={financeStyles.modalHeader}>
-                <View style={styles.rowTitleBlock}>
-                  <Text style={styles.accountModalTitle}>
+                <View className="flex-1">
+                  <Text className="text-[24px] font-extrabold tracking-[-0.5px] text-ink">
                     {editing ? "Edit" : "Add"} {resourceLabels[resource]}
                   </Text>
-                  <Text style={styles.accountModalSubtitle}>
+                  <Text className="mt-[5px] text-[13.5px] text-secondary">
                     {getResourceHelpText(resource)}
                   </Text>
                 </View>
@@ -1262,23 +1316,25 @@ export function FinancialIntelligenceScreen({
               {renderResourceFields()}
 
               {error && <Text style={financeStyles.error}>{error}</Text>}
-              <View style={styles.accountModalActions}>
+              <View className="mt-2 flex-row gap-3">
                 <Pressable
+                  className="min-h-[54px] flex-1 items-center justify-center rounded-[16px] bg-field"
                   disabled={isSavingResource}
                   onPress={closeAdvancedForm}
-                  style={styles.accountCancelButton}
                 >
-                  <Text style={styles.accountCancelButtonText}>Cancel</Text>
+                  <Text className="text-[15px] font-bold text-ink">Cancel</Text>
                 </Pressable>
                 <Pressable
+                  className="min-h-[54px] flex-[1.5] flex-row items-center justify-center gap-2 rounded-[16px] bg-ink"
                   disabled={isSavingResource}
                   onPress={handleSave}
-                  style={[
-                    styles.accountSubmitButton,
-                    isSavingResource && financeStyles.saveButtonDisabled,
-                  ]}
+                  style={
+                    isSavingResource
+                      ? financeStyles.saveButtonDisabled
+                      : undefined
+                  }
                 >
-                  <Text style={styles.accountSubmitButtonText}>
+                  <Text className="text-[15px] font-extrabold text-white">
                     {isSavingResource
                       ? "Saving..."
                       : `${editing ? "Update" : "Add"} ${titleCase(
@@ -1310,19 +1366,28 @@ function ResourceRow({
   title: string;
 }) {
   return (
-    <View style={styles.row}>
-      <View style={styles.rowHeader}>
-        <View style={styles.rowTitleBlock}>
-          <Text style={styles.rowTitle}>{title}</Text>
+    <View
+      className="rounded-[18px] bg-elevated p-[15px]"
+      style={premiumTheme.shadow.floating}
+    >
+      <View className="flex-row items-center justify-between gap-3">
+        <View className="flex-1">
+          <Text className="flex-1 text-[16px] font-black text-ink">{title}</Text>
           <Text style={financeStyles.muted}>{subtitle}</Text>
         </View>
       </View>
-      <View style={styles.actions}>
-        <Pressable onPress={onEdit} style={styles.secondaryButton}>
-          <Text style={styles.secondaryButtonText}>Edit</Text>
+      <View className="mt-3.5 flex-row flex-wrap gap-2.5">
+        <Pressable
+          className="rounded-full bg-field px-3.5 py-2.5"
+          onPress={onEdit}
+        >
+          <Text className="font-black text-ink">Edit</Text>
         </Pressable>
-        <Pressable onPress={onDelete} style={styles.dangerButton}>
-          <Text style={styles.dangerButtonText}>Delete</Text>
+        <Pressable
+          className="rounded-full bg-danger-soft px-3.5 py-2.5"
+          onPress={onDelete}
+        >
+          <Text className="font-black text-danger">Delete</Text>
         </Pressable>
       </View>
     </View>
@@ -1343,29 +1408,29 @@ function AccountTypeOption({
 
   return (
     <Pressable
+      className={`relative min-h-[92px] min-w-0 flex-1 items-center justify-center gap-2 rounded-[16px] border-[1.5px] bg-white px-[5px] py-3 ${
+        active ? "border-ink" : "border-border"
+      }`}
       onPress={onPress}
-      style={[styles.accountTypeCard, active && styles.accountTypeCardActive]}
+      style={active ? accountTypeActiveShadowStyle : undefined}
     >
       {active ? (
-        <View style={styles.accountTypeCheck}>
+        <View className="absolute -right-[7px] -top-[7px] z-[1] h-5 w-5 items-center justify-center rounded-full bg-ink">
           <Check color="#ffffff" size={11} strokeWidth={3.2} />
         </View>
       ) : null}
       <View
-        style={[
-          styles.accountTypeIcon,
-          {
-            backgroundColor: visual.background,
-          },
-        ]}
+        className="h-[38px] w-[38px] items-center justify-center rounded-[12px]"
+        style={{
+          backgroundColor: visual.background,
+        }}
       >
         <Icon color={visual.color} size={16} strokeWidth={2.4} />
       </View>
       <Text
-        style={[
-          styles.accountTypeText,
-          active && styles.accountTypeTextActive,
-        ]}
+        className={`text-center text-[11.5px] ${
+          active ? "font-extrabold text-ink" : "font-bold text-secondary"
+        }`}
       >
         {titleCase(accountType)}
       </Text>
@@ -1401,17 +1466,17 @@ function AccountInputField({
 
   return (
     <View
-      style={[
-        styles.accountFieldCard,
-        focused && styles.accountFieldCardFocused,
-      ]}
+      className={`min-h-[56px] flex-row items-center gap-[11px] rounded-[16px] border bg-white px-[13px] py-1.5 ${
+        focused ? "border-ink" : "border-border"
+      }`}
+      style={premiumTheme.shadow.soft}
     >
       {/* Material-style floating label: rests as the placeholder, floats
           onto the top border once the field is focused or filled. */}
       <Animated.Text
         pointerEvents="none"
         style={[
-          styles.accountFieldFloatLabel,
+          accountFieldFloatLabelStyle,
           {
             color: floatAnim.interpolate({
               inputRange: [0, 1],
@@ -1437,9 +1502,12 @@ function AccountInputField({
       >
         {label}
       </Animated.Text>
-      <View style={styles.accountFieldIcon}>{icon}</View>
-      <View style={styles.accountFieldCopy}>
+      <View className="h-[34px] w-[34px] items-center justify-center rounded-full bg-field">
+        {icon}
+      </View>
+      <View className="min-w-0 flex-1 justify-center">
         <TextInput
+          className="min-h-[22px] py-0 text-[14.5px] font-semibold text-ink"
           onBlur={(event) => {
             setFocused(false);
             onBlur?.(event);
@@ -1450,7 +1518,7 @@ function AccountInputField({
           }}
           placeholder={focused ? placeholder : undefined}
           placeholderTextColor="#9aa4b5"
-          style={[styles.accountFieldInput, style]}
+          style={style}
           {...props}
         />
       </View>
@@ -1473,35 +1541,39 @@ function AccountCard({
   const Icon = visual.Icon;
 
   return (
-    <View style={styles.accountCard}>
-      <View style={styles.accountCardMain}>
+    <View
+      className="gap-3 rounded-section border border-border bg-white p-3.5"
+      style={premiumTheme.shadow.soft}
+    >
+      <View className="flex-row items-center gap-[11px]">
         <View
-          style={[
-            styles.accountCardIcon,
-            { backgroundColor: visual.background },
-          ]}
+          className="h-[42px] w-[42px] items-center justify-center rounded-[13px]"
+          style={{ backgroundColor: visual.background }}
         >
           <Icon color={visual.color} size={19} strokeWidth={2.3} />
         </View>
-        <View style={styles.accountCardCopy}>
-          <Text numberOfLines={1} style={styles.accountCardName}>
+        <View className="min-w-0 flex-1">
+          <Text
+            className="text-[15.5px] font-extrabold tracking-[-0.3px] text-ink"
+            numberOfLines={1}
+          >
             {account.name}
           </Text>
-          <Text numberOfLines={1} style={styles.accountCardMeta}>
+          <Text
+            className="mt-0.5 text-[12px] font-semibold text-secondary"
+            numberOfLines={1}
+          >
             {titleCase(account.account_type)}
             {account.institution ? ` · ${account.institution}` : ""}
           </Text>
         </View>
-        <View style={styles.accountCardActions}>
+        <View className="ml-1 flex-row gap-2">
           <Pressable
             accessibilityLabel={`Edit ${account.name}`}
             accessibilityRole="button"
+            className={`h-8 w-8 items-center justify-center rounded-[10px] bg-field ${pressedDim}`}
             hitSlop={4}
             onPress={onEdit}
-            style={({ pressed }) => [
-              styles.accountCardActionButton,
-              pressed && financeStyles.saveButtonDisabled,
-            ]}
           >
             <Pencil
               color={premiumTheme.colors.secondary}
@@ -1512,13 +1584,9 @@ function AccountCard({
           <Pressable
             accessibilityLabel={`Delete ${account.name}`}
             accessibilityRole="button"
+            className={`h-8 w-8 items-center justify-center rounded-[10px] bg-danger-soft ${pressedDim}`}
             hitSlop={4}
             onPress={onDelete}
-            style={({ pressed }) => [
-              styles.accountCardActionButton,
-              styles.accountCardActionButtonDanger,
-              pressed && financeStyles.saveButtonDisabled,
-            ]}
           >
             <Trash2
               color={premiumTheme.colors.danger}
@@ -1528,9 +1596,11 @@ function AccountCard({
           </Pressable>
         </View>
       </View>
-      <View style={styles.accountCardFooter}>
-        <Text style={styles.accountCardFooterLabel}>Current balance</Text>
-        <Text style={styles.accountCardFooterValue}>
+      <View className="flex-row items-center justify-between border-t-hairline border-t-divider pt-[11px]">
+        <Text className="text-[11.5px] font-semibold text-secondary">
+          Current balance
+        </Text>
+        <Text className="text-[16px] font-extrabold tracking-[-0.3px] text-ink tabular-nums">
           {MobileDashboardService.getFormattedBalance(balance)}
         </Text>
       </View>
@@ -1551,21 +1621,16 @@ function CompactMetric({
 
   return (
     <View
-      style={[
-        styles.compactMetric,
-        {
-          backgroundColor: tone === "positive" ? "#f2faf4" : "#fdf6ee",
-        },
-      ]}
+      className="flex-1 flex-row items-center gap-2.5 rounded-control px-3 py-3"
+      style={{
+        backgroundColor: tone === "positive" ? "#f2faf4" : "#fdf6ee",
+      }}
     >
       <View
-        style={[
-          styles.compactMetricIcon,
-          {
-            backgroundColor:
-              tone === "positive" ? "#dcfce7" : "#ffedd5",
-          },
-        ]}
+        className="h-[34px] w-[34px] items-center justify-center rounded-[11px]"
+        style={{
+          backgroundColor: tone === "positive" ? "#dcfce7" : "#ffedd5",
+        }}
       >
         <Icon
           color={tone === "positive" ? "#16a34a" : "#f97316"}
@@ -1573,13 +1638,13 @@ function CompactMetric({
           strokeWidth={2.5}
         />
       </View>
-      <View style={styles.compactMetricCopy}>
-        <Text style={styles.compactMetricLabel}>{label}</Text>
+      <View className="min-w-0 flex-1">
+        <Text className="text-[12px] font-bold text-secondary">{label}</Text>
         <Text
           adjustsFontSizeToFit
+          className="mt-0.5 text-[15.5px] font-extrabold text-ink tabular-nums"
           minimumFontScale={0.7}
           numberOfLines={1}
-          style={styles.compactMetricValue}
         >
           {MobileDashboardService.getFormattedBalance(value)}
         </Text>
@@ -1588,605 +1653,3 @@ function CompactMetric({
   );
 }
 
-const styles = StyleSheet.create({
-  accountBalanceCard: {
-    alignItems: "center",
-    backgroundColor: "#0f172a",
-    borderRadius: 18,
-    flexDirection: "row",
-    gap: 12,
-    overflow: "hidden",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  accountBalanceCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  accountBalanceHint: {
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
-    borderRadius: 999,
-    color: "#e2e8f0",
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 12,
-    overflow: "hidden",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  accountBalanceLabel: {
-    color: "#cbd5e1",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  accountBalanceValue: {
-    color: "#ffffff",
-    fontSize: 31,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-    letterSpacing: -0.5,
-    marginTop: 7,
-  },
-  accountCard: {
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 20,
-    borderWidth: 1,
-    gap: 12,
-    padding: 14,
-    ...premiumTheme.shadow.soft,
-  },
-  accountCardFooter: {
-    alignItems: "center",
-    borderTopColor: premiumTheme.colors.divider,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: 11,
-  },
-  accountCardFooterLabel: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 11.5,
-    fontWeight: "600",
-  },
-  accountCardFooterValue: {
-    color: premiumTheme.colors.ink,
-    fontSize: 16,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-    letterSpacing: -0.3,
-  },
-  accountCardActionButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 10,
-    height: 32,
-    justifyContent: "center",
-    width: 32,
-  },
-  accountCardActionButtonDanger: {
-    backgroundColor: premiumTheme.colors.dangerSoft,
-  },
-  accountCardActions: {
-    flexDirection: "row",
-    gap: 8,
-    marginLeft: 4,
-  },
-  accountCardCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  accountCardIcon: {
-    alignItems: "center",
-    borderRadius: 13,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
-  accountCardMain: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 11,
-  },
-  accountCardMeta: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  accountCardName: {
-    color: premiumTheme.colors.ink,
-    fontSize: 15.5,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-  },
-  addDetailsButton: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 14,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 7,
-    justifyContent: "center",
-    minHeight: 48,
-  },
-  addDetailsButtonText: {
-    color: premiumTheme.colors.ink,
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  accountDivider: {
-    backgroundColor: "#eef2f7",
-    height: 1,
-  },
-  accountCancelButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 16,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 54,
-  },
-  accountCancelButtonText: {
-    color: premiumTheme.colors.ink,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  accountFieldCard: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 16,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 11,
-    minHeight: 56,
-    paddingHorizontal: 13,
-    paddingVertical: 6,
-    ...premiumTheme.shadow.soft,
-  },
-  accountFieldCardFocused: {
-    borderColor: premiumTheme.colors.ink,
-  },
-  accountFieldCopy: {
-    flex: 1,
-    justifyContent: "center",
-    minWidth: 0,
-  },
-  accountFieldFloatLabel: {
-    backgroundColor: "#ffffff",
-    borderRadius: 4,
-    fontWeight: "600",
-    paddingHorizontal: 4,
-    position: "absolute",
-    zIndex: 2,
-  },
-  accountFieldStaticFloatLabel: {
-    backgroundColor: "#ffffff",
-    borderRadius: 4,
-    color: premiumTheme.colors.secondary,
-    fontSize: 11,
-    fontWeight: "600",
-    left: 14,
-    paddingHorizontal: 4,
-    position: "absolute",
-    top: -9,
-    zIndex: 2,
-  },
-  accountFieldIcon: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 999,
-    height: 34,
-    justifyContent: "center",
-    width: 34,
-  },
-  accountFieldInput: {
-    color: premiumTheme.colors.ink,
-    fontSize: 14.5,
-    fontWeight: "600",
-    minHeight: 22,
-    paddingVertical: 0,
-  },
-  accountFieldValue: {
-    color: premiumTheme.colors.ink,
-    fontSize: 14.5,
-    fontWeight: "600",
-  },
-  accountModalActions: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 8,
-  },
-  accountModalHandle: {
-    alignSelf: "center",
-    backgroundColor: "#d6dae2",
-    borderRadius: 999,
-    height: 4,
-    marginBottom: 10,
-    marginTop: -6,
-    width: 44,
-  },
-  accountModalSubtitle: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 13.5,
-    marginTop: 5,
-  },
-  accountModalTitle: {
-    color: premiumTheme.colors.ink,
-    fontSize: 24,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-  },
-  accountSubmitButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 16,
-    flex: 1.5,
-    flexDirection: "row",
-    gap: 8,
-    justifyContent: "center",
-    minHeight: 54,
-  },
-  accountSubmitButtonText: {
-    color: "#ffffff",
-    fontSize: 15,
-    fontWeight: "800",
-  },
-  accountSectionLabel: {
-    color: "#0f172a",
-    fontSize: 16,
-    fontWeight: "800",
-    letterSpacing: -0.2,
-    marginTop: 4,
-  },
-  accountTypeCard: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    flex: 1,
-    gap: 8,
-    justifyContent: "center",
-    minHeight: 92,
-    minWidth: 0,
-    paddingHorizontal: 5,
-    paddingVertical: 12,
-    position: "relative",
-  },
-  accountTypeCardActive: {
-    borderColor: premiumTheme.colors.ink,
-    shadowColor: "#101828",
-    shadowOffset: {
-      height: 4,
-      width: 0,
-    },
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-  },
-  accountTypeGrid: {
-    flexDirection: "row",
-    flexWrap: "nowrap",
-    gap: 9,
-    paddingTop: 7,
-  },
-  accountTypeCheck: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 999,
-    height: 20,
-    justifyContent: "center",
-    position: "absolute",
-    right: -7,
-    top: -7,
-    width: 20,
-    zIndex: 1,
-  },
-  accountTypeIcon: {
-    alignItems: "center",
-    borderRadius: 12,
-    height: 38,
-    justifyContent: "center",
-    width: 38,
-  },
-  accountTypeText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 11.5,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  accountTypeTextActive: {
-    color: premiumTheme.colors.ink,
-    fontWeight: "800",
-  },
-  actions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginTop: 14,
-  },
-  addAccountButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 5,
-    minHeight: 36,
-    paddingHorizontal: 13,
-    ...premiumTheme.shadow.soft,
-  },
-  addAccountButtonText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  addAccountHeader: {
-    gap: 8,
-  },
-  addAccountTitle: {
-    color: "#0f172a",
-    fontSize: 25,
-    fontWeight: "900",
-    letterSpacing: 0,
-  },
-  emptyAddButton: {
-    marginTop: 12,
-  },
-  advancedPill: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 6,
-    justifyContent: "center",
-    minHeight: 36,
-    paddingHorizontal: 12,
-  },
-  balanceIllustration: {
-    alignItems: "center",
-    height: 72,
-    justifyContent: "center",
-    position: "relative",
-    width: 88,
-  },
-  compactMetric: {
-    alignItems: "center",
-    borderRadius: 14,
-    flex: 1,
-    flexDirection: "row",
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  compactMetricCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  compactMetricIcon: {
-    alignItems: "center",
-    borderRadius: 11,
-    height: 34,
-    justifyContent: "center",
-    width: 34,
-  },
-  compactMetricLabel: {
-    color: "#64748b",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  compactMetricRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  compactMetricValue: {
-    color: "#0f172a",
-    fontSize: 15.5,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-    marginTop: 2,
-  },
-  container: {
-    backgroundColor: premiumTheme.colors.canvas,
-    gap: 18,
-    padding: 20,
-    paddingBottom: 36,
-  },
-  dangerButton: {
-    backgroundColor: premiumTheme.colors.dangerSoft,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  dangerButtonText: {
-    color: "#dc2626",
-    fontWeight: "900",
-  },
-  illustrationBank: {
-    alignItems: "center",
-    backgroundColor: "#dbe4ff",
-    borderRadius: 15,
-    height: 54,
-    justifyContent: "center",
-    position: "absolute",
-    right: 14,
-    top: 4,
-    width: 54,
-  },
-  illustrationCard: {
-    alignItems: "center",
-    backgroundColor: "#65c783",
-    borderRadius: 8,
-    height: 30,
-    justifyContent: "center",
-    position: "absolute",
-    right: 0,
-    top: 32,
-    transform: [{ rotate: "8deg" }],
-    width: 40,
-  },
-  illustrationCoin: {
-    alignItems: "center",
-    backgroundColor: "#e6c84f",
-    borderRadius: 11,
-    bottom: 8,
-    height: 22,
-    justifyContent: "center",
-    position: "absolute",
-    right: 16,
-    width: 22,
-  },
-  input: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 16,
-    color: "#0f172a",
-    fontSize: 16,
-    minHeight: 54,
-    paddingHorizontal: 15,
-  },
-  modalContent: {
-    gap: 14,
-    padding: 18,
-    paddingBottom: 30,
-  },
-  optionalActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  optionalBadge: {
-    alignSelf: "flex-start",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  optionalBadgeText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 11,
-    fontWeight: "800",
-  },
-  optionalHeader: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
-  },
-  optionalHeaderIcon: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 999,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  trackCard: {
-    alignItems: "center",
-    backgroundColor: "#f5f5f7",
-    borderColor: "transparent",
-    borderRadius: 12,
-    borderWidth: 1.2,
-    flexDirection: "row",
-    gap: 5,
-    minHeight: 36,
-    paddingHorizontal: 10,
-  },
-  trackCardText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  trackDivider: {
-    backgroundColor: premiumTheme.colors.border,
-    height: StyleSheet.hairlineWidth,
-    marginTop: 2,
-  },
-  trackGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 9,
-  },
-  trackHeading: {
-    color: premiumTheme.colors.ink,
-    fontSize: 14,
-    fontWeight: "800",
-    letterSpacing: -0.2,
-  },
-  optionalSection: {
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 20,
-    borderWidth: 1,
-    gap: 12,
-    padding: 14,
-    ...premiumTheme.shadow.soft,
-  },
-  optionalText: {
-    color: "#64748b",
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  optionalTitle: {
-    color: "#0f172a",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  pageIntro: {
-    color: "#64748b",
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  primaryButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 999,
-    minHeight: 52,
-    justifyContent: "center",
-    paddingHorizontal: 18,
-  },
-  primaryButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  row: {
-    backgroundColor: premiumTheme.colors.elevated,
-    borderRadius: 18,
-    padding: 15,
-    ...premiumTheme.shadow.floating,
-  },
-  rowHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
-  },
-  rowTitle: {
-    color: "#0f172a",
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  rowTitleBlock: {
-    flex: 1,
-  },
-  secondaryButton: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  secondaryButtonText: {
-    color: "#0f172a",
-    fontWeight: "900",
-  },
-  segmentText: {
-    color: "#334155",
-    fontSize: 13,
-    fontWeight: "700",
-    textTransform: "capitalize",
-  },
-});

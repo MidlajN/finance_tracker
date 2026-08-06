@@ -16,7 +16,6 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   useWindowDimensions,
@@ -77,6 +76,32 @@ const DATE_FILTER_OPTIONS: {
   { label: "Last month", value: "lastMonth" },
   { label: "Last 3 months", value: "threeMonths" },
 ];
+
+// MotiView is not NativeWind-interop'd, so the dropdown keeps a plain style
+// object.
+const dateFilterMenuStyle = {
+  backgroundColor: "#ffffff",
+  borderRadius: 18,
+  padding: 6,
+  position: "absolute",
+  width: 216,
+  ...premiumSurface,
+  ...premiumTheme.shadow.raised,
+} as const;
+
+// The FAB's shadow is bespoke (not a premiumTheme preset), so it stays a
+// plain style object.
+const fabShadowStyle = {
+  // elevation drives the Android shadow; the shadow* props are iOS-only.
+  elevation: 10,
+  shadowColor: "#111827",
+  shadowOffset: {
+    height: 10,
+    width: 0,
+  },
+  shadowOpacity: 0.28,
+  shadowRadius: 16,
+} as const;
 
 function getDateFilterBounds(
   filter: TransactionDateFilter
@@ -232,43 +257,46 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
   }, [dateFilter, filteredTransactions]);
 
   return (
-    <View style={styles.screen}>
+    <View className="flex-1 bg-canvas">
       <ScrollView
-        contentContainerStyle={styles.transactionsListContainer}
-        style={styles.screenScroll}
+        className="flex-1 bg-canvas"
+        contentContainerClassName="gap-[18px] bg-canvas p-5 pb-24"
       >
-        <View style={styles.transactionSearchBar}>
+        <View className="min-h-12 flex-row items-center gap-2.5 rounded-control bg-field px-3.5">
           <Search
             color={premiumTheme.colors.secondary}
             size={20}
             strokeWidth={2.2}
           />
           <TextInput
+            className="min-h-12 flex-1 py-0 text-[15px] font-medium text-ink"
             onChangeText={setSearchQuery}
             placeholder="Search transactions"
             placeholderTextColor={premiumTheme.colors.muted}
-            style={styles.transactionSearchInput}
             value={searchQuery}
           />
         </View>
 
-        <View style={styles.transactionFilterRow}>
-          <View style={styles.transactionFilterBar}>
+        <View className="flex-row items-stretch gap-2">
+          <View className="flex-1 flex-row gap-1 rounded-control bg-field p-1">
             {(["all", "income", "expense"] as const).map(
               (item) => (
                 <Pressable
+                  className={`min-h-[34px] flex-1 items-center justify-center rounded-[10px] border ${
+                    filter === item
+                      ? "border-border bg-white"
+                      : "border-transparent"
+                  }`}
                   key={item}
                   onPress={() => setFilter(item)}
-                  style={[
-                    styles.transactionFilterButton,
-                    filter === item && styles.transactionFilterButtonActive,
-                  ]}
+                  style={
+                    filter === item ? premiumTheme.shadow.soft : undefined
+                  }
                 >
                   <Text
-                    style={[
-                      styles.transactionFilterText,
-                      filter === item && styles.transactionFilterTextActive,
-                    ]}
+                    className={`text-[12.5px] font-bold ${
+                      filter === item ? "text-ink" : "text-secondary"
+                    }`}
                   >
                     {titleCase(item)}
                   </Text>
@@ -280,13 +308,11 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
           <Pressable
             accessibilityHint="Filters transactions by date range"
             accessibilityRole="button"
+            className={`min-h-[42px] flex-row items-center justify-center gap-[3px] rounded-control px-[13px] active:opacity-85 ${
+              dateFilter !== "all" ? "bg-ink" : "bg-field"
+            }`}
             onPress={openDateFilterMenu}
             ref={dateFilterButtonRef}
-            style={({ pressed }) => [
-              styles.dateFilterButton,
-              dateFilter !== "all" && styles.dateFilterButtonActive,
-              pressed && styles.dateFilterButtonPressed,
-            ]}
           >
             <CalendarDays
               color={
@@ -310,25 +336,23 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         </View>
 
         {dateFilter !== "all" ? (
-          <View style={styles.dateFilterSummary}>
+          <View className="-mt-1.5 flex-row items-center">
             <Pressable
               accessibilityHint="Removes the date filter"
               accessibilityRole="button"
+              className="min-h-8 flex-row items-center gap-[7px] rounded-full border border-border bg-white pl-[13px] pr-1.5 active:bg-field"
               hitSlop={6}
               onPress={() => setDateFilter("all")}
-              style={({ pressed }) => [
-                styles.dateFilterChip,
-                pressed && styles.dateFilterChipPressed,
-              ]}
+              style={premiumTheme.shadow.soft}
             >
-              <Text style={styles.dateFilterChipText}>
+              <Text className="text-[12.5px] font-bold text-ink">
                 {
                   DATE_FILTER_OPTIONS.find(
                     (option) => option.value === dateFilter
                   )?.label
                 }
               </Text>
-              <View style={styles.dateFilterChipClose}>
+              <View className="h-5 w-5 items-center justify-center rounded-full bg-field">
                 <X
                   color={premiumTheme.colors.secondary}
                   size={11}
@@ -340,23 +364,28 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         ) : null}
 
         {pendingEvents.length > 0 ? (
-          <View style={styles.pendingReviewSection}>
-            <View style={styles.pendingReviewHeader}>
+          <View className="gap-2.5">
+            <View className="flex-row items-start justify-between gap-3">
               <View>
-                <Text style={styles.pendingReviewTitle}>Pending reviews</Text>
-                <Text style={styles.pendingReviewSubtitle}>
+                <Text className="text-[17px] font-extrabold tracking-[-0.3px] text-ink">
+                  Pending reviews
+                </Text>
+                <Text className="mt-[3px] text-[12.5px] text-secondary">
                   Confirm, correct, or ignore captured transactions.
                 </Text>
               </View>
-              <View style={styles.pendingReviewCount}>
-                <Text style={styles.pendingReviewCountText}>
+              <View className="min-h-[26px] min-w-[26px] items-center justify-center rounded-full bg-ink px-2">
+                <Text className="text-[12px] font-extrabold text-white">
                   {pendingEvents.length}
                 </Text>
               </View>
             </View>
 
-            <View style={styles.listCard}>
-              <View style={styles.listCardInner}>
+            <View
+              className="rounded-section border border-border bg-white"
+              style={premiumTheme.shadow.soft}
+            >
+              <View className="overflow-hidden rounded-section">
                 {pendingEvents.map((event, index) => {
                   const accountId = getEventAccountId(event.metadata);
 
@@ -384,12 +413,17 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         ) : null}
 
         {groupedTransactions.map((group) => (
-          <View key={group.label || "filtered"} style={styles.transactionGroup}>
+          <View className="gap-2.5" key={group.label || "filtered"}>
             {group.label ? (
-              <Text style={styles.transactionGroupTitle}>{group.label}</Text>
+              <Text className="pl-0.5 text-[12px] font-extrabold uppercase tracking-[0.9px] text-secondary">
+                {group.label}
+              </Text>
             ) : null}
-            <View style={styles.listCard}>
-              <View style={styles.listCardInner}>
+            <View
+              className="rounded-section border border-border bg-white"
+              style={premiumTheme.shadow.soft}
+            >
+              <View className="overflow-hidden rounded-section">
                 {group.transactions.map((transaction, index) => (
                   <TransactionListRow
                     accountName={
@@ -413,13 +447,16 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         ))}
 
         {groupedTransactions.length === 0 && pendingEvents.length === 0 && (
-          <View style={styles.transactionsEmptyCard}>
-            <Text style={styles.transactionsEmptyTitle}>
+          <View
+            className="items-center rounded-section border border-border bg-white p-6"
+            style={premiumTheme.shadow.soft}
+          >
+            <Text className="text-[16px] font-extrabold tracking-[-0.3px] text-ink">
               {searchQuery.trim() || dateFilter !== "all" || filter !== "all"
                 ? "No matching transactions"
                 : "No transactions yet"}
             </Text>
-            <Text style={styles.transactionsEmptyText}>
+            <Text className="mt-1.5 text-center text-[13.5px] leading-[19px] text-secondary">
               {searchQuery.trim() || dateFilter !== "all" || filter !== "all"
                 ? "Try widening the filters or a different search."
                 : "Add your first transaction to see it here."}
@@ -428,13 +465,16 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         )}
 
         {groupedTransactions.length > 0 ? (
-          <Text style={styles.transactionsEndText}>End of transactions</Text>
+          <Text className="text-center text-[12px] font-semibold text-muted">
+            End of transactions
+          </Text>
         ) : null}
       </ScrollView>
 
       <Pressable
+        className="absolute bottom-5 right-5 h-[54px] w-[54px] shadow-xl items-center justify-center rounded-[27px] bg-ink"
         onPress={() => navigation.navigate("Events")}
-        style={styles.transactionFab}
+        style={fabShadowStyle}
       >
         <Plus color="#ffffff" size={23} strokeWidth={2.8} />
       </Pressable>
@@ -446,15 +486,15 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         visible={dateFilterMenuAnchor !== null}
       >
         <Pressable
+          className="flex-1"
           onPress={() => setDateFilterMenuAnchor(null)}
-          style={styles.dateFilterMenuBackdrop}
         >
           {dateFilterMenuAnchor ? (
             <MotiView
               animate={{ opacity: 1, scale: 1, translateY: 0 }}
               from={{ opacity: 0, scale: 0.96, translateY: -6 }}
               style={[
-                styles.dateFilterMenu,
+                dateFilterMenuStyle,
                 {
                   right: dateFilterMenuAnchor.right,
                   top: dateFilterMenuAnchor.top,
@@ -467,29 +507,28 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
                 type: "spring",
               }}
             >
-              <Text style={styles.dateFilterMenuLabel}>Date range</Text>
+              <Text className="mb-1 mt-1.5 px-2.5 text-[10.5px] font-extrabold uppercase tracking-[1px] text-muted">
+                Date range
+              </Text>
               {DATE_FILTER_OPTIONS.map((option) => {
                 const selected = option.value === dateFilter;
 
                 return (
                   <Pressable
+                    className={`min-h-[42px] flex-row items-center justify-between gap-2.5 rounded-xl px-2.5 active:bg-field ${
+                      selected ? "bg-field" : ""
+                    }`}
                     key={option.value}
                     onPress={() => {
                       setDateFilter(option.value);
                       setDateFilterMenuAnchor(null);
                     }}
-                    style={({ pressed }) => [
-                      styles.dateFilterOption,
-                      selected && styles.dateFilterOptionSelected,
-                      pressed && styles.dateFilterOptionPressed,
-                    ]}
                   >
                     <Text
+                      className={`flex-1 text-[13px] leading-[18px] text-ink ${
+                        selected ? "font-bold" : "font-semibold"
+                      }`}
                       numberOfLines={1}
-                      style={[
-                        styles.dateFilterOptionText,
-                        selected && styles.dateFilterOptionTextSelected,
-                      ]}
                     >
                       {option.label}
                     </Text>
@@ -570,26 +609,22 @@ function TransactionListRow({
     <Pressable
       accessibilityHint="Opens this transaction for editing"
       accessibilityRole="button"
+      className="min-h-[66px] flex-row items-center gap-3 px-3.5 active:bg-field"
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.transactionListRow,
-        pressed && styles.transactionListRowPressed,
-      ]}
     >
       <View
-        style={[
-          styles.transactionListIcon,
-          {
-            backgroundColor: icon.background,
-          },
-        ]}
+        className="h-[42px] w-[42px] items-center justify-center rounded-[15px]"
+        style={{ backgroundColor: icon.background }}
       >
         <Icon color={icon.color} size={19} strokeWidth={2.3} />
       </View>
 
-      <View style={styles.transactionListDetails}>
-        <View style={styles.transactionListTitleRow}>
-          <Text numberOfLines={1} style={styles.transactionListTitle}>
+      <View className="min-w-0 flex-1">
+        <View className="flex-row items-center gap-[5px]">
+          <Text
+            className="shrink text-[14.5px] font-bold tracking-[-0.2px] text-ink"
+            numberOfLines={1}
+          >
             {merchantDisplay.name}
           </Text>
           {merchantDisplay.registered && (
@@ -600,27 +635,40 @@ function TransactionListRow({
             />
           )}
         </View>
-        <Text numberOfLines={1} style={styles.transactionListCategory}>
+        <Text
+          className="mt-[3px] text-[12px] font-semibold text-secondary"
+          numberOfLines={1}
+        >
           {accountName ? `${categoryName} · ${accountName}` : categoryName}
         </Text>
       </View>
 
-      <View style={styles.transactionListTrailing}>
+      <View className="ml-1 items-end">
         <Text
-          style={[
-            styles.transactionListAmount,
-            signedAmount > 0 && styles.transactionListAmountIncome,
-          ]}
+          className={`text-[14.5px] font-extrabold tracking-[-0.2px] tabular-nums ${
+            signedAmount > 0 ? "text-success" : "text-ink"
+          }`}
         >
           {formatSignedTransactionAmount(signedAmount)}
         </Text>
-        <Text style={styles.transactionListTime}>
+        <Text className="mt-[3px] text-[11px] font-semibold text-muted">
           {formatTransactionListTimestamp(occurredAt)}
         </Text>
       </View>
 
-      {showDivider ? <View style={styles.rowDivider} /> : null}
+      {showDivider ? <RowDivider /> : null}
     </Pressable>
+  );
+}
+
+function RowDivider() {
+  return (
+    <View
+      className="absolute bottom-0 left-[68px] right-0 bg-divider"
+      // hairlineWidth is a runtime value with no height class, so it stays
+      // inline.
+      style={{ height: premiumHairline }}
+    />
   );
 }
 
@@ -642,43 +690,44 @@ function PendingEventRow({
     <Pressable
       accessibilityHint="Opens this captured transaction for review"
       accessibilityRole="button"
+      className="min-h-[68px] flex-row items-center gap-3 px-3.5 active:bg-field"
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.pendingReviewRow,
-        pressed && styles.pendingReviewRowPressed,
-      ]}
     >
-      <View style={styles.pendingReviewIcon}>
+      <View className="h-[42px] w-[42px] items-center justify-center rounded-[15px] bg-field">
         <Store color={premiumTheme.colors.ink} size={19} strokeWidth={2.3} />
       </View>
 
-      <View style={styles.pendingReviewCopy}>
-        <View style={styles.pendingReviewTitleRow}>
+      <View className="min-w-0 flex-1">
+        <View className="flex-row items-center gap-1.5">
           <Text
+            className="shrink text-[14.5px] font-bold tracking-[-0.2px] text-ink"
             numberOfLines={1}
-            style={[styles.pendingReviewMerchant, styles.pendingReviewMerchantShrink]}
           >
             {event.merchant_name_raw ?? "Unknown merchant"}
           </Text>
           {isLowConfidence ? (
-            <View style={styles.pendingReviewFlag}>
-              <Text style={styles.pendingReviewFlagText}>Low confidence</Text>
+            <View className="rounded-full bg-[#fef3c7] px-[7px] py-0.5">
+              <Text className="text-[10px] font-bold text-[#b45309]">
+                Low confidence
+              </Text>
             </View>
           ) : null}
         </View>
-        <Text numberOfLines={1} style={styles.pendingReviewMeta}>
+        <Text
+          className="mt-[3px] text-[12px] font-semibold text-secondary"
+          numberOfLines={1}
+        >
           {isCredit ? "Income" : "Expense"}
           {accountName ? ` · ${accountName}` : " · Account unassigned"}
         </Text>
       </View>
 
-      <View style={styles.pendingReviewTrailing}>
-        <View style={styles.pendingReviewAmountRow}>
+      <View className="ml-1 items-end">
+        <View className="flex-row items-center gap-0.5">
           <Text
-            style={[
-              styles.pendingReviewAmount,
-              isCredit && styles.pendingReviewAmountIncome,
-            ]}
+            className={`text-[14px] font-extrabold tabular-nums ${
+              isCredit ? "text-success" : "text-ink"
+            }`}
           >
             {MobileDashboardService.getFormattedBalance(event.amount)}
           </Text>
@@ -688,421 +737,12 @@ function PendingEventRow({
             strokeWidth={2.4}
           />
         </View>
-        <Text style={styles.pendingReviewDate}>
+        <Text className="mt-[3px] text-[11px] font-semibold text-muted">
           {formatTransactionListTimestamp(event.occurred_at)}
         </Text>
       </View>
 
-      {showDivider ? <View style={styles.rowDivider} /> : null}
+      {showDivider ? <RowDivider /> : null}
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  dateFilterButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 14,
-    flexDirection: "row",
-    gap: 3,
-    justifyContent: "center",
-    minHeight: 42,
-    paddingHorizontal: 13,
-  },
-  dateFilterButtonActive: {
-    backgroundColor: premiumTheme.colors.ink,
-  },
-  dateFilterButtonPressed: {
-    opacity: 0.85,
-  },
-  dateFilterChip: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 7,
-    minHeight: 32,
-    paddingLeft: 13,
-    paddingRight: 6,
-    ...premiumSurface,
-    ...premiumTheme.shadow.soft,
-  },
-  dateFilterChipClose: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 999,
-    height: 20,
-    justifyContent: "center",
-    width: 20,
-  },
-  dateFilterChipPressed: {
-    backgroundColor: premiumTheme.colors.field,
-  },
-  dateFilterChipText: {
-    color: premiumTheme.colors.ink,
-    fontSize: 12.5,
-    fontWeight: "700",
-  },
-  dateFilterMenu: {
-    backgroundColor: "#ffffff",
-    borderRadius: 18,
-    padding: 6,
-    position: "absolute",
-    width: 216,
-    ...premiumSurface,
-    ...premiumTheme.shadow.raised,
-  },
-  dateFilterMenuBackdrop: {
-    flex: 1,
-  },
-  dateFilterMenuLabel: {
-    color: premiumTheme.colors.muted,
-    fontSize: 10.5,
-    fontWeight: "800",
-    letterSpacing: 1,
-    marginBottom: 4,
-    marginTop: 6,
-    paddingHorizontal: 10,
-    textTransform: "uppercase",
-  },
-  dateFilterOption: {
-    alignItems: "center",
-    borderRadius: 12,
-    flexDirection: "row",
-    gap: 10,
-    justifyContent: "space-between",
-    minHeight: 42,
-    paddingHorizontal: 10,
-  },
-  dateFilterOptionPressed: {
-    backgroundColor: premiumTheme.colors.field,
-  },
-  dateFilterOptionSelected: {
-    backgroundColor: premiumTheme.colors.field,
-  },
-  dateFilterOptionText: {
-    color: premiumTheme.colors.ink,
-    flex: 1,
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18,
-  },
-  dateFilterOptionTextSelected: {
-    fontWeight: "700",
-  },
-  dateFilterSummary: {
-    alignItems: "center",
-    flexDirection: "row",
-    marginTop: -6,
-  },
-  listCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: premiumTheme.radius.section,
-    ...premiumSurface,
-    ...premiumTheme.shadow.soft,
-  },
-  listCardInner: {
-    borderRadius: premiumTheme.radius.section,
-    overflow: "hidden",
-  },
-  pendingReviewAmount: {
-    color: premiumTheme.colors.ink,
-    fontSize: 14,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-  },
-  pendingReviewAmountIncome: {
-    color: premiumTheme.colors.success,
-  },
-  pendingReviewAmountRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 2,
-  },
-  pendingReviewCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  pendingReviewCount: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 999,
-    justifyContent: "center",
-    minHeight: 26,
-    minWidth: 26,
-    paddingHorizontal: 8,
-  },
-  pendingReviewCountText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  pendingReviewDate: {
-    color: premiumTheme.colors.muted,
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 3,
-  },
-  pendingReviewFlag: {
-    backgroundColor: "#fef3c7",
-    borderRadius: 999,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  pendingReviewFlagText: {
-    color: "#b45309",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  pendingReviewHeader: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
-  },
-  pendingReviewIcon: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 15,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
-  pendingReviewMerchant: {
-    color: premiumTheme.colors.ink,
-    fontSize: 14.5,
-    fontWeight: "700",
-    letterSpacing: -0.2,
-  },
-  pendingReviewMerchantShrink: {
-    flexShrink: 1,
-  },
-  pendingReviewMeta: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 3,
-  },
-  pendingReviewRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-    minHeight: 68,
-    paddingHorizontal: 14,
-  },
-  pendingReviewRowPressed: {
-    backgroundColor: premiumTheme.colors.field,
-  },
-  pendingReviewSection: {
-    gap: 10,
-  },
-  pendingReviewSubtitle: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12.5,
-    marginTop: 3,
-  },
-  pendingReviewTitle: {
-    color: premiumTheme.colors.ink,
-    fontSize: 17,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-  },
-  pendingReviewTitleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 6,
-  },
-  pendingReviewTrailing: {
-    alignItems: "flex-end",
-    marginLeft: 4,
-  },
-  rowDivider: {
-    backgroundColor: premiumTheme.colors.divider,
-    bottom: 0,
-    height: premiumHairline,
-    left: 68,
-    position: "absolute",
-    right: 0,
-  },
-  screen: {
-    backgroundColor: premiumTheme.colors.canvas,
-    flex: 1,
-  },
-  screenScroll: {
-    backgroundColor: premiumTheme.colors.canvas,
-    flex: 1,
-  },
-  transactionFab: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 27,
-    bottom: 20,
-    height: 54,
-    justifyContent: "center",
-    position: "absolute",
-    right: 20,
-    shadowColor: "#111827",
-    shadowOffset: {
-      height: 10,
-      width: 0,
-    },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    width: 54,
-  },
-  transactionFilterBar: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 14,
-    flex: 1,
-    flexDirection: "row",
-    gap: 4,
-    padding: 4,
-  },
-  transactionFilterButton: {
-    alignItems: "center",
-    borderColor: "transparent",
-    borderRadius: 10,
-    borderWidth: 1,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 34,
-  },
-  transactionFilterButtonActive: {
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    ...premiumTheme.shadow.soft,
-  },
-  transactionFilterRow: {
-    alignItems: "stretch",
-    flexDirection: "row",
-    gap: 8,
-  },
-  transactionFilterText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12.5,
-    fontWeight: "700",
-  },
-  transactionFilterTextActive: {
-    color: premiumTheme.colors.ink,
-  },
-  transactionGroup: {
-    gap: 10,
-  },
-  transactionGroupTitle: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.9,
-    paddingLeft: 2,
-    textTransform: "uppercase",
-  },
-  transactionListAmount: {
-    color: premiumTheme.colors.ink,
-    fontSize: 14.5,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-    letterSpacing: -0.2,
-  },
-  transactionListAmountIncome: {
-    color: premiumTheme.colors.success,
-  },
-  transactionListCategory: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 3,
-  },
-  transactionListDetails: {
-    flex: 1,
-    minWidth: 0,
-  },
-  transactionListIcon: {
-    alignItems: "center",
-    borderRadius: 15,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
-  transactionListRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-    minHeight: 66,
-    paddingHorizontal: 14,
-  },
-  transactionListRowPressed: {
-    backgroundColor: premiumTheme.colors.field,
-  },
-  transactionListTime: {
-    color: premiumTheme.colors.muted,
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 3,
-  },
-  transactionListTitle: {
-    color: premiumTheme.colors.ink,
-    flexShrink: 1,
-    fontSize: 14.5,
-    fontWeight: "700",
-    letterSpacing: -0.2,
-  },
-  transactionListTitleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 5,
-  },
-  transactionListTrailing: {
-    alignItems: "flex-end",
-    marginLeft: 4,
-  },
-  transactionSearchBar: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 14,
-    flexDirection: "row",
-    gap: 10,
-    minHeight: 48,
-    paddingHorizontal: 14,
-  },
-  transactionSearchInput: {
-    color: premiumTheme.colors.ink,
-    flex: 1,
-    fontSize: 15,
-    fontWeight: "500",
-    minHeight: 48,
-    paddingVertical: 0,
-  },
-  transactionsEmptyCard: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderRadius: premiumTheme.radius.section,
-    padding: 24,
-    ...premiumSurface,
-    ...premiumTheme.shadow.soft,
-  },
-  transactionsEmptyText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 13.5,
-    lineHeight: 19,
-    marginTop: 6,
-    textAlign: "center",
-  },
-  transactionsEmptyTitle: {
-    color: premiumTheme.colors.ink,
-    fontSize: 16,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-  },
-  transactionsEndText: {
-    color: premiumTheme.colors.muted,
-    fontSize: 12,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  transactionsListContainer: {
-    backgroundColor: premiumTheme.colors.canvas,
-    gap: 18,
-    padding: 20,
-    paddingBottom: 96,
-  },
-});

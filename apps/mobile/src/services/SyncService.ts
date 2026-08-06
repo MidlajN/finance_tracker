@@ -9,6 +9,7 @@ import type {
   CreateInvestmentSyncPayload,
   CreateLiabilitySyncPayload,
   CreateLoanSyncPayload,
+  CreateFinancialRuleSyncPayload,
   CreateMerchantAliasSyncPayload,
   CreateMerchantSyncPayload,
   DeleteFinancialEventSyncPayload,
@@ -599,6 +600,12 @@ export class SyncService {
         return;
       }
 
+      if (item.operation === "create_rule") {
+        await this.processCreateRule(item);
+        await SyncQueueRepository.setStatus(item.id, "synced");
+        return;
+      }
+
       if (item.operation === "delete_merchant_alias") {
         await this.processDeleteMerchantAlias(item);
         await SyncQueueRepository.setStatus(item.id, "synced");
@@ -886,6 +893,38 @@ export class SyncService {
 
     await RemoteMerchantAliasRepository.delete(item.payload.id);
     await LocalMerchantAliasRepository.delete(item.payload.id);
+  }
+
+  private static async processCreateRule(item: SyncQueueItem) {
+    if (
+      !isCreateResourceSyncPayload<CreateFinancialRuleSyncPayload>(
+        item.payload
+      )
+    ) {
+      throw new Error("Invalid rule create payload.");
+    }
+
+    try {
+      const rule = await RemoteFinancialRuleRepository.create(
+        item.payload.localId,
+        item.payload.resource
+      );
+
+      await LocalRuleRepository.upsert(rule);
+    } catch (error) {
+      // Another device may have already created this rule (unique
+      // violation / duplicate id 23505) — treat as success.
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error as { code?: string }).code === "23505"
+      ) {
+        return;
+      }
+
+      throw error;
+    }
   }
 
   private static async processCreateMerchantAlias(item: SyncQueueItem) {

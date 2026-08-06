@@ -19,7 +19,6 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -35,13 +34,49 @@ import { SlideToSaveButton } from "../components/finance/SlideToSaveButton";
 import { TransactionDateField } from "../components/finance/TransactionDateField";
 import { useOfflineStore } from "../stores/offlineStore";
 import { useSyncStore } from "../stores/syncStore";
-import { premiumTheme } from "../theme/premiumTheme";
+import { premiumHairline, premiumTheme } from "../theme/premiumTheme";
 import type { RootStackParamList } from "../types/navigation";
 import {
   getFrequentCategoryIds,
 } from "../utils/financeFormat";
 
 type EventsScreenProps = NativeStackScreenProps<RootStackParamList, "Events">;
+
+// Animated.View is not NativeWind-interop'd, so the type-toggle indicator
+// keeps a plain style object.
+const transactionTypeIndicatorStyle = {
+  backgroundColor: "#0f172a",
+  borderRadius: 11,
+  bottom: 3,
+  left: 3,
+  position: "absolute",
+  top: 3,
+} as const;
+
+// MotiView is not NativeWind-interop'd, so the inline note keeps a plain
+// style object.
+const transactionInlineNoteStyle = {
+  gap: 10,
+  paddingBottom: 14,
+  paddingTop: 2,
+} as const;
+
+// The dock's upward shadow has no theme token; it stays a style object
+// combined with className.
+const saveDockShadowStyle = {
+  shadowColor: "#0f172a",
+  shadowOffset: {
+    height: -6,
+    width: 0,
+  },
+  shadowOpacity: 0.035,
+  shadowRadius: 16,
+} as const;
+
+// Hairline heights have no spacing class (only border widths do).
+const hairlineHeightStyle = {
+  height: premiumHairline,
+} as const;
 
 export function EventsScreen({ navigation }: EventsScreenProps) {
   const accounts = useOfflineStore((state) => state.accounts);
@@ -216,26 +251,23 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior="padding"
-      style={styles.transactionEntryScreen}
-    >
+    <KeyboardAvoidingView behavior="padding" className="flex-1 bg-white">
       <ScrollView
-        contentContainerStyle={styles.transactionContainer}
+        className="flex-1 bg-white"
+        contentContainerClassName="bg-white px-5 pb-7 pt-3"
         keyboardShouldPersistTaps="handled"
-        style={styles.transactionEntryScroll}
       >
         <View
+          className="mb-px min-h-12 flex-row rounded-[15px] bg-[#f2f3f5] p-[3px]"
           onLayout={(event) =>
             setTransactionTypeWidth(event.nativeEvent.layout.width)
           }
-          style={styles.transactionTypeRow}
         >
           {transactionTypeWidth > 0 ? (
             <Animated.View
               pointerEvents="none"
               style={[
-                styles.transactionTypeIndicator,
+                transactionTypeIndicatorStyle,
                 {
                   transform: [
                     {
@@ -267,11 +299,11 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
 
             return (
               <Pressable
+                className="z-[1] min-h-[42px] flex-1 flex-row items-center justify-center gap-1.5 rounded-[11px]"
                 key={item.value}
                 onPress={() => {
                   setDirection(item.value as EventDirection);
                 }}
-                style={styles.transactionTypeButton}
               >
                 <TypeIcon
                   color={active ? "#ffffff" : "#64748b"}
@@ -279,10 +311,9 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
                   strokeWidth={2.6}
                 />
                 <Text
-                  style={[
-                    styles.transactionTypeText,
-                    active && styles.transactionTypeTextActive,
-                  ]}
+                  className={`text-[12px] font-bold ${
+                    active ? "text-white" : "text-[#334155]"
+                  }`}
                 >
                   {item.label}
                 </Text>
@@ -291,27 +322,30 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           })}
         </View>
 
-        <View style={styles.transactionAmountHero}>
-          <Text style={styles.transactionAmountLabel}>
+        <View
+          className="mt-4 rounded-section border border-border bg-white px-[18px] py-4"
+          style={premiumTheme.shadow.soft}
+        >
+          <Text className="text-[10px] font-bold uppercase tracking-[1.1px] text-secondary">
             {direction === "debit" ? "Amount spent" : "Amount received"}
           </Text>
-          <View style={styles.transactionAmountRow}>
-            <Text style={styles.currencyPrefix}>₹</Text>
+          <View className="mt-1.5 flex-row items-center gap-2">
+            <Text className="text-[21px] font-bold text-secondary">₹</Text>
             <TextInput
               autoFocus
+              className="min-h-[52px] flex-1 py-0 text-[34px] font-extrabold tracking-[-0.9px] text-ink tabular-nums"
               keyboardType="decimal-pad"
               onChangeText={(value) => {
                 setAmount(value);
               }}
               placeholder="0.00"
               placeholderTextColor="#94a3b8"
-              style={styles.amountInput}
               value={amount}
             />
           </View>
         </View>
 
-        <View style={styles.transactionSectionDivider} />
+        <View className="my-[18px] bg-divider" style={hairlineHeightStyle} />
 
         <CategoryPickerField
           categories={categories}
@@ -324,7 +358,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           selectedCategoryId={selectedCategoryId}
         />
 
-        <View style={styles.transactionSectionDivider} />
+        <View className="my-[18px] bg-divider" style={hairlineHeightStyle} />
 
         <AccountPickerField
           accounts={accounts}
@@ -340,51 +374,50 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           selectedAccountId={selectedAccountId}
         />
 
-        <View style={styles.transactionSectionDivider} />
+        <View className="my-[18px] bg-divider" style={hairlineHeightStyle} />
 
-        <View style={styles.transactionSecondarySection}>
+        <View
+          className="rounded-section border border-border bg-white px-3.5"
+          style={premiumTheme.shadow.soft}
+        >
           <Pressable
             accessibilityHint="Opens merchant suggestions and search"
             accessibilityRole="button"
+            className="min-h-[56px] flex-row items-center gap-2.5 py-2"
             onPress={() => {
               setMerchantSearch("");
               setMerchantPickerOpen(true);
             }}
-            style={styles.merchantSelect}
           >
-            <View
-              style={[
-                styles.merchantSelectIcon,
-                { backgroundColor: premiumTheme.colors.field },
-              ]}
-            >
+            <View className="h-9 w-9 items-center justify-center rounded-xl bg-field">
               <Store
                 color={premiumTheme.colors.ink}
                 size={17}
                 strokeWidth={2.4}
               />
             </View>
-            <View style={styles.merchantSelectCopy}>
-              <Text style={styles.merchantSelectLabel}>Merchant</Text>
+            <View className="min-w-0 flex-1">
+              <Text className="text-[10px] font-bold uppercase tracking-[0.8px] text-secondary">
+                Merchant
+              </Text>
               <Text
+                className={`mt-[3px] text-[14px] font-bold ${
+                  merchant ? "text-ink" : "text-[#8b929d]"
+                }`}
                 numberOfLines={1}
-                style={[
-                  styles.merchantSelectValue,
-                  !merchant && styles.merchantSelectPlaceholder,
-                ]}
               >
                 {merchant || "Choose or add merchant"}
               </Text>
             </View>
             {selectedMerchantId ? (
-              <View style={styles.merchantSelectedBadge}>
+              <View className="h-6 w-6 items-center justify-center rounded-xl bg-[#dcfce7]">
                 <Check color="#16a34a" size={14} strokeWidth={3} />
               </View>
             ) : null}
             <ChevronRight color="#94a3b8" size={18} strokeWidth={2.5} />
           </Pressable>
 
-          <View style={styles.transactionSecondaryDivider} />
+          <View className="ml-11 bg-[#e9ebef]" style={hairlineHeightStyle} />
 
           <TransactionDateField
             grouped
@@ -394,13 +427,13 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
             value={occurredAt}
           />
 
-          <View style={styles.transactionSecondaryDivider} />
+          <View className="ml-11 bg-[#e9ebef]" style={hairlineHeightStyle} />
 
           <Pressable
             accessibilityHint="Shows or hides the note editor"
             accessibilityRole="button"
+            className="min-h-11 flex-row items-center gap-2 py-1"
             onPress={() => setNotesExpanded((current) => !current)}
-            style={styles.transactionNoteRow}
           >
             <ReceiptText
               color={notes.trim() ? premiumTheme.colors.ink : "#94a3b8"}
@@ -408,11 +441,12 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
               strokeWidth={2.4}
             />
             <Text
+              className={`flex-1 text-[13px] ${
+                notes.trim()
+                  ? "font-bold text-ink"
+                  : "font-semibold text-[#8b929d]"
+              }`}
               numberOfLines={1}
-              style={[
-                styles.transactionNoteRowText,
-                notes.trim() && styles.transactionNoteRowTextFilled,
-              ]}
             >
               {notes.trim() ? notes.trim().split("\n")[0] : "Add a note"}
             </Text>
@@ -430,7 +464,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
             <MotiView
               animate={{ opacity: 1, translateY: 0 }}
               from={{ opacity: 0, translateY: -6 }}
-              style={styles.transactionInlineNote}
+              style={transactionInlineNoteStyle}
               transition={{
                 damping: 18,
                 mass: 0.7,
@@ -440,21 +474,24 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
             >
               <TextInput
                 autoFocus
+                className="min-h-[84px] rounded-2xl bg-field px-3.5 pt-3.5 text-[14px] font-bold text-ink"
                 multiline
                 onChangeText={(value) => {
                   setNotes(value);
                 }}
                 placeholder="Receipt reference or reminder"
                 placeholderTextColor="#8b929d"
-                style={[styles.transactionInput, styles.notesInput]}
+                style={{ textAlignVertical: "top" }}
                 value={notes}
               />
               <Pressable
+                className="min-h-[34px] flex-row items-center gap-1.5 self-end rounded-full bg-ink px-[15px]"
                 onPress={() => setNotesExpanded(false)}
-                style={styles.transactionNoteDoneButton}
               >
                 <Check color="#ffffff" size={14} strokeWidth={3} />
-                <Text style={styles.transactionNoteDoneButtonText}>Done</Text>
+                <Text className="text-[12px] font-extrabold text-white">
+                  Done
+                </Text>
               </Pressable>
             </MotiView>
           ) : null}
@@ -463,7 +500,10 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
         {error && <Text style={financeStyles.error}>{error}</Text>}
       </ScrollView>
 
-      <View style={styles.transactionSaveDock}>
+      <View
+        className="border-t-hairline border-t-[#f0f1f3] bg-white px-4 pb-3 pt-2.5"
+        style={saveDockShadowStyle}
+      >
         <SlideToSaveButton
           disabled={!canSave}
           loading={isSaving}
@@ -510,7 +550,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
               type: "spring",
             }}
           >
-            <View style={styles.merchantPickerContent}>
+            <View className="gap-3.5 p-[18px] pb-7">
               <View style={financeStyles.modalHeader}>
                 <View style={financeStyles.merchantPickerTitleBlock}>
                   <Text style={financeStyles.merchantPickerTitle}>Choose merchant</Text>
@@ -539,7 +579,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
               </View>
 
               <ScrollView
-                contentContainerStyle={styles.merchantPickerList}
+                contentContainerClassName="gap-[9px] pb-1"
                 keyboardShouldPersistTaps="handled"
               >
                 {filteredMerchants.map((item) => (
@@ -552,15 +592,18 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
                 ))}
 
                 {canUseNewMerchant ? (
-                  <Pressable onPress={useNewMerchant} style={styles.newMerchantRow}>
-                    <View style={styles.newMerchantIcon}>
+                  <Pressable
+                    className="min-h-16 flex-row items-center gap-3 rounded-[18px] bg-accent-soft px-3 py-2.5"
+                    onPress={useNewMerchant}
+                  >
+                    <View className="h-[38px] w-[38px] items-center justify-center rounded-[15px] bg-[#f1f5f9]">
                       <Plus color="#0f172a" size={18} strokeWidth={2.8} />
                     </View>
-                    <View style={styles.merchantOptionCopy}>
-                      <Text style={styles.merchantOptionTitle}>
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-[14px] font-black text-ink">
                         Add "{merchantSearch.trim()}"
                       </Text>
-                      <Text style={styles.merchantOptionMeta}>
+                      <Text className="mt-[3px] text-[12px] font-bold text-secondary">
                         Use as a new merchant for this entry
                       </Text>
                     </View>
@@ -595,332 +638,31 @@ function MerchantOptionRow({
 }) {
   return (
     <Pressable
+      className={`min-h-16 flex-row items-center gap-3 rounded-[18px] px-3 py-2.5 ${
+        selected ? "bg-accent-soft" : "bg-field"
+      }`}
       onPress={onPress}
-      style={[
-        styles.merchantOptionRow,
-        selected && styles.merchantOptionRowSelected,
-      ]}
     >
-      <View style={styles.merchantOptionIcon}>
+      <View className="h-[38px] w-[38px] items-center justify-center rounded-[15px] bg-[#f1f5f9]">
         <Store color="#0f172a" size={17} strokeWidth={2.4} />
       </View>
-      <View style={styles.merchantOptionCopy}>
-        <Text numberOfLines={1} style={styles.merchantOptionTitle}>
+      <View className="min-w-0 flex-1">
+        <Text className="text-[14px] font-black text-ink" numberOfLines={1}>
           {merchant.name}
         </Text>
-        <Text numberOfLines={1} style={styles.merchantOptionMeta}>
+        <Text
+          className="mt-[3px] text-[12px] font-bold text-secondary"
+          numberOfLines={1}
+        >
           {merchant.category?.name ?? "Uncategorized"} · Used{" "}
           {merchant.usage_count ?? 0} times
         </Text>
       </View>
       {selected ? (
-        <View style={styles.merchantOptionCheck}>
+        <View className="h-[26px] w-[26px] items-center justify-center rounded-[13px] bg-success">
           <Check color="#ffffff" size={14} strokeWidth={3} />
         </View>
       ) : null}
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  amountInput: {
-    color: "#0f172a",
-    flex: 1,
-    fontSize: 34,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-    letterSpacing: -0.9,
-    minHeight: 52,
-    paddingVertical: 0,
-  },
-  currencyPrefix: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 21,
-    fontWeight: "700",
-  },
-  merchantOptionCheck: {
-    alignItems: "center",
-    backgroundColor: "#16a34a",
-    borderRadius: 13,
-    height: 26,
-    justifyContent: "center",
-    width: 26,
-  },
-  merchantOptionCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  merchantOptionIcon: {
-    alignItems: "center",
-    backgroundColor: "#f1f5f9",
-    borderRadius: 15,
-    height: 38,
-    justifyContent: "center",
-    width: 38,
-  },
-  merchantOptionMeta: {
-    color: "#64748b",
-    fontSize: 12,
-    fontWeight: "700",
-    marginTop: 3,
-  },
-  merchantOptionRow: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 18,
-    flexDirection: "row",
-    gap: 12,
-    minHeight: 64,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  merchantOptionRowSelected: {
-    backgroundColor: premiumTheme.colors.accentSoft,
-  },
-  merchantOptionTitle: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  merchantPickerContent: {
-    gap: 14,
-    padding: 18,
-    paddingBottom: 28,
-  },
-  merchantPickerList: {
-    gap: 9,
-    paddingBottom: 4,
-  },
-  merchantSelect: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-    minHeight: 56,
-    paddingVertical: 8,
-  },
-  merchantSelectCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  merchantSelectIcon: {
-    alignItems: "center",
-    backgroundColor: "#f1f5f9",
-    borderRadius: 12,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  merchantSelectLabel: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
-  merchantSelectPlaceholder: {
-    color: "#8b929d",
-  },
-  merchantSelectValue: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "700",
-    marginTop: 3,
-  },
-  merchantSelectedBadge: {
-    alignItems: "center",
-    backgroundColor: "#dcfce7",
-    borderRadius: 12,
-    height: 24,
-    justifyContent: "center",
-    width: 24,
-  },
-  newMerchantIcon: {
-    alignItems: "center",
-    backgroundColor: "#f1f5f9",
-    borderRadius: 15,
-    height: 38,
-    justifyContent: "center",
-    width: 38,
-  },
-  newMerchantRow: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.accentSoft,
-    borderRadius: 18,
-    flexDirection: "row",
-    gap: 12,
-    minHeight: 64,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  notesInput: {
-    minHeight: 84,
-    paddingTop: 14,
-    textAlignVertical: "top",
-  },
-  transactionAmountHero: {
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginTop: 16,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    shadowColor: "#101828",
-    shadowOffset: {
-      height: 6,
-      width: 0,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-  },
-  transactionAmountLabel: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
-  },
-  transactionAmountRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 6,
-  },
-  transactionContainer: {
-    backgroundColor: "#ffffff",
-    paddingBottom: 28,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-  },
-  transactionEntryScreen: {
-    backgroundColor: "#ffffff",
-    flex: 1,
-  },
-  transactionEntryScroll: {
-    backgroundColor: "#ffffff",
-    flex: 1,
-  },
-  transactionInlineNote: {
-    gap: 10,
-    paddingBottom: 14,
-    paddingTop: 2,
-  },
-  transactionNoteRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-    minHeight: 44,
-    paddingVertical: 4,
-  },
-  transactionNoteRowText: {
-    color: "#8b929d",
-    flex: 1,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  transactionNoteRowTextFilled: {
-    color: premiumTheme.colors.ink,
-    fontWeight: "700",
-  },
-  transactionNoteDoneButton: {
-    alignItems: "center",
-    alignSelf: "flex-end",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 6,
-    minHeight: 34,
-    paddingHorizontal: 15,
-  },
-  transactionNoteDoneButtonText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  transactionInput: {
-    backgroundColor: "#f5f5f7",
-    borderRadius: 16,
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "700",
-    minHeight: 52,
-    paddingHorizontal: 14,
-  },
-  transactionSaveDock: {
-    backgroundColor: "#ffffff",
-    borderTopColor: "#f0f1f3",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingBottom: 12,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    shadowColor: "#0f172a",
-    shadowOffset: {
-      height: -6,
-      width: 0,
-    },
-    shadowOpacity: 0.035,
-    shadowRadius: 16,
-  },
-  transactionSecondaryDivider: {
-    backgroundColor: "#e9ebef",
-    height: StyleSheet.hairlineWidth,
-    marginLeft: 44,
-  },
-  transactionSecondarySection: {
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    shadowColor: "#101828",
-    shadowOffset: {
-      height: 6,
-      width: 0,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-  },
-  transactionSectionDivider: {
-    backgroundColor: premiumTheme.colors.divider,
-    height: StyleSheet.hairlineWidth,
-    marginVertical: 18,
-  },
-  transactionSelectCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  transactionTypeButton: {
-    alignItems: "center",
-    borderRadius: 11,
-    flex: 1,
-    flexDirection: "row",
-    gap: 6,
-    justifyContent: "center",
-    minHeight: 42,
-    zIndex: 1,
-  },
-  transactionTypeIndicator: {
-    backgroundColor: "#0f172a",
-    borderRadius: 11,
-    bottom: 3,
-    left: 3,
-    position: "absolute",
-    top: 3,
-  },
-  transactionTypeRow: {
-    backgroundColor: "#f2f3f5",
-    borderRadius: 15,
-    flexDirection: "row",
-    marginBottom: 1,
-    minHeight: 48,
-    padding: 3,
-  },
-  transactionTypeText: {
-    color: "#334155",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  transactionTypeTextActive: {
-    color: "#ffffff",
-  },
-});

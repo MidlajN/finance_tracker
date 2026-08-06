@@ -4,13 +4,12 @@ import { MotiView } from "moti";
 import {
   Check,
   ChevronRight,
-  CreditCard,
-  LayoutGrid,
   Pencil,
   Plus,
   Search,
   Store,
   X,
+  Zap,
 } from "lucide-react-native";
 import {
   KeyboardAvoidingView,
@@ -18,12 +17,12 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 
+import { matchesRule } from "@finance/finance-core";
 import { normalizeMerchantName } from "@finance/shared-utils";
 
 import { AccountPickerField } from "../components/finance/AccountPicker";
@@ -46,6 +45,16 @@ type EventReviewScreenProps = NativeStackScreenProps<
   RootStackParamList,
   "EventReview"
 >;
+
+// MotiView is not NativeWind-interop'd, so the alias editor card keeps a
+// plain style object.
+const aliasEditorCardStyle = {
+  alignSelf: "stretch",
+  backgroundColor: "#ffffff",
+  borderRadius: premiumTheme.radius.surface,
+  padding: 22,
+  ...premiumTheme.shadow.raised,
+} as const;
 
 function getMerchantInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -70,6 +79,7 @@ export function EventReviewScreen({
   const categories = useOfflineStore((state) => state.categories);
   const merchants = useOfflineStore((state) => state.merchants);
   const transactions = useOfflineStore((state) => state.transactions);
+  const rules = useOfflineStore((state) => state.rules);
   const assignEventMerchant = useOfflineStore(
     (state) => state.assignEventMerchant
   );
@@ -84,6 +94,9 @@ export function EventReviewScreen({
   );
   const ignoreFinancialEvent = useOfflineStore(
     (state) => state.ignoreFinancialEvent
+  );
+  const createFinancialRule = useOfflineStore(
+    (state) => state.createFinancialRule
   );
   const synchronize = useSyncStore((state) => state.synchronize);
   const event = events.find((item) => item.id === route.params.eventId);
@@ -166,6 +179,23 @@ export function EventReviewScreen({
     );
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [createRuleEnabled, setCreateRuleEnabled] = useState(false);
+  const [autoConfirmEnabled, setAutoConfirmEnabled] = useState(false);
+  const ruleAlreadyCovers = useMemo(() => {
+    const raw = event?.merchant_name_raw ?? "";
+
+    if (!raw.trim()) {
+      return false;
+    }
+
+    return rules.some(
+      (rule) => (rule.enabled ?? true) && matchesRule(raw, rule)
+    );
+  }, [event?.merchant_name_raw, rules]);
+  const canOfferRule =
+    Boolean(event?.merchant_name_raw?.trim()) &&
+    !ruleAlreadyCovers &&
+    Boolean(linkedMerchant || activeCategoryId);
   const [savingAction, setSavingAction] = useState<"confirm" | "ignore" | null>(
     null
   );
@@ -285,6 +315,20 @@ export function EventReviewScreen({
     setError(null);
 
     try {
+      if (canOfferRule && createRuleEnabled) {
+        await createFinancialRule({
+          auto_confirm: autoConfirmEnabled,
+          category_id: activeCategoryId ?? null,
+          match_operator: "equals",
+          match_value: event.merchant_name_raw ?? "",
+          merchant_id: event.merchant_id ?? null,
+          name:
+            linkedMerchant?.name ??
+            event.merchant_name_raw ??
+            "Untitled rule",
+        });
+      }
+
       await confirmFinancialEvent(event.id);
       await synchronize();
       // Close the overlay Modal BEFORE navigating: unmounting a screen
@@ -332,10 +376,15 @@ export function EventReviewScreen({
 
   if (!event) {
     return (
-      <View style={styles.eventReviewContainer}>
-        <View style={styles.eventReviewCard}>
-          <Text style={styles.eventReviewTitle}>Event not found</Text>
-          <Text style={styles.eventReviewSubtitle}>
+      <View className="gap-[18px] bg-canvas p-5 pb-9">
+        <View
+          className="gap-3.5 rounded-section border border-border bg-white p-4"
+          style={premiumTheme.shadow.soft}
+        >
+          <Text className="text-[21px] font-black text-ink">
+            Event not found
+          </Text>
+          <Text className="text-[13px] leading-[19px] text-secondary">
             This notification may have already been processed.
           </Text>
         </View>
@@ -344,41 +393,76 @@ export function EventReviewScreen({
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.eventReviewContainer}>
-      <View style={styles.transactionHero}>
-        <Text style={styles.transactionKicker}>Review event</Text>
-        <Text style={styles.transactionTitle}>Confirm transaction</Text>
-        <Text style={styles.transactionSubtitle}>
+    <ScrollView contentContainerClassName="gap-[18px] bg-canvas p-5 pb-9">
+      <View className="gap-1 pt-0.5">
+        <Text className="text-[11px] font-bold uppercase tracking-[1.2px] text-secondary">
+          Review event
+        </Text>
+        <Text className="text-[26px] font-black text-ink">
+          Confirm transaction
+        </Text>
+        <Text className="text-[13px] leading-[19px] text-secondary">
           Check the account and category before adding this transaction.
         </Text>
       </View>
 
-      <View style={styles.eventReviewSummaryCard}>
-        <View style={styles.eventReviewIcon}>
+      <View className="flex-row items-center gap-3 rounded-section bg-field p-4">
+        <View className="h-[46px] w-[46px] items-center justify-center rounded-2xl border border-border bg-white">
           <Store color="#0f172a" size={20} strokeWidth={2.6} />
         </View>
-        <View style={styles.eventReviewSummaryCopy}>
-          <Pressable
-            onPress={() => {
-              setAliasDraft(event.merchant_name_raw ?? "");
-              setAliasEditorVisible(true);
-            }}
-            style={styles.eventReviewMerchantRow}
-          >
-            <Text numberOfLines={1} style={styles.eventReviewMerchant}>
-              {linkedMerchant?.name ??
-                event.merchant_name_raw ??
-                "Unknown merchant"}
-            </Text>
-            <View style={styles.eventReviewMerchantEdit}>
-              <Pencil
-                color={premiumTheme.colors.secondary}
-                size={11}
-                strokeWidth={2.4}
-              />
-            </View>
-          </Pressable>
-          <Text style={styles.eventReviewMeta}>
+        <View className="min-w-0 flex-1">
+          {linkedMerchant ? (
+            <>
+              <Text
+                className="text-[15px] font-extrabold text-ink"
+                numberOfLines={1}
+              >
+                {linkedMerchant.name}
+              </Text>
+              <Pressable
+                className="mt-[2px] max-w-full flex-row items-center gap-1.5 self-start"
+                onPress={() => {
+                  setAliasDraft(event.merchant_name_raw ?? "");
+                  setAliasEditorVisible(true);
+                }}
+              >
+                <Text
+                  className="shrink text-[11.5px] font-medium text-secondary"
+                  numberOfLines={1}
+                >
+                  Captured as <Text className="font-semibold text-gray-800">"{event.merchant_name_raw ?? "unknown"}"</Text>
+                </Text>
+                <Pencil
+                  color={premiumTheme.colors.secondary}
+                  size={10}
+                  strokeWidth={2.4}
+                />
+              </Pressable>
+            </>
+          ) : (
+            <Pressable
+              className="max-w-full flex-row items-center gap-1.5 self-start"
+              onPress={() => {
+                setAliasDraft(event.merchant_name_raw ?? "");
+                setAliasEditorVisible(true);
+              }}
+            >
+              <Text
+                className="shrink text-[15px] font-extrabold text-ink"
+                numberOfLines={1}
+              >
+                {event.merchant_name_raw ?? "Unknown merchant"}
+              </Text>
+              <View className="h-5 w-5 items-center justify-center rounded-full bg-field">
+                <Pencil
+                  color={premiumTheme.colors.secondary}
+                  size={11}
+                  strokeWidth={2.4}
+                />
+              </View>
+            </Pressable>
+          )}
+          <Text className="mt-[3px] text-[12px] font-medium text-secondary">
             {event.direction === "credit" ? "Income" : "Expense"} ·{" "}
             {new Date(event.occurred_at).toLocaleString("en-IN", {
               dateStyle: "medium",
@@ -386,80 +470,60 @@ export function EventReviewScreen({
             })}
           </Text>
           <Text
+            className={`mt-[5px] text-[12px] font-bold ${
+              selectedAccount ? "text-ink" : "text-muted"
+            }`}
             numberOfLines={1}
-            style={[
-              styles.eventReviewAccountMeta,
-              !selectedAccount && styles.eventReviewAccountMetaEmpty,
-            ]}
           >
             Account · {selectedAccount?.name ?? "Unassigned"}
           </Text>
         </View>
-        <Text style={styles.eventReviewAmount}>
+        <Text className="ml-2 text-[17px] font-extrabold text-ink tabular-nums">
           {MobileDashboardService.getFormattedBalance(event.amount)}
         </Text>
       </View>
 
-      <View style={styles.eventReviewCard}>
-        <View style={styles.eventReviewSectionHeader}>
-          <View style={styles.eventReviewSectionIcon}>
-            <Store
-              color={premiumTheme.colors.ink}
-              size={14}
-              strokeWidth={2.3}
-            />
-          </View>
-          <Text style={styles.eventReviewSectionTitle}>Merchant</Text>
-        </View>
-
+      <View
+        className="gap-3 rounded-section border border-border bg-white p-4"
+        style={premiumTheme.shadow.soft}
+      >
+        <Text className="text-[10px] font-bold uppercase tracking-[1px] text-secondary">
+          Merchant
+        </Text>
         <Pressable
+          className="min-h-12 flex-row items-center gap-2.5 rounded-control bg-field px-3.5 active:opacity-[0.62]"
           onPress={() => setMerchantPickerVisible(true)}
-          style={({ pressed }) => [
-            styles.merchantLinkRow,
-            pressed && financeStyles.saveButtonDisabled,
-          ]}
         >
-          <View style={styles.merchantLinkCopy}>
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.merchantLinkName,
-                !linkedMerchant && styles.merchantLinkNameEmpty,
-              ]}
-            >
-              {linkedMerchant?.name ?? "Not linked"}
-            </Text>
-            <Text numberOfLines={1} style={styles.merchantLinkMeta}>
-              {linkedMerchant
-                ? `Captured as ${event.merchant_name_raw ?? "unknown"}`
-                : "Link a merchant so future captures match automatically."}
-            </Text>
-          </View>
+          <Store
+            color={premiumTheme.colors.ink}
+            size={15}
+            strokeWidth={2.4}
+          />
+          <Text
+            className={`min-w-0 flex-1 text-[13.5px] font-bold ${
+              linkedMerchant ? "text-ink" : "text-muted"
+            }`}
+            numberOfLines={1}
+          >
+            {linkedMerchant?.name ?? "Link a merchant"}
+          </Text>
           {linkedMerchant ? (
-            <View style={styles.merchantLinkedBadge}>
-              <Check color="#16a34a" size={13} strokeWidth={3} />
+            <View className="h-5 w-5 items-center justify-center rounded-full bg-[#dcfce7]">
+              <Check color="#16a34a" size={12} strokeWidth={3} />
             </View>
           ) : null}
           <ChevronRight
             color={premiumTheme.colors.muted}
-            size={18}
+            size={16}
             strokeWidth={2.4}
           />
         </Pressable>
-      </View>
 
-      <View style={styles.eventReviewCard}>
-        <View style={styles.eventReviewSectionHeader}>
-          <View style={styles.eventReviewSectionIcon}>
-            <CreditCard
-              color={premiumTheme.colors.ink}
-              size={14}
-              strokeWidth={2.3}
-            />
-          </View>
-          <Text style={styles.eventReviewSectionTitle}>Account</Text>
-        </View>
+        <View className="my-1 h-px bg-divider" />
 
+        <Text className="text-[10px] font-bold uppercase tracking-[1px] text-secondary">
+          Account
+        </Text>
         <AccountPickerField
           accounts={accounts}
           onAddAccount={() =>
@@ -474,20 +538,12 @@ export function EventReviewScreen({
           selectedAccountId={activeAccountId}
           showHeader={false}
         />
-      </View>
 
-      <View style={styles.eventReviewCard}>
-        <View style={styles.eventReviewSectionHeader}>
-          <View style={styles.eventReviewSectionIcon}>
-            <LayoutGrid
-              color={premiumTheme.colors.ink}
-              size={14}
-              strokeWidth={2.3}
-            />
-          </View>
-          <Text style={styles.eventReviewSectionTitle}>Category</Text>
-        </View>
+        <View className="my-1 h-px bg-divider" />
 
+        <Text className="text-[10px] font-bold uppercase tracking-[1px] text-secondary">
+          Category
+        </Text>
         <CategoryPickerField
           categories={categories}
           frequentCategoryIds={frequentCategoryIds}
@@ -499,28 +555,112 @@ export function EventReviewScreen({
           showHeader={false}
         />
 
+        {canOfferRule ? (
+          <>
+            <View className="my-1 h-px bg-divider" />
+
+            <Pressable
+              className="min-h-11 flex-row items-center gap-2.5 active:opacity-[0.62]"
+              onPress={() => {
+                setCreateRuleEnabled((enabled) => {
+                  if (enabled) {
+                    setAutoConfirmEnabled(false);
+                  }
+
+                  return !enabled;
+                });
+              }}
+            >
+              <Zap
+                color={premiumTheme.colors.ink}
+                size={15}
+                strokeWidth={2.4}
+              />
+              <View className="min-w-0 flex-1">
+                <Text className="text-[13px] font-bold text-ink">
+                  Remember for next time
+                </Text>
+                <Text
+                  className="mt-[2px] text-[11px] leading-[15px] font-medium text-secondary"
+                  numberOfLines={2}
+                >
+                  Apply this{" "}
+                  {linkedMerchant && activeCategoryId
+                    ? "merchant and category"
+                    : linkedMerchant
+                      ? "merchant"
+                      : "category"}{" "}
+                  automatically when "{event.merchant_name_raw}" appears
+                  again.
+                </Text>
+              </View>
+              <View
+                className={`h-5 w-5 items-center justify-center rounded-full ${
+                  createRuleEnabled
+                    ? "bg-ink"
+                    : "border-[1.5px] border-border bg-white"
+                }`}
+              >
+                {createRuleEnabled ? (
+                  <Check color="#ffffff" size={12} strokeWidth={3} />
+                ) : null}
+              </View>
+            </Pressable>
+
+            {createRuleEnabled ? (
+              <Pressable
+                className="min-h-9 flex-row items-center gap-2.5 pl-[25px] active:opacity-[0.62]"
+                onPress={() =>
+                  setAutoConfirmEnabled((enabled) => !enabled)
+                }
+              >
+                <View className="min-w-0 flex-1">
+                  <Text className="text-[13px] font-bold text-ink">
+                    Skip review next time
+                  </Text>
+                  <Text className="mt-[2px] text-[11px] leading-[15px] font-medium text-secondary">
+                    Future captures confirm instantly as transactions.
+                  </Text>
+                </View>
+                <View
+                  className={`h-5 w-5 items-center justify-center rounded-full ${
+                    autoConfirmEnabled
+                      ? "bg-ink"
+                      : "border-[1.5px] border-border bg-white"
+                  }`}
+                >
+                  {autoConfirmEnabled ? (
+                    <Check color="#ffffff" size={12} strokeWidth={3} />
+                  ) : null}
+                </View>
+              </Pressable>
+            ) : null}
+          </>
+        ) : null}
+      </View>
+
+      <View className="gap-2.5">
         {error && <Text style={financeStyles.error}>{error}</Text>}
 
-        <View style={styles.eventReviewActions}>
+        <View className="flex-row gap-2.5">
           <Pressable
+            className={`min-h-[52px] flex-1 items-center justify-center rounded-full bg-field ${
+              isSaving ? "opacity-[0.62]" : ""
+            }`}
             disabled={isSaving}
             onPress={handleIgnore}
-            style={[
-              styles.eventReviewSecondaryButton,
-              isSaving && financeStyles.saveButtonDisabled,
-            ]}
           >
-            <Text style={styles.eventReviewSecondaryButtonText}>Ignore</Text>
+            <Text className="text-[14px] font-bold text-ink">Ignore</Text>
           </Pressable>
           <Pressable
+            className={`min-h-[52px] flex-1 items-center justify-center rounded-full bg-ink ${
+              isSaving ? "opacity-[0.62]" : ""
+            }`}
             disabled={isSaving}
             onPress={handleConfirm}
-            style={[
-              styles.eventReviewPrimaryButton,
-              isSaving && financeStyles.saveButtonDisabled,
-            ]}
+            style={premiumTheme.shadow.soft}
           >
-            <Text style={styles.eventReviewPrimaryButtonText}>
+            <Text className="text-[14px] font-bold text-white">
               {isSaving ? "Saving..." : "Confirm"}
             </Text>
           </Pressable>
@@ -535,7 +675,7 @@ export function EventReviewScreen({
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.aliasEditorBackdrop}
+          className="flex-1 items-center justify-center bg-ink/40 p-7"
         >
           <Pressable
             onPress={() => setAliasEditorVisible(false)}
@@ -544,7 +684,7 @@ export function EventReviewScreen({
           <MotiView
             animate={{ opacity: 1, scale: 1 }}
             from={{ opacity: 0, scale: 0.94 }}
-            style={styles.aliasEditorCard}
+            style={aliasEditorCardStyle}
             transition={{
               damping: 17,
               mass: 0.7,
@@ -552,16 +692,19 @@ export function EventReviewScreen({
               type: "spring",
             }}
           >
-            <Text style={styles.aliasEditorTitle}>Edit captured name</Text>
-            <Text style={styles.aliasEditorSubtitle}>
+            <Text className="text-[17px] font-extrabold tracking-[-0.3px] text-ink">
+              Edit captured name
+            </Text>
+            <Text className="mt-1.5 text-[12.5px] leading-[18px] text-secondary">
               Corrects the raw name on this capture only. Use the Merchant
               section below to link a merchant.
             </Text>
 
-            <View style={styles.aliasEditorInputWrap}>
+            <View className="mt-4 min-h-12 flex-row items-center gap-[9px] rounded-control bg-field px-3.5">
               <Store color="#7b818c" size={17} strokeWidth={2.3} />
               <TextInput
                 autoFocus
+                className="flex-1 py-0 text-[14.5px] font-semibold text-ink"
                 onChangeText={setAliasDraft}
                 onSubmitEditing={() => {
                   void handleSaveAlias();
@@ -569,33 +712,27 @@ export function EventReviewScreen({
                 placeholder="Merchant name"
                 placeholderTextColor="#8b929d"
                 returnKeyType="done"
-                style={styles.aliasEditorInput}
                 value={aliasDraft}
               />
             </View>
 
-            <View style={styles.aliasEditorFooter}>
+            <View className="mt-[18px] flex-row gap-[11px]">
               <Pressable
+                className="min-h-12 flex-1 items-center justify-center rounded-control bg-field active:opacity-[0.62]"
                 onPress={() => setAliasEditorVisible(false)}
-                style={({ pressed }) => [
-                  styles.aliasEditorCancelButton,
-                  pressed && financeStyles.saveButtonDisabled,
-                ]}
               >
-                <Text style={styles.aliasEditorCancelText}>Cancel</Text>
+                <Text className="text-[14px] font-bold text-ink">Cancel</Text>
               </Pressable>
               <Pressable
+                className={`min-h-12 flex-1 items-center justify-center rounded-control bg-ink active:opacity-[0.62] ${
+                  !aliasDraft.trim() || isSavingAlias ? "opacity-[0.62]" : ""
+                }`}
                 disabled={!aliasDraft.trim() || isSavingAlias}
                 onPress={() => {
                   void handleSaveAlias();
                 }}
-                style={({ pressed }) => [
-                  styles.aliasEditorSaveButton,
-                  (pressed || !aliasDraft.trim() || isSavingAlias) &&
-                    financeStyles.saveButtonDisabled,
-                ]}
               >
-                <Text style={styles.aliasEditorSaveText}>
+                <Text className="text-[14px] font-extrabold text-white">
                   {isSavingAlias ? "Saving..." : "Save"}
                 </Text>
               </Pressable>
@@ -635,7 +772,7 @@ export function EventReviewScreen({
               type: "spring",
             }}
           >
-            <View style={styles.merchantPickerContent}>
+            <View className="gap-3.5 px-5 pb-6 pt-5">
               <View style={financeStyles.modalHeader}>
                 <View style={financeStyles.merchantPickerTitleBlock}>
                   <Text style={financeStyles.merchantPickerTitle}>
@@ -669,35 +806,33 @@ export function EventReviewScreen({
               </View>
 
               <ScrollView
-                contentContainerStyle={styles.merchantPickerList}
+                className="max-h-[380px]"
+                contentContainerClassName="gap-1 pb-2"
                 keyboardShouldPersistTaps="handled"
-                style={styles.merchantPickerViewport}
               >
                 {canCreateMerchant ? (
                   <Pressable
+                    className={`min-h-[56px] flex-row items-center gap-3 rounded-control bg-field px-2.5 active:opacity-[0.62] ${
+                      isCreatingMerchant ? "opacity-[0.62]" : ""
+                    }`}
                     disabled={isCreatingMerchant}
                     onPress={() => {
                       void handleCreateMerchant();
                     }}
-                    style={({ pressed }) => [
-                      styles.merchantCreateRow,
-                      (pressed || isCreatingMerchant) &&
-                        financeStyles.saveButtonDisabled,
-                    ]}
                   >
-                    <View style={styles.merchantCreateIcon}>
+                    <View className="h-[38px] w-[38px] items-center justify-center rounded-full bg-ink">
                       <Plus color="#ffffff" size={16} strokeWidth={2.8} />
                     </View>
-                    <View style={styles.merchantPickerRowCopy}>
+                    <View className="min-w-0 flex-1">
                       <Text
+                        className="text-[14px] font-bold text-ink"
                         numberOfLines={1}
-                        style={styles.merchantPickerRowName}
                       >
                         {isCreatingMerchant
                           ? "Creating..."
                           : `Create "${trimmedMerchantSearch}"`}
                       </Text>
-                      <Text style={styles.merchantPickerRowMeta}>
+                      <Text className="mt-0.5 text-[11px] font-medium text-secondary">
                         New merchant, linked to this transaction
                       </Text>
                     </View>
@@ -708,35 +843,33 @@ export function EventReviewScreen({
 
                   return (
                     <Pressable
+                      className={`min-h-[54px] flex-row items-center gap-3 rounded-control px-2.5 active:opacity-[0.62] ${
+                        selected ? "bg-field" : ""
+                      }`}
                       key={merchant.id}
                       onPress={() => {
                         void handleMerchant(merchant.id);
                       }}
-                      style={({ pressed }) => [
-                        styles.merchantPickerRow,
-                        selected && styles.merchantPickerRowSelected,
-                        pressed && financeStyles.saveButtonDisabled,
-                      ]}
                     >
-                      <View style={styles.merchantAvatar}>
-                        <Text style={styles.merchantAvatarText}>
+                      <View className="h-[38px] w-[38px] items-center justify-center rounded-full bg-field">
+                        <Text className="text-[13px] font-bold text-ink">
                           {getMerchantInitials(merchant.name)}
                         </Text>
                       </View>
-                      <View style={styles.merchantPickerRowCopy}>
+                      <View className="min-w-0 flex-1">
                         <Text
+                          className="text-[14px] font-bold text-ink"
                           numberOfLines={1}
-                          style={styles.merchantPickerRowName}
                         >
                           {merchant.name}
                         </Text>
-                        <Text style={styles.merchantPickerRowMeta}>
+                        <Text className="mt-0.5 text-[11px] font-medium text-secondary">
                           {merchant.usage_count ?? 0} transactions
                         </Text>
                       </View>
                       {suggested && !selected ? (
-                        <View style={styles.merchantSuggestedBadge}>
-                          <Text style={styles.merchantSuggestedText}>
+                        <View className="rounded-full bg-field px-[9px] py-1">
+                          <Text className="text-[10px] font-bold uppercase tracking-[0.4px] text-secondary">
                             Suggested
                           </Text>
                         </View>
@@ -763,20 +896,17 @@ export function EventReviewScreen({
                 ) : null}
                 {linkedMerchant ? (
                   <Pressable
+                    className="mt-1.5 min-h-11 flex-row items-center justify-center gap-2 active:opacity-[0.62]"
                     onPress={() => {
                       void handleMerchant(null);
                     }}
-                    style={({ pressed }) => [
-                      styles.merchantUnlinkRow,
-                      pressed && financeStyles.saveButtonDisabled,
-                    ]}
                   >
                     <X
                       color={premiumTheme.colors.danger}
                       size={15}
                       strokeWidth={2.6}
                     />
-                    <Text style={styles.merchantUnlinkText}>
+                    <Text className="text-[13px] font-semibold text-danger">
                       Remove merchant link
                     </Text>
                   </Pressable>
@@ -803,372 +933,3 @@ export function EventReviewScreen({
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  merchantLinkCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  merchantLinkMeta: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "500",
-    marginTop: 3,
-  },
-  merchantLinkName: {
-    color: premiumTheme.colors.ink,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  merchantLinkNameEmpty: {
-    color: premiumTheme.colors.muted,
-  },
-  merchantLinkRow: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 14,
-    flexDirection: "row",
-    gap: 10,
-    minHeight: 56,
-    paddingHorizontal: 14,
-  },
-  merchantLinkedBadge: {
-    alignItems: "center",
-    backgroundColor: "#dcfce7",
-    borderRadius: premiumTheme.radius.pill,
-    height: 22,
-    justifyContent: "center",
-    width: 22,
-  },
-  merchantPickerContent: {
-    gap: 14,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
-  merchantPickerList: {
-    gap: 4,
-    paddingBottom: 8,
-  },
-  merchantPickerRow: {
-    alignItems: "center",
-    borderRadius: 14,
-    flexDirection: "row",
-    gap: 12,
-    minHeight: 54,
-    paddingHorizontal: 10,
-  },
-  merchantPickerRowCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  merchantAvatar: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: premiumTheme.radius.pill,
-    height: 38,
-    justifyContent: "center",
-    width: 38,
-  },
-  merchantAvatarText: {
-    color: premiumTheme.colors.ink,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  merchantCreateIcon: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: premiumTheme.radius.pill,
-    height: 38,
-    justifyContent: "center",
-    width: 38,
-  },
-  merchantCreateRow: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 14,
-    flexDirection: "row",
-    gap: 12,
-    minHeight: 56,
-    paddingHorizontal: 10,
-  },
-  merchantSuggestedBadge: {
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: premiumTheme.radius.pill,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  merchantSuggestedText: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-  },
-  merchantUnlinkRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-    justifyContent: "center",
-    marginTop: 6,
-    minHeight: 44,
-  },
-  merchantUnlinkText: {
-    color: premiumTheme.colors.danger,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  merchantPickerRowMeta: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 11,
-    fontWeight: "500",
-    marginTop: 2,
-  },
-  merchantPickerRowName: {
-    color: premiumTheme.colors.ink,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  merchantPickerRowSelected: {
-    backgroundColor: premiumTheme.colors.field,
-  },
-  merchantPickerViewport: {
-    maxHeight: 380,
-  },
-  eventReviewAccountMeta: {
-    color: "#0f172a",
-    fontSize: 12,
-    fontWeight: "700",
-    marginTop: 5,
-  },
-  eventReviewAccountMetaEmpty: {
-    color: "#94a3b8",
-  },
-  eventReviewActions: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 4,
-  },
-  eventReviewAmount: {
-    color: "#0f172a",
-    fontSize: 17,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "800",
-    marginLeft: 8,
-  },
-  eventReviewCard: {
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 20,
-    borderWidth: 1,
-    gap: 14,
-    padding: 16,
-    ...premiumTheme.shadow.soft,
-  },
-  eventReviewContainer: {
-    backgroundColor: premiumTheme.colors.canvas,
-    gap: 18,
-    padding: 20,
-    paddingBottom: 36,
-  },
-  eventReviewIcon: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderColor: premiumTheme.colors.border,
-    borderRadius: 16,
-    borderWidth: 1,
-    height: 46,
-    justifyContent: "center",
-    width: 46,
-  },
-  aliasEditorBackdrop: {
-    alignItems: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.4)",
-    flex: 1,
-    justifyContent: "center",
-    padding: 28,
-  },
-  aliasEditorCancelButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 14,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 48,
-  },
-  aliasEditorCancelText: {
-    color: premiumTheme.colors.ink,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  aliasEditorCard: {
-    alignSelf: "stretch",
-    backgroundColor: "#ffffff",
-    borderRadius: premiumTheme.radius.surface,
-    padding: 22,
-    ...premiumTheme.shadow.raised,
-  },
-  aliasEditorFooter: {
-    flexDirection: "row",
-    gap: 11,
-    marginTop: 18,
-  },
-  aliasEditorInput: {
-    color: premiumTheme.colors.ink,
-    flex: 1,
-    fontSize: 14.5,
-    fontWeight: "600",
-    paddingVertical: 0,
-  },
-  aliasEditorInputWrap: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 14,
-    flexDirection: "row",
-    gap: 9,
-    marginTop: 16,
-    minHeight: 48,
-    paddingHorizontal: 14,
-  },
-  aliasEditorSaveButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: 14,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 48,
-  },
-  aliasEditorSaveText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  aliasEditorSubtitle: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12.5,
-    lineHeight: 18,
-    marginTop: 6,
-  },
-  aliasEditorTitle: {
-    color: premiumTheme.colors.ink,
-    fontSize: 17,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-  },
-  eventReviewMerchant: {
-    color: "#0f172a",
-    flexShrink: 1,
-    fontSize: 15,
-    fontWeight: "800",
-  },
-  eventReviewMerchantEdit: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 999,
-    height: 20,
-    justifyContent: "center",
-    width: 20,
-  },
-  eventReviewMerchantRow: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    gap: 6,
-    maxWidth: "100%",
-  },
-  eventReviewMeta: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 12,
-    fontWeight: "500",
-    marginTop: 3,
-  },
-  eventReviewPrimaryButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.ink,
-    borderRadius: premiumTheme.radius.pill,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 52,
-    ...premiumTheme.shadow.soft,
-  },
-  eventReviewPrimaryButtonText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  eventReviewSecondaryButton: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: premiumTheme.radius.pill,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 52,
-  },
-  eventReviewSecondaryButtonText: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  eventReviewSectionHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
-  eventReviewSectionIcon: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 10,
-    height: 29,
-    justifyContent: "center",
-    width: 29,
-  },
-  eventReviewSectionTitle: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  eventReviewSubtitle: {
-    color: "#64748b",
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  eventReviewSummaryCard: {
-    alignItems: "center",
-    backgroundColor: premiumTheme.colors.field,
-    borderRadius: 20,
-    flexDirection: "row",
-    gap: 12,
-    padding: 16,
-  },
-  eventReviewSummaryCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  eventReviewTitle: {
-    color: "#0f172a",
-    fontSize: 21,
-    fontWeight: "900",
-  },
-  transactionHero: {
-    gap: 4,
-    paddingTop: 2,
-  },
-  transactionKicker: {
-    color: premiumTheme.colors.secondary,
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
-  transactionSubtitle: {
-    color: "#64748b",
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  transactionTitle: {
-    color: "#0f172a",
-    fontSize: 26,
-    fontWeight: "900",
-    letterSpacing: 0,
-  },
-});

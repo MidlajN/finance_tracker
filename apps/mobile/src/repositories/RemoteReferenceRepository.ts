@@ -376,6 +376,36 @@ export class RemoteBudgetRepository {
 }
 
 export class RemoteFinancialRuleRepository {
+  static async create(localId: string, rule: CachedFinancialRule) {
+    const userId = await getUserId();
+    const { data, error } = await supabase
+      .from("financial_rules")
+      .insert({
+        auto_confirm: rule.auto_confirm,
+        category_id: rule.category_id ?? null,
+        enabled: rule.enabled,
+        id: localId,
+        match_operator: rule.match_operator,
+        match_value: rule.match_value,
+        merchant_id: rule.merchant_id ?? null,
+        name: rule.name,
+        priority: rule.priority,
+        user_id: userId,
+      })
+      .select(`
+        *,
+        merchant:merchants(*),
+        category:categories(*)
+      `)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return toCachedRule(data as RuleRow);
+  }
+
   static async list() {
     const { data, error } = await supabase
       .from("financial_rules")
