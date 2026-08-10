@@ -10,7 +10,6 @@ import {
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -197,7 +196,7 @@ export function AccountPickerField({
         visible={visible}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior="padding"
           style={financeStyles.modalBackdrop}
         >
           <Pressable

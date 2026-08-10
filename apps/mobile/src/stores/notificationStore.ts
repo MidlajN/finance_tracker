@@ -3,6 +3,7 @@ import { create } from "zustand";
 
 import type { NotificationParseMiss } from "@finance/shared-types";
 
+import { supabase } from "../lib/supabase";
 import { LocalNotificationMissRepository } from "../repositories/LocalDatabaseRepository";
 import {
   type NativeFinancialEventNotificationAction,
@@ -11,7 +12,6 @@ import {
   type NativeNotificationPayload,
   type ParsedNotificationResult,
 } from "../services/NotificationService";
-import { useAuthStore } from "./authStore";
 import { useOfflineStore } from "./offlineStore";
 import { useSyncStore } from "./syncStore";
 
@@ -265,7 +265,7 @@ async function processCapturedNotification(
     });
   }
 
-  if (useAuthStore.getState().session) {
+  if (await hasActiveSession()) {
     await useSyncStore.getState().synchronize();
   }
 
@@ -273,6 +273,27 @@ async function processCapturedNotification(
     error: null,
     lastParsedNotification: result,
   });
+}
+
+// The auth store only fills when the React tree mounts; headless JS (and
+// cold-start action handling) must read the persisted session straight
+// from the client. Never sync without one — an unauthenticated pull
+// would clear the local tables and refill them empty.
+async function hasActiveSession() {
+  const { data } = await supabase.auth.getSession();
+
+  return data.session !== null;
+}
+
+// Entry point for the Android headless task (registered in index.ts):
+// processes a capture with the app UI closed so the review notification
+// fires without the user opening the app.
+export function processCapturedNotificationHeadless(
+  payload: NativeNotificationPayload
+) {
+  return processCapturedNotification(payload, (partial) =>
+    useNotificationStore.setState(partial)
+  );
 }
 
 async function recordParseMiss(
@@ -338,7 +359,7 @@ async function handleFinancialEventNotificationAction(
       );
     }
 
-    if (useAuthStore.getState().session) {
+    if (await hasActiveSession()) {
       await useSyncStore.getState().synchronize();
       await useOfflineStore.getState().refresh();
     }

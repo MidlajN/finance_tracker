@@ -4,7 +4,6 @@ import { Check, ChevronRight, Plus, Search, Store, X } from "lucide-react-native
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -145,7 +144,7 @@ export function MerchantPickerField({
         visible={visible}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior="padding"
           style={financeStyles.modalBackdrop}
         >
           <Pressable onPress={close} style={financeStyles.modalDismissLayer} />

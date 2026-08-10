@@ -17,7 +17,6 @@ import {
   Easing,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -552,7 +551,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
         <KeyboardAvoidingView
           // Android modal windows already resize for the keyboard;
           // "padding" on top of that double-shifts the panel.
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior="padding"
           style={financeStyles.modalBackdrop}
         >
           <Pressable

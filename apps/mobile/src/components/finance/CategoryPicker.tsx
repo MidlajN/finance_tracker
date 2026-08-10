@@ -4,7 +4,6 @@ import { Check, Plus, ReceiptText, Search, X } from "lucide-react-native";
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -165,7 +164,7 @@ export function CategoryPickerField({
         visible={visible}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior="padding"
           style={financeStyles.modalBackdrop}
         >
           <Pressable

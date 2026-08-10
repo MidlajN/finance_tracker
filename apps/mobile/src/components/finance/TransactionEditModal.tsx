@@ -4,7 +4,6 @@ import { Pencil, Trash2, X } from "lucide-react-native";
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -152,7 +151,7 @@ export function TransactionEditModal({
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior="padding"
         style={financeStyles.modalBackdrop}
       >
         <Pressable onPress={onClose} style={financeStyles.modalDismissLayer} />

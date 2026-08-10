@@ -35,7 +35,6 @@ import {
   InteractionManager,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -1118,7 +1117,7 @@ export function FinancialIntelligenceScreen({
         visible={accountModalVisible && resource === "account"}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior="padding"
           style={financeStyles.modalBackdrop}
         >
           <Pressable
@@ -1281,7 +1280,7 @@ export function FinancialIntelligenceScreen({
         visible={advancedModalVisible}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior="padding"
           style={financeStyles.modalBackdrop}
         >
           <Pressable

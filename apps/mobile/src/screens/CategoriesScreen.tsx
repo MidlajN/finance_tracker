@@ -4,7 +4,6 @@ import { Check, Plus, Search, X } from "lucide-react-native";
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -238,7 +237,7 @@ export function CategoriesScreen() {
         visible={modalVisible}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior="padding"
           style={financeStyles.modalBackdrop}
         >
           <Pressable

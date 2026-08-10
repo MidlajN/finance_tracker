@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import com.facebook.react.HeadlessJsTaskService
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import org.json.JSONArray
@@ -218,6 +219,38 @@ class FinanceNotificationListenerModule : Module() {
 
       if (module?.observingNotifications == true) {
         module.sendEvent("onNotification", enrichedPayload)
+      } else {
+        // No foreground JS observing (app killed or backgrounded):
+        // run the capture pipeline headless so the review notification
+        // appears without the user opening the app.
+        startHeadlessCaptureTask(context, enrichedPayload)
+      }
+    }
+
+    private fun startHeadlessCaptureTask(
+      context: Context,
+      payload: Map<String, Any?>
+    ) {
+      runCatching {
+        val intent = Intent(
+          context,
+          FinanceNotificationHeadlessTaskService::class.java
+        )
+
+        payload.forEach { (key, value) ->
+          intent.putExtra(key, value?.toString())
+        }
+
+        context.startService(intent)
+        HeadlessJsTaskService.acquireWakeLockNow(context)
+      }.onFailure { error ->
+        // The persisted queue + capture preview remain the fallback; the
+        // capture is processed on next app open.
+        recordDiagnostic(
+          context,
+          LAST_ERROR_KEY,
+          error.message ?: "Unable to start headless capture."
+        )
       }
     }
 
