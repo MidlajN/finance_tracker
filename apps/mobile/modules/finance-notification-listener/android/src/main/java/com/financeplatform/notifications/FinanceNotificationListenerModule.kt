@@ -179,6 +179,15 @@ class FinanceNotificationListenerModule : Module() {
       """\b(spent|debited|credited|paid|received|withdrawn|purchase|transaction|trxn|txn)\b""",
       RegexOption.IGNORE_CASE
     )
+    // Mirrors the parser's PROMO_REJECT_PATTERN (packages/parser): pure
+    // offer language never appears in a completed-transaction alert, so
+    // loan/offer spam containing "credited" + an amount must not raise
+    // the "Transaction detected" preview. The JS parser stays the final
+    // authority; this only suppresses the native heads-up.
+    private val promoRejectPattern = Regex(
+      """\b(?:pre-?approved|avail\s+now|apply\s+now)\b""",
+      RegexOption.IGNORE_CASE
+    )
 
     fun captureNotification(
       context: Context,
@@ -311,7 +320,8 @@ class FinanceNotificationListenerModule : Module() {
       ).joinToString(" ") { it?.toString().orEmpty() }
 
       return amountPattern.containsMatchIn(text) &&
-        transactionPattern.containsMatchIn(text)
+        transactionPattern.containsMatchIn(text) &&
+        !promoRejectPattern.containsMatchIn(text)
     }
 
     private fun hasPostNotificationPermission(context: Context): Boolean =
@@ -370,10 +380,26 @@ class FinanceNotificationListenerModule : Module() {
 
       val manager = notificationManager(context)
       createNotificationChannel(manager)
+      // Keyed by package + status-bar key, NOT captureId: captureId
+      // changes on every repost (postedAt is part of its hash), which
+      // stacked one preview per repost. This key survives reposts so
+      // they replace. Must mirror getCapturePreviewKey on the JS side.
+      val previewKey =
+        "${payload["packageName"]}|${payload["id"]}"
       val source = payload["applicationName"]?.toString()
         ?.takeIf(String::isNotBlank)
         ?: "Financial notification"
       val rawText = payload["text"]?.toString()
+        // Bank alerts end with a dispute/report link and boilerplate —
+        // noise in a preview, so cut from the first URL to the end.
+        ?.replace(
+          Regex(
+            """(?:https?://|www\.)\S.*$""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+          ),
+          ""
+        )
+        ?.replace(Regex("""\b(?:trxn\.?|transaction)?\s*not\s+done\s+by\s+you\??\s*(?:report\s+(?:at|to)?)?\s*$""", RegexOption.IGNORE_CASE), "")
         ?.replace(Regex("\\s+"), " ")
         ?.trim()
         ?.take(180)
@@ -395,7 +421,8 @@ class FinanceNotificationListenerModule : Module() {
             null,
             captureId,
             FinanceNotificationActionReceiver.ACTION_REVIEW,
-            0
+            0,
+            previewKey
           )
         )
         .setAutoCancel(true)
@@ -411,14 +438,15 @@ class FinanceNotificationListenerModule : Module() {
               null,
               captureId,
               FinanceNotificationActionReceiver.ACTION_REVIEW,
-              1
+              1,
+              previewKey
             )
           ).build()
         )
         .build()
 
       manager.notify(
-        FinanceNotificationActionReceiver.notificationId(captureId),
+        FinanceNotificationActionReceiver.notificationId(previewKey),
         privateNotification
       )
       recordDiagnostic(context, LAST_PREVIEW_AT_KEY, Instant.now().toString())

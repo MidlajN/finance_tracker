@@ -12,6 +12,7 @@ import {
 import {
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -360,7 +361,7 @@ export function BudgetsScreen() {
         visible={budgetFormVisible}
       >
         <KeyboardAvoidingView
-          behavior="padding"
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={financeStyles.modalBackdrop}
         >
           <Pressable
@@ -582,7 +583,7 @@ export function BudgetsScreen() {
         visible={budgetCategoryPickerVisible}
       >
         <KeyboardAvoidingView
-          behavior="padding"
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={financeStyles.modalBackdrop}
         >
           <Pressable

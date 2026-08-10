@@ -179,12 +179,29 @@ export class RemoteEventRepository {
         "confirm_financial_event",
         {
           p_event_id: createdEvent.id,
+          // The client materialized the transaction under this id
+          // before syncing — inserting with the same id keeps both
+          // sides on one identity.
+          p_transaction_id: item.payload.confirmedTransactionId ?? null,
         }
       );
 
-      if (confirmError) {
+      if (
+        confirmError &&
+        !confirmError.message
+          .toLowerCase()
+          .includes("already confirmed")
+      ) {
         throw confirmError;
       }
+
+      // The row insert above happened before the RPC, so its status is
+      // stale — report what the server now holds, or the local upsert
+      // would flip the already-confirmed local event back to pending.
+      return toCachedFinancialEvent({
+        ...createdEvent,
+        status: "confirmed",
+      });
     }
 
     return toCachedFinancialEvent(createdEvent);
@@ -219,9 +236,10 @@ export class RemoteEventRepository {
     }
   }
 
-  static async confirm(id: string) {
+  static async confirm(id: string, transactionId?: string | null) {
     const { error } = await supabase.rpc("confirm_financial_event", {
       p_event_id: id,
+      p_transaction_id: transactionId ?? null,
     });
 
     if (error) {

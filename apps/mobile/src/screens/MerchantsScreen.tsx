@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { MotiView } from "moti";
 import {
   Check,
@@ -12,6 +12,7 @@ import {
 import {
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -83,6 +84,7 @@ export function MerchantsScreen() {
   const [editingMerchant, setEditingMerchant] =
     useState<CachedMerchant | null>(null);
   const [merchantName, setMerchantName] = useState("");
+  const merchantNameInputRef = useRef<TextInput>(null);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -410,7 +412,7 @@ export function MerchantsScreen() {
         visible={sortVisible}
       >
         <KeyboardAvoidingView
-          behavior="padding"
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={financeStyles.modalBackdrop}
         >
           <Pressable
@@ -460,11 +462,14 @@ export function MerchantsScreen() {
       <Modal
         animationType="none"
         onRequestClose={closeEditor}
+        // autoFocus races the modal window on Android (keyboard opens,
+        // then snaps shut when the window attaches); focus after onShow.
+        onShow={() => merchantNameInputRef.current?.focus()}
         transparent
         visible={editorVisible}
       >
         <KeyboardAvoidingView
-          behavior="padding"
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={financeStyles.modalBackdrop}
         >
           <Pressable
@@ -503,8 +508,8 @@ export function MerchantsScreen() {
 
               <TextInput
                 autoCapitalize="words"
-                autoFocus
                 className="min-h-[52px] rounded-[15px] bg-field px-3.5 text-[15px] font-bold text-ink"
+                ref={merchantNameInputRef}
                 onChangeText={(value) => {
                   setMerchantName(value);
                   setFormError(null);
@@ -520,6 +525,7 @@ export function MerchantsScreen() {
               <ScrollView
                 contentContainerClassName="gap-[9px] pr-[18px]"
                 horizontal
+                keyboardShouldPersistTaps="handled"
                 showsHorizontalScrollIndicator={false}
               >
                 <Pressable

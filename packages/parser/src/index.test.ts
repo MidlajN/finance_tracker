@@ -451,6 +451,182 @@ test("blocks promotional-route DLT senders", () => {
     );
 });
 
+test("rejects a shopping promo with a price point and card branding", () => {
+    // "Credit Cards" (plural) must not read as a credit direction, and
+    // "under ₹999" is a price bound, not a transaction amount.
+    const parsed = parseNotificationPayload({
+        id: "amazon-promo-key",
+        packageName: "in.amazon.mShop.android.shopping",
+        applicationName: "Amazon",
+        title: "Trending Deals under ₹999",
+        text: "Save 10% extra with HDFC Bank Credit Cards & EMI*",
+        subText: null,
+        postedAt: "2026-08-08T10:00:00.000Z",
+    });
+
+    assert.equal(parsed, null);
+});
+
+test("plural card wording alone carries no direction", () => {
+    const parsed = parseNotificationPayload({
+        id: "cards-plural-key",
+        packageName: "com.example.shop",
+        applicationName: "Shop",
+        title: null,
+        text: "Get ₹500 off with ICICI Credit Cards this weekend",
+        subText: null,
+        postedAt: "2026-08-08T10:00:00.000Z",
+    });
+
+    assert.equal(parsed, null);
+});
+
+test("keeps genuine credited alerts that mention a credit card", () => {
+    // "credited" + "Credit Card" together is the refund/cashback shape —
+    // the plural guard must not break it.
+    const parsed = parseNotificationPayload({
+        id: "refund-key",
+        packageName: "com.google.android.apps.messaging",
+        applicationName: "Messages",
+        title: "VM-HDFCBK",
+        text: "Rs.1,200.00 credited to your HDFC Bank Credit Card ending 4523 on 07-08-26 towards refund. Ref No 991234567.",
+        subText: null,
+        postedAt: "2026-08-08T10:00:00.000Z",
+    });
+
+    assert.ok(parsed);
+    assert.equal(parsed.direction, "credit");
+    assert.equal(parsed.amount, 1200);
+});
+
+test("amount followed by 'from' still parses (bound words only bind before the amount)", () => {
+    const parsed = parseNotificationPayload({
+        id: "from-after-key",
+        packageName: "com.google.android.apps.nbu.paisa.user",
+        applicationName: "Google Pay",
+        title: "Payment received",
+        text: "You received ₹500 from Ramesh Kumar.",
+        subText: null,
+        postedAt: "2026-08-08T10:00:00.000Z",
+    });
+
+    assert.ok(parsed);
+    assert.equal(parsed.direction, "credit");
+    assert.equal(parsed.amount, 500);
+});
+
+test("outgoing payment does not read as incoming across the title-text boundary", () => {
+    // Title ending "sent" + text starting "You" must not concatenate
+    // into "sent You" and match the incoming-payment pattern.
+    const parsed = parseNotificationPayload({
+        id: "gpay-out-key",
+        packageName: "com.google.android.apps.nbu.paisa.user",
+        applicationName: "Google Pay",
+        title: "Payment sent",
+        text: "You paid ₹250 to Chai Point using Google Pay",
+        subText: null,
+        postedAt: "2026-08-08T10:00:00.000Z",
+    });
+
+    assert.ok(parsed);
+    assert.equal(parsed.direction, "debit");
+});
+
+test("amazon package matches the trusted set case-insensitively", () => {
+    assert.equal(
+        getNotificationSourceTrust({
+            packageName: "in.amazon.mShop.android.shopping",
+            title: "Amazon Pay",
+        }),
+        "trusted"
+    );
+});
+
+test("structural evidence cannot rescue a promotional-route sender", () => {
+    assert.equal(
+        getNotificationSourceTrust({
+            packageName: "com.google.android.apps.messaging",
+            text: "Rs.47.00 spent on your SBI Credit Card ending with 0345. Ref No. 658317029508.",
+            title: "VM-FLPKRT-P",
+        }),
+        "blocked"
+    );
+});
+
+test("demotes brand-name SMS senders to unknown on structural bank evidence", () => {
+    // RCS verified-business sender: title is "SBI Card", not a DLT
+    // header. Account tail + reference mark it as a bank alert.
+    assert.equal(
+        getNotificationSourceTrust({
+            packageName: "com.google.android.apps.messaging",
+            text: "Rs.47.00 spent on your SBI Credit Card ending with 0345 at THEBLOOMSCOCHINPREMI on 05-08-26 via UPI (Ref No. 658317029508). Trxn. not done by you? Report at https://sbicard.com/Dispute",
+            title: "SBI Card",
+        }),
+        "unknown"
+    );
+
+    // A personal chat mentioning money has none of those markers.
+    assert.equal(
+        getNotificationSourceTrust({
+            packageName: "com.google.android.apps.messaging",
+            text: "I paid you Rs.500 via UPI yesterday, check your account.",
+            title: "Mom",
+        }),
+        "blocked"
+    );
+});
+
+test("parses an RCS bank alert with a brand-name sender", () => {
+    const parsed = parseNotificationPayload({
+        id: "rcs-sbi-key",
+        packageName: "com.google.android.apps.messaging",
+        applicationName: "Messages",
+        title: "SBI Card",
+        text: "Rs.47.00 spent on your SBI Credit Card ending with 0345 at THEBLOOMSCOCHINPREMI on 05-08-26 via UPI (Ref No. 658317029508). Trxn. not done by you? Report at https://sbicard.com/Dispute",
+        subText: null,
+        postedAt: "2026-08-05T14:03:00.000Z",
+    });
+
+    assert.ok(parsed);
+    assert.equal(parsed.amount, 47);
+    assert.equal(parsed.direction, "debit");
+    assert.equal(parsed.accountHint?.last4, "0345");
+    // Financial-sounding sender identity softens the unknown penalty:
+    // 0.72 - 0.05 + 0.05 (disclaimer) + 0.08 (reference).
+    assert.equal(parsed.confidence, 0.8);
+});
+
+test("financial sender identity softens penalty for long brand names", () => {
+    const parsed = parseNotificationPayload({
+        id: "rcs-sbi-long-key",
+        packageName: "com.google.android.apps.messaging",
+        applicationName: "Messages",
+        title: "SBI CARDS AND PAYMENTS SERVICES",
+        text: "Rs.47.00 spent on your SBI Credit Card ending with 0345 at THEBLOOMSCOCHINPREMI on 05-08-26 via UPI (Ref No. 658317029508). Trxn. not done by you? Report at https://sbicard.com/Dispute",
+        subText: null,
+        postedAt: "2026-08-05T14:03:00.000Z",
+    });
+
+    assert.equal(parsed?.confidence, 0.8);
+});
+
+test("non-SMS notification titles never count as financial identity", () => {
+    // Same headline wording, unknown non-SMS package: title is a
+    // headline, not an identity — full unknown penalty applies.
+    const parsed = parseNotificationPayload({
+        id: "random-app-key",
+        packageName: "com.example.randomapp",
+        applicationName: "Random App",
+        title: "Card payment update",
+        text: "Rs.47.00 spent on your SBI Credit Card ending with 0345 at THEBLOOMSCOCHINPREMI on 05-08-26 via UPI (Ref No. 658317029508). Trxn. not done by you? Report at https://sbicard.com/Dispute",
+        subText: null,
+        postedAt: "2026-08-05T14:03:00.000Z",
+    });
+
+    // 0.72 - 0.2 + 0.05 + 0.08
+    assert.equal(parsed?.confidence, 0.65);
+});
+
 test("parses an unknown bank app at mildly reduced confidence", () => {
     // Unlisted package, but both label and package read financial, so
     // the unknown penalty softens: 0.72 - 0.05 + 0.08 (reference).

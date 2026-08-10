@@ -4,6 +4,7 @@ import { Pencil, Trash2, X } from "lucide-react-native";
 import {
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,6 +16,7 @@ import {
 import type {
   CachedAccount,
   CachedCategory,
+  CachedMerchant,
   CachedTransaction,
 } from "@finance/shared-types";
 import type { TransactionUpdates } from "@finance/shared-api";
@@ -25,14 +27,17 @@ import { AccountPickerField } from "./AccountPicker";
 import { CategoryPickerField } from "./CategoryPicker";
 import { DangerConfirmModal } from "./DangerConfirmModal";
 import { financeStyles } from "./financeStyles";
+import { MerchantPickerField } from "./MerchantPicker";
 import { TransactionDateField } from "./TransactionDateField";
 
 export function TransactionEditModal({
   accounts,
   categories,
   frequentCategoryIds,
+  merchants,
   onAddAccount,
   onClose,
+  onCreateMerchant,
   onDelete,
   onManageCategories,
   onSave,
@@ -41,8 +46,10 @@ export function TransactionEditModal({
   accounts: CachedAccount[];
   categories: CachedCategory[];
   frequentCategoryIds: string[];
+  merchants: CachedMerchant[];
   onAddAccount: () => void;
   onClose: () => void;
+  onCreateMerchant: (name: string) => Promise<CachedMerchant>;
   onDelete: () => Promise<void>;
   onManageCategories: () => void;
   onSave: (updates: TransactionUpdates) => Promise<void>;
@@ -58,6 +65,9 @@ export function TransactionEditModal({
   );
   const [accountId, setAccountId] = useState<string | null>(
     transaction.account_id ?? null
+  );
+  const [merchantId, setMerchantId] = useState<string | null>(
+    transaction.merchant_id ?? null
   );
   const [occurredAt, setOccurredAt] = useState(
     () => new Date(transaction.occurred_at)
@@ -95,6 +105,10 @@ export function TransactionEditModal({
 
       if (accountId !== transaction.account_id) {
         updates.account_id = accountId;
+      }
+
+      if (merchantId !== (transaction.merchant_id ?? null)) {
+        updates.merchant_id = merchantId;
       }
 
       if (occurredAt.toISOString() !== transaction.occurred_at) {
@@ -138,7 +152,7 @@ export function TransactionEditModal({
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible>
       <KeyboardAvoidingView
-        behavior="padding"
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={financeStyles.modalBackdrop}
       >
         <Pressable onPress={onClose} style={financeStyles.modalDismissLayer} />
@@ -297,6 +311,13 @@ export function TransactionEditModal({
                 <TransactionDateField
                   onSelect={setOccurredAt}
                   value={occurredAt}
+                />
+
+                <MerchantPickerField
+                  merchants={merchants}
+                  onCreateMerchant={onCreateMerchant}
+                  onSelect={setMerchantId}
+                  selectedMerchantId={merchantId}
                 />
 
                 <CategoryPickerField

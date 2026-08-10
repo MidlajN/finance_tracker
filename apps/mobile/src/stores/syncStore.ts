@@ -18,6 +18,15 @@ interface SyncState {
   synchronize: () => Promise<void>;
 }
 
+// A run already in flight may be past its push stage, so it cannot carry
+// writes enqueued after it started. Callers arriving mid-run share one
+// queued follow-up run instead of returning early — awaiting synchronize()
+// must always mean "everything enqueued before the call is pushed and the
+// results pulled". Confirm/save flows rely on this to land back on the
+// list with the new row already present.
+let activeRun: Promise<void> | null = null;
+let queuedRun: Promise<void> | null = null;
+
 export const useSyncStore = create<SyncState>((set, get) => ({
   backgroundRegistered: false,
   error: null,
@@ -94,36 +103,52 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   },
 
   async synchronize() {
-    if (get().syncing) {
-      return;
+    if (activeRun) {
+      if (!queuedRun) {
+        queuedRun = activeRun.then(() => {
+          queuedRun = null;
+
+          return get().synchronize();
+        });
+      }
+
+      return queuedRun;
     }
 
-    set({
-      error: null,
-      syncing: true,
-    });
-
-    try {
-      const result = await SyncService.synchronize();
-
-      await useOfflineStore.getState().refresh();
-
+    activeRun = (async () => {
       set({
         error: null,
-        lastResult: result,
-        lastSyncedAt: new Date().toISOString(),
-        syncing: false,
+        syncing: true,
       });
-    } catch (error) {
-      await useOfflineStore.getState().refresh();
 
-      set({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to synchronize.",
-        syncing: false,
-      });
+      try {
+        const result = await SyncService.synchronize();
+
+        await useOfflineStore.getState().refresh();
+
+        set({
+          error: null,
+          lastResult: result,
+          lastSyncedAt: new Date().toISOString(),
+          syncing: false,
+        });
+      } catch (error) {
+        await useOfflineStore.getState().refresh();
+
+        set({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to synchronize.",
+          syncing: false,
+        });
+      }
+    })();
+
+    try {
+      await activeRun;
+    } finally {
+      activeRun = null;
     }
   },
 }));

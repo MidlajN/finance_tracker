@@ -21,6 +21,7 @@ import {
 } from "@finance/parser";
 
 import type {
+  EventDirection,
   FinancialEventInput,
   ParsedFinancialEvent,
   RawNotificationPayload,
@@ -89,10 +90,18 @@ export class NotificationService {
     return dismissFinancialEventNotification(notificationKey);
   }
 
+  // Must mirror the native previewNotificationKey exactly: the capture
+  // preview is posted under package|sbn-key (stable across reposts, so
+  // reposts replace instead of stack), not under the per-post captureId.
+  static getCapturePreviewKey(payload: NativeNotificationPayload) {
+    return `${payload.packageName}|${payload.id}`;
+  }
+
   static showFinancialEventReviewNotification({
     accountName,
     amount,
     currency,
+    direction,
     eventId,
     merchantName,
     notificationKey,
@@ -100,24 +109,30 @@ export class NotificationService {
     accountName?: string | null;
     amount: number;
     currency: string;
+    direction: EventDirection;
     eventId: string;
     merchantName: string | null;
     notificationKey: string;
   }) {
-    const merchant = merchantName?.trim() || "Unknown merchant";
+    const merchant = merchantName?.trim();
     const account = accountName?.trim();
-    const details = [
-      merchant,
-      formatNotificationAmount(amount, currency),
-      account ? `Account: ${account}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
+    const amountLabel = formatNotificationAmount(amount, currency);
+    const title =
+      direction === "credit"
+        ? merchant
+          ? `${amountLabel} received from ${merchant}`
+          : `${amountLabel} received`
+        : merchant
+          ? `${amountLabel} spent at ${merchant}`
+          : `${amountLabel} spent`;
+    const body = account
+      ? `${account} · Confirm, review, or ignore.`
+      : "Confirm, review, or ignore.";
 
     return showFinancialEventNotification(
       eventId,
-      "Review",
-      `${details}. Confirm, review details, or ignore.`,
+      title,
+      body,
       notificationKey
     );
   }
@@ -190,12 +205,18 @@ function normalizeNotificationAction(
 
 function formatNotificationAmount(amount: number, currency: string) {
   const normalizedCurrency = currency.trim().toUpperCase();
+  // Indian digit grouping (₹1,00,000); whole amounts drop the ".00" so
+  // the notification title stays scannable.
+  const formatted = amount.toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+  });
 
   if (normalizedCurrency === "INR") {
-    return `₹${amount.toFixed(2)}`;
+    return `₹${formatted}`;
   }
 
-  return `${normalizedCurrency} ${amount.toFixed(2)}`;
+  return `${normalizedCurrency} ${formatted}`;
 }
 
 export type { NativeFinancialEventNotificationAction };

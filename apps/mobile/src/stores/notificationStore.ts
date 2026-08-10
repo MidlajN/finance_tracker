@@ -204,7 +204,9 @@ async function processCapturedNotification(
       null,
       "ignored"
     );
-    await NotificationService.dismissNotification(payload.captureId);
+    await NotificationService.dismissNotification(
+      NotificationService.getCapturePreviewKey(payload)
+    );
     return;
   }
 
@@ -223,25 +225,40 @@ async function processCapturedNotification(
     "pending_review"
   );
 
-  // The native preview is keyed by captureId, which changes when the
-  // source app reposts its notification. Dismiss it and key the review
-  // notification by event id so recaptures replace instead of stack.
-  await NotificationService.dismissNotification(payload.captureId);
+  // The native preview is keyed by the stable notification key (it
+  // survives reposts); the review notification is keyed by event id so
+  // recaptures replace instead of stack.
+  await NotificationService.dismissNotification(
+    NotificationService.getCapturePreviewKey(payload)
+  );
 
-  if (persisted.event.status !== "confirmed") {
+  // Only pending events warrant a review notification — a duplicate
+  // capture of an already confirmed or ignored event must stay silent.
+  if (persisted.event.status === "pending") {
     const accountId = getEventAccountId(persisted.event.metadata);
     const accountName = accountId
       ? useOfflineStore
           .getState()
           .accounts.find((account) => account.id === accountId)?.name
       : null;
+    // A rule or the merchant matcher may have linked a merchant — its
+    // curated name beats the raw all-caps blob from the bank alert.
+    const linkedMerchantName = persisted.event.merchant_id
+      ? useOfflineStore
+          .getState()
+          .merchants.find(
+            (merchant) => merchant.id === persisted.event.merchant_id
+          )?.name
+      : null;
 
     await NotificationService.showFinancialEventReviewNotification({
       accountName,
       amount: persisted.event.amount,
       currency: persisted.event.currency ?? result.event.currency,
+      direction: persisted.event.direction,
       eventId: persisted.event.id,
       merchantName:
+        linkedMerchantName ??
         persisted.event.merchant_name_raw ??
         result.event.merchantName,
       notificationKey: persisted.event.id,

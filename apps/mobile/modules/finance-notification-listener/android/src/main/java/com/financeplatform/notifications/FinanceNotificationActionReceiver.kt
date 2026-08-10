@@ -15,6 +15,7 @@ class FinanceNotificationActionReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     val eventId = intent.getStringExtra(EXTRA_EVENT_ID)
     val captureId = intent.getStringExtra(EXTRA_CAPTURE_ID)
+    val notificationKey = intent.getStringExtra(EXTRA_NOTIFICATION_KEY)
     val action = when (intent.action) {
       ACTION_CONFIRM -> "confirm"
       ACTION_IGNORE -> "ignore"
@@ -34,7 +35,13 @@ class FinanceNotificationActionReceiver : BroadcastReceiver() {
     if (!FinanceNotificationListenerModule.emitFinancialEventAction(payload)) {
       storePendingAction(context, payload)
     }
-    cancelNotification(context, captureId ?: eventId.orEmpty())
+    // The posted notification id derives from the notification key when
+    // one was set (capture previews use a repost-stable key); fall back
+    // to the captureId/eventId keying used by review notifications.
+    cancelNotification(
+      context,
+      notificationKey ?: captureId ?: eventId.orEmpty()
+    )
 
     if (action == "review") {
       openApplication(context)
@@ -47,6 +54,7 @@ class FinanceNotificationActionReceiver : BroadcastReceiver() {
     const val ACTION_REVIEW = "com.financeplatform.notifications.REVIEW_EVENT"
     private const val EXTRA_CAPTURE_ID = "captureId"
     private const val EXTRA_EVENT_ID = "eventId"
+    private const val EXTRA_NOTIFICATION_KEY = "notificationKey"
     private const val PREFERENCES_NAME = "finance_notification_actions"
     private const val PENDING_ACTIONS_KEY = "pending_actions"
 
@@ -55,14 +63,16 @@ class FinanceNotificationActionReceiver : BroadcastReceiver() {
       eventId: String?,
       captureId: String,
       action: String,
-      requestOffset: Int
+      requestOffset: Int,
+      notificationKey: String? = null
     ): PendingIntent {
       if (action == ACTION_REVIEW) {
         return reviewPendingIntent(
           context,
           eventId,
           captureId,
-          requestOffset
+          requestOffset,
+          notificationKey
         )
       }
 
@@ -70,6 +80,7 @@ class FinanceNotificationActionReceiver : BroadcastReceiver() {
       intent.action = action
       intent.putExtra(EXTRA_EVENT_ID, eventId ?: "")
       intent.putExtra(EXTRA_CAPTURE_ID, captureId)
+      intent.putExtra(EXTRA_NOTIFICATION_KEY, notificationKey)
 
       val flags =
         PendingIntent.FLAG_UPDATE_CURRENT or
@@ -94,6 +105,7 @@ class FinanceNotificationActionReceiver : BroadcastReceiver() {
 
       val eventId = intent.getStringExtra(EXTRA_EVENT_ID)
       val captureId = intent.getStringExtra(EXTRA_CAPTURE_ID)
+      val notificationKey = intent.getStringExtra(EXTRA_NOTIFICATION_KEY)
       if (eventId.isNullOrBlank() && captureId.isNullOrBlank()) {
         return false
       }
@@ -108,7 +120,10 @@ class FinanceNotificationActionReceiver : BroadcastReceiver() {
       if (!FinanceNotificationListenerModule.emitFinancialEventAction(payload)) {
         storePendingAction(context, payload)
       }
-      cancelNotification(context, captureId ?: eventId.orEmpty())
+      cancelNotification(
+        context,
+        notificationKey ?: captureId ?: eventId.orEmpty()
+      )
 
       // Prevent the same action from being processed again if Android
       // recreates the activity with its existing launch intent.
@@ -190,7 +205,8 @@ class FinanceNotificationActionReceiver : BroadcastReceiver() {
       context: Context,
       eventId: String?,
       captureId: String,
-      requestOffset: Int
+      requestOffset: Int,
+      notificationKey: String? = null
     ): PendingIntent {
       val intent = context.packageManager.getLaunchIntentForPackage(
         context.packageName
@@ -199,6 +215,7 @@ class FinanceNotificationActionReceiver : BroadcastReceiver() {
       intent.action = ACTION_REVIEW
       intent.putExtra(EXTRA_EVENT_ID, eventId ?: "")
       intent.putExtra(EXTRA_CAPTURE_ID, captureId)
+      intent.putExtra(EXTRA_NOTIFICATION_KEY, notificationKey)
       intent.addFlags(
         Intent.FLAG_ACTIVITY_CLEAR_TOP or
           Intent.FLAG_ACTIVITY_SINGLE_TOP

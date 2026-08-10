@@ -4,6 +4,7 @@ import { Check, Plus, ReceiptText, Search, X } from "lucide-react-native";
 import {
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -164,7 +165,7 @@ export function CategoryPickerField({
         visible={visible}
       >
         <KeyboardAvoidingView
-          behavior="padding"
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={financeStyles.modalBackdrop}
         >
           <Pressable
@@ -244,7 +245,10 @@ export function CategoryPickerField({
                 onPress={() => {
                   setVisible(false);
                   setSearch("");
-                  onManageCategories();
+                  // Navigating in the same frame the Modal starts closing
+                  // intermittently crashes Android during the stack
+                  // transition — let the Modal unmount first.
+                  setTimeout(onManageCategories, 80);
                 }}
                 style={styles.categoryManageButton}
               >

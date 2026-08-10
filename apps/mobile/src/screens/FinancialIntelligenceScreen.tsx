@@ -35,6 +35,7 @@ import {
   InteractionManager,
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -869,7 +870,10 @@ export function FinancialIntelligenceScreen({
 
   return (
     <>
-      <ScrollView contentContainerClassName="gap-[18px] bg-canvas p-5 pb-9">
+      <ScrollView
+        contentContainerClassName="gap-[18px] bg-canvas p-5 pb-9"
+        keyboardShouldPersistTaps="handled"
+      >
         <View className="gap-2">
           <Text className="text-[25px] font-black text-ink">Accounts</Text>
           <Text className="text-[13px] leading-[19px] text-secondary">
@@ -1114,7 +1118,7 @@ export function FinancialIntelligenceScreen({
         visible={accountModalVisible && resource === "account"}
       >
         <KeyboardAvoidingView
-          behavior="padding"
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={financeStyles.modalBackdrop}
         >
           <Pressable
@@ -1133,7 +1137,10 @@ export function FinancialIntelligenceScreen({
               type: "spring",
             }}
           >
-            <ScrollView contentContainerClassName="gap-3.5 p-[18px] pb-[30px]">
+            <ScrollView
+              contentContainerClassName="gap-3.5 p-[18px] pb-[30px]"
+              keyboardShouldPersistTaps="handled"
+            >
               <View className="-mt-1.5 mb-2.5 h-1 w-11 self-center rounded-full bg-[#d6dae2]" />
               <View style={financeStyles.modalHeader}>
                 <View className="flex-1">
@@ -1274,7 +1281,7 @@ export function FinancialIntelligenceScreen({
         visible={advancedModalVisible}
       >
         <KeyboardAvoidingView
-          behavior="padding"
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={financeStyles.modalBackdrop}
         >
           <Pressable
@@ -1293,7 +1300,10 @@ export function FinancialIntelligenceScreen({
               type: "spring",
             }}
           >
-            <ScrollView contentContainerClassName="gap-3.5 p-[18px] pb-[30px]">
+            <ScrollView
+              contentContainerClassName="gap-3.5 p-[18px] pb-[30px]"
+              keyboardShouldPersistTaps="handled"
+            >
               <View className="-mt-1.5 mb-2.5 h-1 w-11 self-center rounded-full bg-[#d6dae2]" />
               <View style={financeStyles.modalHeader}>
                 <View className="flex-1">

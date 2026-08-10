@@ -314,7 +314,9 @@ const TRUSTED_FINANCIAL_PACKAGES = new Set([
     "net.one97.paytm",
     "in.org.npci.upiapp", // BHIM
     "com.dreamplug.androidapp", // CRED
-    "in.amazon.mShop.android.shopping", // Amazon Pay
+    // Entries must be lowercase — the trust check lowercases the
+    // incoming package before lookup.
+    "in.amazon.mshop.android.shopping", // Amazon Pay
     "com.mobikwik_new",
     "com.freecharge.android",
     // Banks
@@ -366,14 +368,28 @@ export type NotificationSourceTrust =
     | "trusted"
     | "unknown";
 
+// Structural markers a personal chat never carries: a masked account
+// tail with digits, a transaction reference, or fraud-disclaimer
+// boilerplate. Used to rescue bank alerts whose SMS/RCS sender title
+// is a brand name rather than a DLT header.
+function hasStructuralBankEvidence(text: string) {
+    return (
+        FRAUD_DISCLAIMER_PATTERN.test(text) ||
+        parseTransactionReference(text) !== null ||
+        parseAccountHint(text)?.last4 != null
+    );
+}
+
 // The trusted set cannot enumerate every bank app, so an unrecognized
 // package is "unknown" (parsed at reduced confidence), not dropped —
 // only sources that are never bank alerts are blocked outright.
 export function getNotificationSourceTrust({
     packageName,
+    text,
     title,
 }: {
     packageName?: string | null;
+    text?: string | null;
     title?: string | null;
 }): NotificationSourceTrust {
     const pkg = packageName?.trim().toLowerCase() ?? "";
@@ -391,9 +407,24 @@ export function getNotificationSourceTrust({
             ?.trim()
             .match(DLT_SENDER_PATTERN);
 
-        return senderMatch &&
-            senderMatch[1]?.toLowerCase() !== "p"
-            ? "trusted"
+        if (senderMatch) {
+            // The -P route is DLT-registered promotional traffic;
+            // structural evidence cannot rescue it.
+            return senderMatch[1]?.toLowerCase() === "p"
+                ? "blocked"
+                : "trusted";
+        }
+
+        // RCS verified-business senders surface a brand name ("SBI
+        // Card") instead of a DLT header, and some OEM inboxes show
+        // the bare sender id. Demote to "unknown" only on structural
+        // bank evidence; personal chats stay blocked unparsed.
+        const combined = [title, text]
+            .filter(Boolean)
+            .join(" ");
+
+        return hasStructuralBankEvidence(combined)
+            ? "unknown"
             : "blocked";
     }
 
@@ -416,8 +447,10 @@ const BALANCE_CONTEXT_PATTERN =
 const DEBIT_PATTERN =
     /\b(debited|debit|spent|paid|sent|purchase|withdrawn|charged)\b/i;
 
+// The lookahead must cover plurals: "HDFC Bank Credit Cards" in a promo
+// would otherwise read as a credit direction.
 const CREDIT_PATTERN =
-    /\b(credited|credit(?!\s+(?:card|limit|score)\b)|received|refund|deposited|salary)\b/i;
+    /\b(credited|credit(?!\s+(?:cards?|limits?|scores?)\b)|received|refund|deposited|salary)\b/i;
 
 const INCOMING_PAYMENT_PATTERN =
     /\b(?:paid|sent)\s+you\b|\byou\s+(?:received|got)\b/i;
@@ -472,8 +505,13 @@ const FINANCIAL_PACKAGE_TOKENS = [
     "pay",
 ];
 
+// Words directly before the amount that mark a bound or price point
+// ("upto Rs.10,00,000", "Deals under ₹999", "starting at ₹499") — offers
+// approximate; completed-transaction alerts state the amount exactly.
+// Checked against the text sliced at the amount, so "received ₹500 from
+// Ramesh" is unaffected ("from" follows the amount there).
 const APPROXIMATE_AMOUNT_PATTERN =
-    /\b(?:upto|up\s+to)\s*$/i;
+    /\b(?:upto|up\s+to|under|over|above|below|from|starting\s+at|starts\s+at|flat)\s*$/i;
 
 const BASE_CONFIDENCE = 0.72;
 
@@ -555,6 +593,7 @@ function isPromotionalNotification(
 function sourceLooksFinancial(payload: {
     applicationName?: string | null;
     packageName?: string | null;
+    title?: string | null;
 }) {
     if (
         payload.applicationName &&
@@ -567,6 +606,18 @@ function sourceLooksFinancial(payload: {
 
     const pkg =
         payload.packageName?.toLowerCase() ?? "";
+
+    // For an SMS conduit the notification title is the sender's
+    // identity ("SBI CARDS AND PAYMENT SERVICES"), not a headline —
+    // treat it like an app label. Other apps put arbitrary headlines
+    // in the title ("Payment failed"), so only SMS titles count.
+    if (
+        SMS_APP_PACKAGES.has(pkg) &&
+        payload.title &&
+        FINANCIAL_SOURCE_NAME_PATTERN.test(payload.title)
+    ) {
+        return true;
+    }
 
     return FINANCIAL_PACKAGE_TOKENS.some((token) =>
         pkg.includes(token)
@@ -901,6 +952,9 @@ export function explainNotificationParse(
 ): NotificationParseResult {
     const sourceTrust = getNotificationSourceTrust({
         packageName: payload.packageName,
+        text: [payload.text, payload.subText]
+            .filter(Boolean)
+            .join(" "),
         title: payload.title,
     });
 
@@ -912,13 +966,16 @@ export function explainNotificationParse(
         };
     }
 
+    // Join with a sentence break, not a bare space: title "Payment sent"
+    // + text "You paid ₹250..." would otherwise read "sent You" across
+    // the boundary and falsely match the incoming-payment pattern.
     const rawText = [
         payload.title,
         payload.text,
         payload.subText,
     ]
         .filter(Boolean)
-        .join(" ");
+        .join(". ");
 
     const parsedAmount = parseAmount(rawText);
     const direction =

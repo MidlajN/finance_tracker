@@ -17,6 +17,7 @@ import {
   Easing,
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -86,6 +87,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
   const createFinancialEvent = useOfflineStore(
     (state) => state.createFinancialEvent
   );
+  const createMerchant = useOfflineStore((state) => state.createMerchant);
   const synchronize = useSyncStore((state) => state.synchronize);
   const [merchant, setMerchant] = useState("");
   const [selectedMerchantId, setSelectedMerchantId] = useState<string | null>(
@@ -110,6 +112,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [transactionTypeWidth, setTransactionTypeWidth] = useState(0);
   const savingRef = useRef(false);
+  const merchantSearchInputRef = useRef<TextInput>(null);
   const [transactionTypePosition] = useState(() => new Animated.Value(0));
   const sortedMerchants = useMemo(
     () =>
@@ -200,13 +203,29 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
     setIsSaving(true);
 
     try {
+      // "Add as new merchant" picked in the picker: create the real
+      // merchant entity first so the transaction links to it — a bare
+      // merchant_name_raw would leave it unregistered (absent from the
+      // Merchants screen, rules, and future picker suggestions).
+      let merchantId = selectedMerchantId;
+      const merchantName = merchant.trim();
+
+      if (!merchantId && merchantName) {
+        merchantId = (
+          await createMerchant({
+            category_id: selectedCategoryId,
+            name: merchantName,
+          })
+        ).id;
+      }
+
       await createFinancialEvent(
         {
           amount: parsedAmount,
           confidence: 1,
           currency: "INR",
           direction,
-          merchant_id: selectedMerchantId,
+          merchant_id: merchantId,
           merchant_name_raw: merchant.trim() || null,
           metadata: {
             source: "manual",
@@ -522,11 +541,18 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
       <Modal
         animationType="fade"
         onRequestClose={() => setMerchantPickerOpen(false)}
+        // autoFocus on the TextInput races the modal window on Android —
+        // the keyboard opens, then snaps shut when the window attaches.
+        // onShow fires after the window owns focus, so focusing here
+        // keeps the keyboard up.
+        onShow={() => merchantSearchInputRef.current?.focus()}
         transparent
         visible={merchantPickerOpen}
       >
         <KeyboardAvoidingView
-          behavior="padding"
+          // Android modal windows already resize for the keyboard;
+          // "padding" on top of that double-shifts the panel.
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={financeStyles.modalBackdrop}
         >
           <Pressable
@@ -569,10 +595,10 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
               <View style={financeStyles.merchantSearchBar}>
                 <Search color="#7b818c" size={18} strokeWidth={2.3} />
                 <TextInput
-                  autoFocus
                   onChangeText={setMerchantSearch}
                   placeholder="Search or type new merchant"
                   placeholderTextColor="#8b929d"
+                  ref={merchantSearchInputRef}
                   style={financeStyles.merchantSearchInput}
                   value={merchantSearch}
                 />

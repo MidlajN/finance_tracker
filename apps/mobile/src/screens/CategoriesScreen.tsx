@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { MotiView } from "moti";
 import { Check, Plus, Search, X } from "lucide-react-native";
 import {
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -56,6 +57,7 @@ export function CategoriesScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
   const [name, setName] = useState("");
+  const nameInputRef = useRef<TextInput>(null);
   const [icon, setIcon] = useState("store");
   const [color, setColor] = useState<string>("#6d4aff");
   const [formError, setFormError] = useState<string | null>(null);
@@ -229,11 +231,14 @@ export function CategoriesScreen() {
       <Modal
         animationType="none"
         onRequestClose={closeModal}
+        // autoFocus races the modal window on Android (keyboard opens,
+        // then snaps shut when the window attaches); focus after onShow.
+        onShow={() => nameInputRef.current?.focus()}
         transparent
         visible={modalVisible}
       >
         <KeyboardAvoidingView
-          behavior="padding"
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={financeStyles.modalBackdrop}
         >
           <Pressable
@@ -247,7 +252,10 @@ export function CategoriesScreen() {
             style={financeStyles.modalPanel}
             transition={{ duration: 220, type: "timing" }}
           >
-            <ScrollView contentContainerClassName="gap-3.5 p-[18px] pb-[30px]">
+            <ScrollView
+              contentContainerClassName="gap-3.5 p-[18px] pb-[30px]"
+              keyboardShouldPersistTaps="handled"
+            >
               <View style={financeStyles.modalHeader}>
                 <View className="flex-1">
                   <Text style={financeStyles.sectionTitle}>New category</Text>
@@ -266,13 +274,13 @@ export function CategoriesScreen() {
               </View>
 
               <TextInput
-                autoFocus
                 className="min-h-[52px] rounded-[15px] bg-field px-3.5 text-[15px] font-bold text-ink"
                 onChangeText={(value) => {
                   setName(value);
                   setFormError(null);
                 }}
                 placeholder="Category name"
+                ref={nameInputRef}
                 placeholderTextColor="#94a3b8"
                 value={name}
               />

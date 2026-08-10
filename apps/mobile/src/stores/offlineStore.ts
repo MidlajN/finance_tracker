@@ -72,7 +72,7 @@ interface OfflineState {
   createLoan: (loan: LoanLike) => Promise<void>;
   createInvestment: (investment: InvestmentLike) => Promise<void>;
   createGoal: (goal: GoalLike) => Promise<void>;
-  createMerchant: (merchant: MerchantLike) => Promise<void>;
+  createMerchant: (merchant: MerchantLike) => Promise<CachedMerchant>;
   deleteFinancialEvent: (eventId: string) => Promise<void>;
   deleteTransaction: (
     transactionId: string,
@@ -242,6 +242,11 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
             (candidate) => candidate.id === updates.category_id
           ) ?? null
         : null;
+      const merchant = updates.merchant_id
+        ? get().merchants.find(
+            (candidate) => candidate.id === updates.merchant_id
+          ) ?? null
+        : null;
       const next: CachedTransaction = {
         ...current,
         account_id:
@@ -264,6 +269,21 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
                 }
               : null
             : current.category,
+        merchant:
+          updates.merchant_id !== undefined
+            ? merchant
+              ? {
+                  id: merchant.id,
+                  name: merchant.name,
+                  normalized_name: merchant.normalized_name ?? null,
+                  usage_count: merchant.usage_count ?? 0,
+                }
+              : null
+            : current.merchant,
+        merchant_id:
+          updates.merchant_id !== undefined
+            ? updates.merchant_id
+            : current.merchant_id,
         notes: updates.notes !== undefined ? updates.notes : current.notes,
         occurred_at: updates.occurred_at ?? current.occurred_at,
         transaction_type:
@@ -358,8 +378,11 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
 
   async createMerchant(merchant) {
     try {
-      await OfflineStorageService.persistMerchant(merchant);
+      const persisted = await OfflineStorageService.persistMerchant(merchant);
+
       await get().refresh();
+
+      return persisted.merchant;
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to create merchant.";

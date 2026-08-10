@@ -73,6 +73,10 @@ export interface CreateFinancialEventSyncPayload
     extends CreateFinancialEventRequest {
     localEventId: string;
     source: string;
+    // Set when a local rule auto-confirmed the event: the client already
+    // materialized the transaction under this id, and the server's
+    // auto-confirm RPC must insert with the same id.
+    confirmedTransactionId?: string | null;
 }
 
 export interface UpdateFinancialEventSyncPayload {
@@ -88,6 +92,7 @@ export interface TransactionUpdates {
     account_id?: string | null;
     amount?: number;
     category_id?: string | null;
+    merchant_id?: string | null;
     notes?: string | null;
     occurred_at?: string;
     transaction_type?: string;
@@ -100,6 +105,10 @@ export interface UpdateTransactionSyncPayload {
 
 export interface ConfirmFinancialEventSyncPayload {
     eventId: string;
+    // Client-generated id the locally materialized transaction already
+    // uses; the server RPC inserts with the same id so both sides share
+    // one identity.
+    transactionId?: string | null;
 }
 
 export interface IgnoreFinancialEventSyncPayload {

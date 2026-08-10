@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MotiView } from "moti";
 import {
@@ -131,6 +131,7 @@ export function EventReviewScreen({
   const [isCreatingMerchant, setIsCreatingMerchant] = useState(false);
   const [aliasEditorVisible, setAliasEditorVisible] = useState(false);
   const [aliasDraft, setAliasDraft] = useState("");
+  const aliasInputRef = useRef<TextInput>(null);
   const [isSavingAlias, setIsSavingAlias] = useState(false);
   const visibleMerchants = useMemo(() => {
     const query = merchantSearch.trim().toLowerCase();
@@ -670,6 +671,9 @@ export function EventReviewScreen({
       <Modal
         animationType="fade"
         onRequestClose={() => setAliasEditorVisible(false)}
+        // autoFocus races the modal window on Android (keyboard opens,
+        // then snaps shut when the window attaches); focus after onShow.
+        onShow={() => aliasInputRef.current?.focus()}
         transparent
         visible={aliasEditorVisible}
       >
@@ -703,9 +707,9 @@ export function EventReviewScreen({
             <View className="mt-4 min-h-12 flex-row items-center gap-[9px] rounded-control bg-field px-3.5">
               <Store color="#7b818c" size={17} strokeWidth={2.3} />
               <TextInput
-                autoFocus
                 className="flex-1 py-0 text-[14.5px] font-semibold text-ink"
                 onChangeText={setAliasDraft}
+                ref={aliasInputRef}
                 onSubmitEditing={() => {
                   void handleSaveAlias();
                 }}
@@ -751,7 +755,7 @@ export function EventReviewScreen({
         visible={merchantPickerVisible}
       >
         <KeyboardAvoidingView
-          behavior="padding"
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={financeStyles.modalBackdrop}
         >
           <Pressable

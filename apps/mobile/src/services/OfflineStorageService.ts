@@ -120,7 +120,9 @@ export interface OfflineSnapshot {
 
 export interface PersistedFinancialEvent {
   event: CachedFinancialEvent;
-  queueItem: SyncQueueItem<CreateFinancialEventSyncPayload>;
+  // Null when the event already existed locally (same transaction
+  // captured again through another channel) — nothing new was queued.
+  queueItem: SyncQueueItem<CreateFinancialEventSyncPayload> | null;
 }
 
 export interface UpdatedFinancialEvent {
@@ -309,14 +311,17 @@ async function attachMatchedMerchant(
 function getStableLocalEventId(event: FinancialEventInput) {
   const source = getMetadataString(event.metadata, "source");
   const reference = getMetadataString(event.metadata, "reference");
-  const packageName = getMetadataString(event.metadata, "packageName");
 
   if (!source || !reference) {
     return createRandomUuid();
   }
 
+  // Deliberately excludes the package: one swipe often arrives through
+  // several channels (bank app push, SMS, RCS) with the same reference,
+  // and those must collapse into one event. The amount disambiguates
+  // reference collisions across different banks.
   return createStableUuid(
-    `${sanitizeIdSegment(source)}:${sanitizeIdSegment(packageName ?? "unknown")}:${reference}`
+    `${sanitizeIdSegment(source)}:${reference}:${event.amount}`
   );
 }
 
@@ -434,13 +439,39 @@ export class OfflineStorageService {
     const stableLocalEventId = getStableLocalEventId(
       eventWithMatchedMerchant
     );
+    // Duplicate capture of the same transaction (repost or another
+    // channel): return the existing event untouched. Re-creating would
+    // clobber a confirmed/ignored status back to pending and queue a
+    // second create.
+    const existingEvent = (await LocalEventRepository.list()).find(
+      (candidate) => candidate.id === stableLocalEventId
+    );
+
+    if (existingEvent) {
+      return {
+        event: existingEvent,
+        queueItem: null,
+      };
+    }
+
     const cachedEvent = await LocalEventRepository.createPending(
       eventWithMatchedMerchant,
       source,
       stableLocalEventId
     );
     const deviceId = await this.getDeviceId();
+    // Auto-confirm mirrors the server: the event skips review and the
+    // transaction is materialized locally right now. The create
+    // processor hands the same transaction id to the server RPC, so
+    // both sides insert under one identity. The queued payload keeps
+    // status "pending" — the server RPC rejects confirming an event
+    // that is already confirmed at insert time.
+    const confirmedTransactionId =
+      result.rule?.auto_confirm && cachedEvent.status === "pending"
+        ? createRandomUuid()
+        : null;
     const payload: CreateFinancialEventSyncPayload = {
+      confirmedTransactionId,
       event: toFinancialEventInput(cachedEvent),
       idempotencyKey: cachedEvent.id,
       localEventId: cachedEvent.id,
@@ -453,10 +484,90 @@ export class OfflineStorageService {
       `create_financial_event:${cachedEvent.id}`
     );
 
+    let persistedEvent = cachedEvent;
+
+    if (confirmedTransactionId) {
+      persistedEvent = await LocalEventRepository.update(cachedEvent.id, {
+        status: "confirmed",
+      });
+      await this.materializeTransactionLocally(
+        persistedEvent,
+        confirmedTransactionId
+      );
+    }
+
     return {
-      event: cachedEvent,
+      event: persistedEvent,
       queueItem,
     };
+  }
+
+  // Mirrors the confirm_financial_event RPC so the transaction row
+  // exists the moment the event is confirmed — offline included. The
+  // server later inserts with the same id, so the pull's clear-and-
+  // refill replaces this provisional row seamlessly and queued edits
+  // against it stay valid. If the server call ultimately never runs,
+  // the next successful pull drops the orphaned row.
+  private static async materializeTransactionLocally(
+    event: CachedFinancialEvent,
+    transactionId: string
+  ) {
+    const merchant = event.merchant_id
+      ? (await LocalMerchantRepository.list()).find(
+          (candidate) => candidate.id === event.merchant_id
+        ) ?? null
+      : null;
+    const ruleCategoryId = getMetadataString(
+      event.metadata,
+      "rule_category_id"
+    );
+    const categoryId = ruleCategoryId ?? merchant?.category_id ?? null;
+    const category = categoryId
+      ? (await LocalCategoryRepository.list()).find(
+          (candidate) => candidate.id === categoryId
+        ) ?? null
+      : null;
+    const now = new Date().toISOString();
+
+    await LocalTransactionRepository.upsert({
+      account_id: getMetadataString(event.metadata, "account_id"),
+      amount: event.amount,
+      category: category
+        ? {
+            color: category.color ?? null,
+            icon: category.icon ?? null,
+            id: category.id,
+            name: category.name,
+          }
+        : null,
+      category_id: categoryId,
+      created_at: now,
+      currency: event.currency ?? "INR",
+      event_id: event.id,
+      id: transactionId,
+      merchant: merchant
+        ? {
+            id: merchant.id,
+            name: merchant.name,
+            normalized_name: merchant.normalized_name ?? null,
+            usage_count: merchant.usage_count ?? 0,
+          }
+        : null,
+      merchant_id: event.merchant_id ?? null,
+      notes: event.notes ?? null,
+      occurred_at: event.occurred_at,
+      transaction_type: event.direction === "debit" ? "expense" : "income",
+      updated_at: now,
+    });
+
+    if (merchant) {
+      await LocalMerchantRepository.upsert({
+        ...merchant,
+        last_seen_at: now,
+        updated_at: now,
+        usage_count: (merchant.usage_count ?? 0) + 1,
+      });
+    }
   }
 
   static async updateFinancialEvent(
@@ -555,9 +666,12 @@ export class OfflineStorageService {
     const event = await LocalEventRepository.update(eventId, {
       status: "confirmed",
     });
+    const transactionId = createRandomUuid();
+    await this.materializeTransactionLocally(event, transactionId);
     const deviceId = await this.getDeviceId();
     const payload: ConfirmFinancialEventSyncPayload = {
       eventId,
+      transactionId,
     };
     const queueItem = await SyncQueueRepository.enqueue(
       "confirm_event",

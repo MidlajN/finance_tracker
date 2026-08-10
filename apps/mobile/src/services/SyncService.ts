@@ -785,7 +785,10 @@ export class SyncService {
       throw new Error("Invalid Financial Event confirm payload.");
     }
 
-    await RemoteEventRepository.confirm(item.payload.eventId);
+    await RemoteEventRepository.confirm(
+      item.payload.eventId,
+      item.payload.transactionId ?? null
+    );
   }
 
   private static async processIgnoreFinancialEvent(

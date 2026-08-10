@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react-native";
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -31,6 +32,7 @@ import type {
 import { TransactionEditModal } from "../components/finance/TransactionEditModal";
 import { MobileDashboardService } from "../services/MobileDashboardService";
 import { useOfflineStore } from "../stores/offlineStore";
+import { useSyncStore } from "../stores/syncStore";
 import {
   premiumHairline,
   premiumSurface,
@@ -147,6 +149,8 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
   const accounts = useOfflineStore((state) => state.accounts);
   const categories = useOfflineStore((state) => state.categories);
   const events = useOfflineStore((state) => state.events);
+  const merchants = useOfflineStore((state) => state.merchants);
+  const createMerchant = useOfflineStore((state) => state.createMerchant);
   const transactions = useOfflineStore((state) => state.transactions);
   const updateTransaction = useOfflineStore(
     (state) => state.updateTransaction
@@ -154,6 +158,7 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
   const deleteTransaction = useOfflineStore(
     (state) => state.deleteTransaction
   );
+  const syncing = useSyncStore((state) => state.syncing);
   const [filter, setFilter] = useState<TransactionFilter>("all");
   const [dateFilter, setDateFilter] = useState<TransactionDateFilter>("all");
   const [dateFilterMenuAnchor, setDateFilterMenuAnchor] = useState<{
@@ -261,6 +266,7 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
       <ScrollView
         className="flex-1 bg-canvas"
         contentContainerClassName="gap-[18px] bg-canvas p-5 pb-24"
+        keyboardShouldPersistTaps="handled"
       >
         <View className="min-h-12 flex-row items-center gap-2.5 rounded-control bg-field px-3.5">
           <Search
@@ -360,6 +366,18 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
                 />
               </View>
             </Pressable>
+          </View>
+        ) : null}
+
+        {syncing ? (
+          <View className="-my-1 flex-row items-center justify-center gap-2">
+            <ActivityIndicator
+              color={premiumTheme.colors.secondary}
+              size="small"
+            />
+            <Text className="text-xs font-semibold text-secondary">
+              Syncing…
+            </Text>
           </View>
         ) : null}
 
@@ -552,6 +570,8 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
           accounts={accounts}
           categories={categories}
           frequentCategoryIds={frequentCategoryIds}
+          merchants={merchants}
+          onCreateMerchant={(name) => createMerchant({ name })}
           onAddAccount={() =>
             navigation.navigate("FinancialIntelligence", {
               initialResource: "account",
