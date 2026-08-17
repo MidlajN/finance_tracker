@@ -58,6 +58,8 @@ import type {
   MerchantLike,
 } from "@finance/shared-types";
 import {
+  deriveTransactionType,
+  getAccountClass,
   matchAccountFromHint,
   matchMerchantFromRaw,
 } from "@finance/finance-core";
@@ -517,11 +519,43 @@ export class OfflineStorageService {
           (candidate) => candidate.id === event.merchant_id
         ) ?? null
       : null;
+    // Manual entry may pin the transaction type (currently "transfer");
+    // otherwise the accounting engine derives it from the observed
+    // direction, the matched account's class, and the parser's intent.
+    // Must stay in lockstep with the confirm_financial_event RPC.
+    const typeOverride = getMetadataString(
+      event.metadata,
+      "transaction_type_override"
+    );
+    const matchedAccountId = getMetadataString(event.metadata, "account_id");
+    const matchedAccount = matchedAccountId
+      ? (await LocalAccountRepository.list()).find(
+          (candidate) => candidate.id === matchedAccountId
+        ) ?? null
+      : null;
+    const intentValue = getMetadataString(event.metadata, "intent");
+    const intent =
+      intentValue === "refund" || intentValue === "liability_payment"
+        ? intentValue
+        : null;
+    const transactionType =
+      typeOverride === "transfer"
+        ? ("transfer" as const)
+        : deriveTransactionType({
+            accountClass: matchedAccount
+              ? getAccountClass(matchedAccount.account_type)
+              : null,
+            direction: event.direction,
+            intent,
+          });
     const ruleCategoryId = getMetadataString(
       event.metadata,
       "rule_category_id"
     );
-    const categoryId = ruleCategoryId ?? merchant?.category_id ?? null;
+    const categoryId =
+      transactionType === "transfer"
+        ? null
+        : ruleCategoryId ?? merchant?.category_id ?? null;
     const category = categoryId
       ? (await LocalCategoryRepository.list()).find(
           (candidate) => candidate.id === categoryId
@@ -556,7 +590,7 @@ export class OfflineStorageService {
       merchant_id: event.merchant_id ?? null,
       notes: event.notes ?? null,
       occurred_at: event.occurred_at,
-      transaction_type: event.direction === "debit" ? "expense" : "income",
+      transaction_type: transactionType,
       updated_at: now,
     });
 

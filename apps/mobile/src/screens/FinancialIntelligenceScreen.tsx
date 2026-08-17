@@ -73,7 +73,14 @@ import type {
   FinancialIntelligenceResource,
   RootStackParamList,
 } from "../types/navigation";
-import { formatPercent, titleCase } from "../utils/financeFormat";
+import { getAccountClass } from "@finance/finance-core";
+
+import {
+  formatPercent,
+  getAccountBalanceDisplay,
+  getAvailableCredit,
+  titleCase,
+} from "../utils/financeFormat";
 import { getAccountTypeVisual } from "../utils/financeVisuals";
 
 type IntelligenceResource = FinancialIntelligenceResource;
@@ -265,6 +272,7 @@ export function FinancialIntelligenceScreen({
   const [type, setType] = useState(getDefaultResourceType(requestedResource));
   const [currency, setCurrency] = useState("INR");
   const [amount, setAmount] = useState("");
+  const [creditLimit, setCreditLimit] = useState("");
   const [secondaryAmount, setSecondaryAmount] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [rate, setRate] = useState("0");
@@ -314,6 +322,7 @@ export function FinancialIntelligenceScreen({
     setType(getDefaultResourceType(nextResource));
     setCurrency("INR");
     setAmount("");
+    setCreditLimit("");
     setSecondaryAmount("");
     setQuantity("1");
     setRate("0");
@@ -383,6 +392,11 @@ export function FinancialIntelligenceScreen({
       setType(account.account_type);
       setCurrency(account.currency);
       setAmount(account.opening_balance.toString());
+      setCreditLimit(
+        typeof account.credit_limit === "number"
+          ? account.credit_limit.toString()
+          : ""
+      );
       setNotes(account.institution ?? "");
     }
 
@@ -491,13 +505,20 @@ export function FinancialIntelligenceScreen({
       if (resource === "account") {
         const accountName = requireText(name, "Enter an account name.");
         const accountCurrency = requireText(currency, "Enter a currency.");
+        const accountType = (type || "bank") as AccountType;
         const payload: AccountLike = {
           name: accountName,
-          account_type: (type || "bank") as AccountType,
+          account_type: accountType,
           currency: accountCurrency,
           opening_balance: parseNumber(amount || "0", "Enter an opening balance.", true),
           institution: notes.trim() || null,
           archived: (editing as CachedAccount | null)?.archived ?? false,
+          // Only liability accounts carry a limit; clear it if the type
+          // changed away from one.
+          credit_limit:
+            getAccountClass(accountType) === "liability" && creditLimit.trim()
+              ? parseNumber(creditLimit, "Enter a valid credit limit.", true)
+              : null,
         };
         if (editing) {
           await updateAccount(editing.id, payload);
@@ -791,6 +812,17 @@ export function FinancialIntelligenceScreen({
           placeholder="0.00"
           value={amount}
         />
+        {resource === "account" &&
+        getAccountClass(type) === "liability" ? (
+          <AccountInputField
+            icon={<CreditCard color="#64748b" size={16} strokeWidth={2.2} />}
+            keyboardType="decimal-pad"
+            label="Credit limit (optional)"
+            onChangeText={setCreditLimit}
+            placeholder="0.00"
+            value={creditLimit}
+          />
+        ) : null}
         {["asset", "liability", "loan", "investment"].includes(resource) && (
           <AccountInputField
             icon={
@@ -1214,6 +1246,18 @@ export function FinancialIntelligenceScreen({
                 placeholder="0.00"
                 value={amount}
               />
+              {getAccountClass(type) === "liability" ? (
+                <AccountInputField
+                  icon={
+                    <CreditCard color="#64748b" size={16} strokeWidth={2.2} />
+                  }
+                  keyboardType="decimal-pad"
+                  label="Credit limit (optional)"
+                  onChangeText={setCreditLimit}
+                  placeholder="0.00"
+                  value={creditLimit}
+                />
+              ) : null}
               <AccountInputField
                 icon={<Building2 color="#64748b" size={16} strokeWidth={2.2} />}
                 label="Institution"
@@ -1548,6 +1592,11 @@ function AccountCard({
 }) {
   const visual = getAccountTypeVisual(account.account_type);
   const Icon = visual.Icon;
+  const balanceDisplay = getAccountBalanceDisplay(
+    account.account_type,
+    balance
+  );
+  const availableCredit = getAvailableCredit(account, balance);
 
   return (
     <View
@@ -1607,12 +1656,22 @@ function AccountCard({
       </View>
       <View className="flex-row items-center justify-between border-t-hairline border-t-divider pt-[11px]">
         <Text className="text-[11.5px] font-semibold text-secondary">
-          Current balance
+          {balanceDisplay.label}
         </Text>
         <Text className="text-[16px] font-extrabold tracking-[-0.3px] text-ink tabular-nums">
-          {MobileDashboardService.getFormattedBalance(balance)}
+          {MobileDashboardService.getFormattedBalance(balanceDisplay.amount)}
         </Text>
       </View>
+      {availableCredit !== null ? (
+        <View className="-mt-1 flex-row items-center justify-between">
+          <Text className="text-[11.5px] font-semibold text-secondary">
+            Available credit
+          </Text>
+          <Text className="text-[13px] font-bold text-success tabular-nums">
+            {MobileDashboardService.getFormattedBalance(availableCredit)}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }

@@ -41,6 +41,7 @@ import type {
     ReportPeriod,
     RuleMatchOperator,
     TransactionLike,
+    TransactionType,
 } from "@finance/shared-types";
 
 export type {
@@ -466,22 +467,165 @@ export function applyRuleToEvent<
     };
 }
 
+// ── Accounting engine ────────────────────────────────────────────
+// Single source of financial semantics. Every balance fold, report,
+// and filter predicate derives from getTransactionEffect and
+// getAccountClass — nothing else may re-interpret transaction_type.
+
+export type AccountClass = "asset" | "liability";
+
+const LIABILITY_ACCOUNT_TYPES = new Set([
+    "credit_card",
+    "loan",
+    "bnpl",
+]);
+
+// Derived from account_type, never stored: the type already carries
+// the class, and every account keeps one signed balance convention
+// (positive = holds value, negative = owed). Liability is a lens for
+// classification and presentation, not different arithmetic.
+export function getAccountClass(
+    accountType?: string | null
+): AccountClass {
+    return accountType &&
+        LIABILITY_ACCOUNT_TYPES.has(accountType)
+        ? "liability"
+        : "asset";
+}
+
+export interface TransactionEffect {
+    // Signed change to the owning account's balance.
+    balanceDelta: number;
+    // Contribution to income reporting.
+    income: number;
+    // Contribution to expense reporting; refunds contribute
+    // negatively — a refund undoes spending, it is not income.
+    expense: number;
+}
+
+export function getTransactionEffect(
+    transaction: TransactionLike
+): TransactionEffect {
+    const amount = transaction.amount;
+
+    switch (transaction.transaction_type) {
+        case "income":
+            return {
+                balanceDelta: amount,
+                expense: 0,
+                income: amount,
+            };
+        case "expense":
+            return {
+                balanceDelta: -amount,
+                expense: amount,
+                income: 0,
+            };
+        case "refund":
+            return {
+                balanceDelta: amount,
+                expense: -amount,
+                income: 0,
+            };
+        case "transfer": {
+            // One leg of money moving between own accounts: never
+            // income or expense. The balance sign is the observed
+            // direction of this leg; without one the leg is inert.
+            const direction =
+                transaction.event?.direction ??
+                null;
+
+            return {
+                balanceDelta:
+                    direction === "credit"
+                        ? amount
+                        : direction === "debit"
+                          ? -amount
+                          : 0,
+                expense: 0,
+                income: 0,
+            };
+        }
+        default:
+            return {
+                balanceDelta: 0,
+                expense: 0,
+                income: 0,
+            };
+    }
+}
+
+// Financial intent observed by a capture source (or asserted by manual
+// entry). Sources only *detect* intent — what it means for accounting
+// is decided here.
+export type FinancialIntent =
+    | "liability_payment"
+    | "refund";
+
+// The single classification rule mapping an observed money movement to
+// a transaction type. Capture pipelines and manual entry must derive
+// the type through this — never re-implement the mapping.
+//
+// - A credit into a liability account is a bill payment: money moving
+//   between own accounts, never income.
+// - Refund wording wins over the liability rule: a merchant refund to
+//   a credit card is returned spending, not a transfer.
+// - A debit with liability-payment intent from an asset (or unmatched)
+//   account is the paying leg of a bill: never an expense. From a
+//   liability account the same wording is just spending on the card.
+export function deriveTransactionType(input: {
+    accountClass?: AccountClass | null;
+    direction: "credit" | "debit";
+    intent?: FinancialIntent | null;
+}): TransactionType {
+    if (input.direction === "credit") {
+        if (input.intent === "refund") {
+            return "refund";
+        }
+
+        if (input.accountClass === "liability") {
+            return "transfer";
+        }
+
+        return "income";
+    }
+
+    if (
+        input.intent === "liability_payment" &&
+        input.accountClass !== "liability"
+    ) {
+        return "transfer";
+    }
+
+    return "expense";
+}
+
+export function isIncomeLike(
+    transaction: TransactionLike
+) {
+    return (
+        getTransactionEffect(transaction)
+            .income !== 0
+    );
+}
+
+export function isExpenseLike(
+    transaction: TransactionLike
+) {
+    return (
+        getTransactionEffect(transaction)
+            .expense !== 0
+    );
+}
+
 export function getIncomeTotal<
     TTransaction extends TransactionLike,
 >(transactions: TTransaction[]) {
     return transactions.reduce(
-        (total, transaction) => {
-            if (
-                transaction.transaction_type ===
-                    "income" ||
-                transaction.transaction_type ===
-                    "refund"
-            ) {
-                return total + transaction.amount;
-            }
-
-            return total;
-        },
+        (total, transaction) =>
+            total +
+            getTransactionEffect(transaction)
+                .income,
         0
     );
 }
@@ -491,10 +635,9 @@ export function getExpenseTotal<
 >(transactions: TTransaction[]) {
     return transactions.reduce(
         (total, transaction) =>
-            transaction.transaction_type ===
-            "expense"
-                ? total + transaction.amount
-                : total,
+            total +
+            getTransactionEffect(transaction)
+                .expense,
         0
     );
 }
@@ -542,10 +685,12 @@ export function getCategorySummary<
     >();
 
     transactions.forEach((transaction) => {
-        if (
-            transaction.transaction_type !==
-            "expense"
-        ) {
+        // Effect-driven: refunds contribute negatively, so category
+        // totals are net of returned spending; transfers never appear.
+        const effect =
+            getTransactionEffect(transaction);
+
+        if (effect.expense === 0) {
             return;
         }
 
@@ -564,7 +709,7 @@ export function getCategorySummary<
             categoryName,
             totalSpent:
                 (current?.totalSpent ?? 0) +
-                transaction.amount,
+                effect.expense,
             percentage: 0,
         });
     });
@@ -990,13 +1135,13 @@ export function buildBudgetOverview<
         }
     );
     const expenses = transactions.filter(
-        (transaction) =>
-            transaction.transaction_type ===
-            "expense"
+        isExpenseLike
     );
 
     const progress = activeBudgets.map(
         ({ budget, window }) => {
+            // Net of refunds: a return in the window gives budget
+            // room back.
             const spent = expenses
                 .filter(
                     (transaction) =>
@@ -1010,7 +1155,9 @@ export function buildBudgetOverview<
                 .reduce(
                     (total, transaction) =>
                         total +
-                        transaction.amount,
+                        getTransactionEffect(
+                            transaction
+                        ).expense,
                     0
                 );
 
@@ -1265,6 +1412,9 @@ function groupTransactions<
     >();
 
     transactions.forEach((transaction) => {
+        // Recurring detection only considers plain income/expense:
+        // transfers are internal movement and refunds are corrections,
+        // neither recurs as an activity of its own.
         if (
             transaction.transaction_type !==
                 "income" &&
@@ -1456,29 +1606,15 @@ function isInPeriod<
 function getIncomeAmount<
     TTransaction extends TransactionLike,
 >(transaction: TTransaction) {
-    if (
-        transaction.transaction_type ===
-            "income" ||
-        transaction.transaction_type ===
-            "refund"
-    ) {
-        return transaction.amount;
-    }
-
-    return 0;
+    return getTransactionEffect(transaction)
+        .income;
 }
 
 function getExpenseAmount<
     TTransaction extends TransactionLike,
 >(transaction: TTransaction) {
-    if (
-        transaction.transaction_type ===
-        "expense"
-    ) {
-        return transaction.amount;
-    }
-
-    return 0;
+    return getTransactionEffect(transaction)
+        .expense;
 }
 
 function summarize<
@@ -1998,25 +2134,13 @@ export function calculateAccountBalance<
             (transaction) =>
                 transaction.account_id === account.id
         )
-        .reduce((balance, transaction) => {
-            if (
-                transaction.transaction_type ===
-                    "income" ||
-                transaction.transaction_type ===
-                    "refund"
-            ) {
-                return balance + transaction.amount;
-            }
-
-            if (
-                transaction.transaction_type ===
-                "expense"
-            ) {
-                return balance - transaction.amount;
-            }
-
-            return balance;
-        }, account.opening_balance);
+        .reduce(
+            (balance, transaction) =>
+                balance +
+                getTransactionEffect(transaction)
+                    .balanceDelta,
+            account.opening_balance
+        );
 }
 
 function convertDatedAmount(

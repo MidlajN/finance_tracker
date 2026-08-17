@@ -171,6 +171,10 @@ export interface ParsedFinancialEvent {
     occurredAt: string;
     reference?: string | null;
     accountHint?: ParsedAccountHint | null;
+    // Observed financial intent (refund wording, card-bill-payment
+    // wording). The accounting engine turns intent into a transaction
+    // type — the parser never decides accounting semantics.
+    intent?: "liability_payment" | "refund" | null;
     confidence: number;
     rawPayload: string;
 }
@@ -233,6 +237,12 @@ export interface TransactionLike {
     transaction_type: TransactionType;
     merchant?: MerchantReference | null;
     category?: CategoryReference | null;
+    // A transfer is a single-account observation; its balance sign comes
+    // from the captured event's direction. CachedTransaction narrows this
+    // to the full CachedFinancialEvent.
+    event?: {
+        direction?: EventDirection | null;
+    } | null;
 }
 
 export interface CachedTransaction
@@ -293,6 +303,10 @@ export interface AccountLike {
     opening_balance: number;
     institution?: string | null;
     archived: boolean;
+    // Liability accounts only (credit cards, BNPL): enables the
+    // "available credit" presentation. Purely informational — the
+    // accounting engine never reads it.
+    credit_limit?: number | null;
 }
 
 export interface CachedAccount

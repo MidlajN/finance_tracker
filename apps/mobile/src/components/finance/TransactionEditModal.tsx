@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MotiView } from "moti";
-import { Pencil, Trash2, X } from "lucide-react-native";
+import { Pencil, Sparkles, Trash2, X } from "lucide-react-native";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -17,8 +17,14 @@ import type {
   CachedCategory,
   CachedMerchant,
   CachedTransaction,
+  Json,
+  TransactionType,
 } from "@finance/shared-types";
 import type { TransactionUpdates } from "@finance/shared-api";
+import {
+  deriveTransactionType,
+  getAccountClass,
+} from "@finance/finance-core";
 
 import { premiumTheme } from "../../theme/premiumTheme";
 import { formatTransactionDate } from "../../utils/financeFormat";
@@ -78,6 +84,54 @@ export function TransactionEditModal({
   const parsedAmount = Number(amount);
   const canSave =
     Number.isFinite(parsedAmount) && parsedAmount > 0 && !busy;
+  // What the accounting rules would call this row today, given its
+  // captured direction, matched account, and parsed intent. Shown as a
+  // one-tap correction when it disagrees with the stored type — the
+  // user always decides; history is never rewritten automatically.
+  const eventDirection = transaction.event?.direction ?? null;
+  const linkedAccount = transaction.account_id
+    ? accounts.find((candidate) => candidate.id === transaction.account_id) ??
+      null
+    : null;
+  const suggestedType = eventDirection
+    ? deriveTransactionType({
+        accountClass: linkedAccount
+          ? getAccountClass(linkedAccount.account_type)
+          : null,
+        direction: eventDirection,
+        intent: getMetadataIntent(transaction.event?.metadata),
+      })
+    : null;
+  const suggestion =
+    suggestedType && suggestedType !== transaction.transaction_type
+      ? suggestedType
+      : null;
+
+  async function applySuggestion() {
+    if (!suggestion || busy) {
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      const updates: TransactionUpdates = {
+        transaction_type: suggestion,
+      };
+
+      if (suggestion === "transfer") {
+        updates.category_id = null;
+        updates.merchant_id = null;
+      }
+
+      await onSave(updates);
+      onClose();
+    } catch {
+      setError("Unable to update the transaction. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleSave() {
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
@@ -98,16 +152,24 @@ export function TransactionEditModal({
         updates.transaction_type = transactionType;
       }
 
-      if (categoryId !== transaction.category_id) {
-        updates.category_id = categoryId;
+      // Transfers carry no category by definition.
+      const nextCategoryId =
+        transactionType === "transfer" ? null : categoryId;
+
+      if (nextCategoryId !== transaction.category_id) {
+        updates.category_id = nextCategoryId;
       }
 
       if (accountId !== transaction.account_id) {
         updates.account_id = accountId;
       }
 
-      if (merchantId !== (transaction.merchant_id ?? null)) {
-        updates.merchant_id = merchantId;
+      // Transfers carry no merchant either.
+      const nextMerchantId =
+        transactionType === "transfer" ? null : merchantId;
+
+      if (nextMerchantId !== (transaction.merchant_id ?? null)) {
+        updates.merchant_id = nextMerchantId;
       }
 
       if (occurredAt.toISOString() !== transaction.occurred_at) {
@@ -176,9 +238,11 @@ export function TransactionEditModal({
                   {mode === "view" ? "Transaction" : "Edit transaction"}
                 </Text>
                 <Text style={financeStyles.merchantPickerSubtitle}>
-                  {transaction.merchant?.name ??
-                    transaction.event?.merchant_name_raw ??
-                    "Manual entry"}
+                  {transaction.transaction_type === "transfer"
+                    ? "Transfer between accounts"
+                    : transaction.merchant?.name ??
+                      transaction.event?.merchant_name_raw ??
+                      "Manual entry"}
                 </Text>
               </View>
               <Pressable
@@ -207,15 +271,21 @@ export function TransactionEditModal({
                   <Text style={styles.viewType}>
                     {transaction.transaction_type === "income"
                       ? "Income"
-                      : "Expense"}
+                      : transaction.transaction_type === "transfer"
+                        ? "Transfer"
+                        : transaction.transaction_type === "refund"
+                          ? "Refund"
+                          : "Expense"}
                   </Text>
                 </View>
 
                 <View style={styles.viewDetails}>
-                  <ViewDetailRow
-                    label="Category"
-                    value={transaction.category?.name ?? "Uncategorized"}
-                  />
+                  {transaction.transaction_type !== "transfer" ? (
+                    <ViewDetailRow
+                      label="Category"
+                      value={transaction.category?.name ?? "Uncategorized"}
+                    />
+                  ) : null}
                   <ViewDetailRow
                     label="Account"
                     value={
@@ -243,6 +313,38 @@ export function TransactionEditModal({
                   />
                 </View>
 
+                {suggestion ? (
+                  <View style={styles.suggestionCard}>
+                    <View style={styles.suggestionHeader}>
+                      <Sparkles
+                        color={premiumTheme.colors.accent}
+                        size={15}
+                        strokeWidth={2.4}
+                      />
+                      <Text style={styles.suggestionText}>
+                        Recorded as {getTypeLabel(transaction.transaction_type)}
+                        , but this looks like a{" "}
+                        {getTypeLabel(suggestion).toLowerCase()}
+                        {suggestion === "transfer"
+                          ? " between your accounts"
+                          : ""}
+                        .
+                      </Text>
+                    </View>
+                    <Pressable
+                      disabled={busy}
+                      onPress={() => void applySuggestion()}
+                      style={styles.suggestionButton}
+                    >
+                      <Text style={styles.suggestionButtonText}>
+                        {busy
+                          ? "Updating..."
+                          : `Reclassify as ${getTypeLabel(suggestion).toLowerCase()}`}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+
                 {error ? (
                   <Text style={financeStyles.error}>{error}</Text>
                 ) : null}
@@ -268,7 +370,9 @@ export function TransactionEditModal({
 
             {mode === "edit" ? (
               <View style={styles.typeRow}>
-                {(["expense", "income"] as const).map((option) => (
+                {(
+                  ["expense", "income", "transfer", "refund"] as const
+                ).map((option) => (
                   <Pressable
                     key={option}
                     onPress={() => setTransactionType(option)}
@@ -283,11 +387,21 @@ export function TransactionEditModal({
                         transactionType === option && styles.typeTextActive,
                       ]}
                     >
-                      {option === "expense" ? "Expense" : "Income"}
+                      {getTypeLabel(option)}
                     </Text>
                   </Pressable>
                 ))}
               </View>
+            ) : null}
+
+            {mode === "edit" &&
+            transactionType === "transfer" &&
+            eventDirection ? (
+              <Text style={styles.transferHint}>
+                This leg moves money{" "}
+                {eventDirection === "credit" ? "into" : "out of"} the linked
+                account.
+              </Text>
             ) : null}
 
             {mode === "edit" ? (
@@ -312,26 +426,40 @@ export function TransactionEditModal({
                   value={occurredAt}
                 />
 
-                <MerchantPickerField
-                  merchants={merchants}
-                  onCreateMerchant={onCreateMerchant}
-                  onSelect={setMerchantId}
-                  selectedMerchantId={merchantId}
-                />
+                {transactionType !== "transfer" ? (
+                  <>
+                    <MerchantPickerField
+                      merchants={merchants}
+                      onCreateMerchant={onCreateMerchant}
+                      onSelect={setMerchantId}
+                      selectedMerchantId={merchantId}
+                    />
 
-                <CategoryPickerField
-                  categories={categories}
-                  frequentCategoryIds={frequentCategoryIds}
-                  onManageCategories={onManageCategories}
-                  onSelect={setCategoryId}
-                  selectedCategoryId={categoryId}
-                />
+                    <CategoryPickerField
+                      categories={categories}
+                      frequentCategoryIds={frequentCategoryIds}
+                      onManageCategories={onManageCategories}
+                      onSelect={setCategoryId}
+                      selectedCategoryId={categoryId}
+                    />
+                  </>
+                ) : null}
 
                 <AccountPickerField
                   accounts={accounts}
                   onAddAccount={onAddAccount}
                   onSelect={setAccountId}
                   selectedAccountId={accountId}
+                  // A stored transfer is one leg on one account (the
+                  // matching side is its own row) — name the side this
+                  // leg touches instead of a generic "Account".
+                  title={
+                    transactionType === "transfer" && eventDirection
+                      ? eventDirection === "credit"
+                        ? "To account"
+                        : "From account"
+                      : "Account"
+                  }
                 />
 
                 <TextInput
@@ -383,6 +511,32 @@ export function TransactionEditModal({
       </KeyboardAvoidingView>
     </Modal>
   );
+}
+
+function getTypeLabel(type: TransactionType | string) {
+  if (type === "income") return "Income";
+  if (type === "transfer") return "Transfer";
+  if (type === "refund") return "Refund";
+
+  return "Expense";
+}
+
+// The parser's observed intent rides in the event metadata; reading it
+// here keeps the suggestion consistent with capture-time classification.
+function getMetadataIntent(metadata: Json | null | undefined) {
+  if (
+    typeof metadata !== "object" ||
+    metadata === null ||
+    Array.isArray(metadata)
+  ) {
+    return null;
+  }
+
+  const intent = metadata.intent;
+
+  return intent === "refund" || intent === "liability_payment"
+    ? intent
+    : null;
 }
 
 function ViewDetailRow({
@@ -472,6 +626,42 @@ const styles = StyleSheet.create({
   },
   saveButtonDisabled: {
     opacity: 0.4,
+  },
+  suggestionButton: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.colors.ink,
+    borderRadius: 12,
+    justifyContent: "center",
+    minHeight: 40,
+  },
+  suggestionButtonText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  suggestionCard: {
+    backgroundColor: premiumTheme.colors.accentSoft,
+    borderRadius: 16,
+    gap: 10,
+    padding: 12,
+  },
+  suggestionHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 8,
+  },
+  suggestionText: {
+    color: premiumTheme.colors.ink,
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: "600",
+    lineHeight: 18,
+  },
+  transferHint: {
+    color: premiumTheme.colors.secondary,
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: -6,
   },
   saveButtonText: {
     color: "#ffffff",

@@ -33,7 +33,13 @@ import { Section } from "../../components/common/Section";
 import { StatCard } from "../../components/common/StatCard";
 import { Surface } from "../../components/common/Surface";
 
+import { getAccountClass } from "@finance/finance-core";
+
 import { useFinancialIntelligenceStore } from "../../stores/financialIntelligenceStore";
+import {
+    getAccountBalanceDisplay,
+    getAvailableCredit,
+} from "../../utils/accountPresentation";
 import { formatCurrency } from "../../utils/format";
 import { cn } from "../../utils/helpers";
 
@@ -218,6 +224,7 @@ function getInitialFormValues(
         kind: "",
         currency: data?.baseCurrency ?? "INR",
         amount: "",
+        creditLimit: "",
         quantity: "1",
         secondaryAmount: "",
         rate: "0",
@@ -249,6 +256,11 @@ function getInitialFormValues(
             currency: account.currency,
             amount:
                 account.opening_balance.toString(),
+            creditLimit:
+                typeof account.credit_limit ===
+                "number"
+                    ? account.credit_limit.toString()
+                    : "",
             notes: account.institution ?? "",
         };
     }
@@ -370,6 +382,8 @@ function ResourceDialog({
     const [amount, setAmount] = useState(
         initialFormValues.amount
     );
+    const [creditLimit, setCreditLimit] =
+        useState(initialFormValues.creditLimit);
     const [quantity, setQuantity] =
         useState(initialFormValues.quantity);
     const [secondaryAmount, setSecondaryAmount] =
@@ -441,11 +455,11 @@ function ResourceDialog({
 
         try {
             if (resourceKind === "account") {
+                const accountType = (kind ||
+                    accountTypes[0]) as AccountType;
                 const payload = {
                     name,
-                    account_type:
-                        (kind ||
-                            accountTypes[0]) as AccountType,
+                    account_type: accountType,
                     currency,
                     opening_balance:
                         parseAmount(
@@ -458,6 +472,18 @@ function ResourceDialog({
                     archived:
                         (item as CachedAccount | null)
                             ?.archived ?? false,
+                    // Only liability accounts carry a limit.
+                    credit_limit:
+                        getAccountClass(
+                            accountType
+                        ) === "liability" &&
+                        creditLimit.trim()
+                            ? parseAmount(
+                                  creditLimit,
+                                  "Enter a valid credit limit.",
+                                  true
+                              )
+                            : null,
                 };
 
                 if (item) {
@@ -835,6 +861,26 @@ function ResourceDialog({
                         }
                     />
                 </FormField>
+
+                {resourceKind === "account" &&
+                    getAccountClass(kind) ===
+                        "liability" && (
+                        <FormField label="Credit limit (optional)">
+                            <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={creditLimit}
+                                disabled={loading}
+                                onChange={(event) =>
+                                    setCreditLimit(
+                                        event.target
+                                            .value
+                                    )
+                                }
+                            />
+                        </FormField>
+                    )}
 
                 {(resourceKind === "asset" ||
                     resourceKind ===
@@ -1291,7 +1337,21 @@ export function FinancialIntelligence() {
                             ) : (
                                 <List>
                                     {overview.accounts.map(
-                                        (account) => (
+                                        (account) => {
+                                            const balanceDisplay =
+                                                getAccountBalanceDisplay(
+                                                    account
+                                                        .account
+                                                        .account_type,
+                                                    account.currentBalance
+                                                );
+                                            const availableCredit =
+                                                getAvailableCredit(
+                                                    account.account,
+                                                    account.currentBalance
+                                                );
+
+                                            return (
                                             <ListItem
                                                 key={
                                                     account
@@ -1303,7 +1363,7 @@ export function FinancialIntelligence() {
                                                         .account
                                                         .name
                                                 }
-                                                subtitle={`${titleCase(account.account.account_type)} • ${account.account.currency}`}
+                                                subtitle={`${titleCase(account.account.account_type)} • ${account.account.currency}${balanceDisplay.label !== "Current balance" ? ` • ${balanceDisplay.label}` : ""}`}
                                                 icon={
                                                     <Banknote
                                                         size={
@@ -1317,17 +1377,25 @@ export function FinancialIntelligence() {
                                                         <div className="text-right">
                                                             <p className="font-semibold text-slate-900">
                                                                 {formatCurrency(
-                                                                    account.currentBalance,
+                                                                    balanceDisplay.amount,
                                                                     account
                                                                         .account
                                                                         .currency
                                                                 )}
                                                             </p>
                                                             <p className="text-xs text-slate-500">
-                                                                {formatCurrency(
-                                                                    account.convertedBalance,
-                                                                    overview.baseCurrency
-                                                                )}
+                                                                {availableCredit !==
+                                                                null
+                                                                    ? `${formatCurrency(
+                                                                          availableCredit,
+                                                                          account
+                                                                              .account
+                                                                              .currency
+                                                                      )} available`
+                                                                    : formatCurrency(
+                                                                          account.convertedBalance,
+                                                                          overview.baseCurrency
+                                                                      )}
                                                             </p>
                                                         </div>
                                                         <ResourceActions
@@ -1352,7 +1420,8 @@ export function FinancialIntelligence() {
                                                     </>
                                                 }
                                             />
-                                        )
+                                            );
+                                        }
                                     )}
                                 </List>
                             )}

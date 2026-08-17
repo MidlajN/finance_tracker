@@ -25,6 +25,12 @@ interface UpdateTransactionInput {
     occurredAt: string;
 
     notes: string | null;
+
+    transactionType?:
+        | "expense"
+        | "income"
+        | "refund"
+        | "transfer";
 }
 
 interface TransactionState {

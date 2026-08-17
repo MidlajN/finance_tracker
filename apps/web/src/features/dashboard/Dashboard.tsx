@@ -27,6 +27,7 @@ import { Surface } from "../../components/common/Surface";
 import { useDashboardStore } from "../../stores/dashboardStore";
 import { formatCurrency } from "../../utils/format";
 import { cn } from "../../utils/helpers";
+import { getTransactionPresentation } from "../../utils/transactionPresentation";
 
 function formatDate(value: string) {
     return new Date(value).toLocaleDateString(
@@ -245,9 +246,10 @@ export function Dashboard() {
                                         (
                                             transaction
                                         ) => {
-                                            const isExpense =
-                                                transaction.transaction_type ===
-                                                "expense";
+                                            const presentation =
+                                                getTransactionPresentation(
+                                                    transaction.transaction_type
+                                                );
 
                                             return (
                                                 <ListItem
@@ -258,17 +260,18 @@ export function Dashboard() {
                                                         transaction
                                                             .merchant
                                                             ?.name ??
-                                                        "Unknown Merchant"
+                                                        (transaction.transaction_type ===
+                                                        "transfer"
+                                                            ? "Transfer"
+                                                            : "Unknown Merchant")
                                                     }
-                                                    subtitle={`${transaction.category?.name ?? "Uncategorized"} • ${formatDate(transaction.occurred_at)}`}
+                                                    subtitle={`${transaction.transaction_type === "transfer" ? "Between accounts" : transaction.category?.name ?? "Uncategorized"} • ${formatDate(transaction.occurred_at)}`}
                                                     right={
                                                         <div className="flex flex-col items-end gap-2">
                                                             <span
                                                                 className={cn(
                                                                     "font-semibold",
-                                                                    isExpense
-                                                                        ? "text-red-600"
-                                                                        : "text-green-600"
+                                                                    presentation.amountClass
                                                                 )}
                                                             >
                                                                 {formatCurrency(
@@ -278,13 +281,11 @@ export function Dashboard() {
 
                                                             <Badge
                                                                 variant={
-                                                                    isExpense
-                                                                        ? "danger"
-                                                                        : "success"
+                                                                    presentation.badgeVariant
                                                                 }
                                                             >
                                                                 {
-                                                                    transaction.transaction_type
+                                                                    presentation.label
                                                                 }
                                                             </Badge>
                                                         </div>

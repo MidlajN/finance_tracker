@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MotiView } from "moti";
 import {
+  ArrowLeftRight,
   Check,
+  ChevronDown,
   ChevronRight,
   Plus,
   ReceiptText,
@@ -24,7 +26,11 @@ import {
   View,
 } from "react-native";
 
-import type { CachedMerchant, EventDirection } from "@finance/shared-types";
+import type {
+  CachedAccount,
+  CachedMerchant,
+  EventDirection,
+} from "@finance/shared-types";
 
 import { AccountPickerField } from "../components/finance/AccountPicker";
 import { CategoryPickerField } from "../components/finance/CategoryPicker";
@@ -34,11 +40,13 @@ import { SlideToSaveButton } from "../components/finance/SlideToSaveButton";
 import { TransactionDateField } from "../components/finance/TransactionDateField";
 import { useOfflineStore } from "../stores/offlineStore";
 import { useSyncStore } from "../stores/syncStore";
-import { premiumHairline, premiumTheme } from "../theme/premiumTheme";
-import type { RootStackParamList } from "../types/navigation";
 import {
-  getFrequentCategoryIds,
-} from "../utils/financeFormat";
+  premiumHairline,
+  premiumSurface,
+  premiumTheme,
+} from "../theme/premiumTheme";
+import type { RootStackParamList } from "../types/navigation";
+import { getFrequentCategoryIds } from "../utils/financeFormat";
 
 type EventsScreenProps = NativeStackScreenProps<RootStackParamList, "Events">;
 
@@ -78,6 +86,18 @@ const hairlineHeightStyle = {
   height: premiumHairline,
 } as const;
 
+// MotiView is not NativeWind-interop'd, so the transfer account dropdown
+// keeps a plain style object — same recipe as the Transactions screen's
+// date-range menu.
+const transferAccountMenuStyle = {
+  backgroundColor: "#ffffff",
+  borderRadius: 18,
+  padding: 6,
+  position: "absolute",
+  ...premiumSurface,
+  ...premiumTheme.shadow.raised,
+} as const;
+
 export function EventsScreen({ navigation }: EventsScreenProps) {
   const accounts = useOfflineStore((state) => state.accounts);
   const categories = useOfflineStore((state) => state.categories);
@@ -95,7 +115,21 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
   const [merchantPickerOpen, setMerchantPickerOpen] = useState(false);
   const [merchantSearch, setMerchantSearch] = useState("");
   const [amount, setAmount] = useState("");
-  const [direction, setDirection] = useState<EventDirection>("debit");
+  const [entryType, setEntryType] = useState<
+    "expense" | "income" | "transfer"
+  >("expense");
+  // Manual transfers speak source -> destination; on save each chosen
+  // side becomes its own single-account leg (debit from, credit to),
+  // matching the engine's one-leg-per-observation model.
+  const [transferFromAccountId, setTransferFromAccountId] = useState<
+    string | null
+  >(null);
+  const [transferToAccountId, setTransferToAccountId] = useState<
+    string | null
+  >(null);
+  const direction: EventDirection =
+    entryType === "income" ? "credit" : "debit";
+  const isTransfer = entryType === "transfer";
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
     null
   );
@@ -151,10 +185,11 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
     Animated.timing(transactionTypePosition, {
       duration: 220,
       easing: Easing.out(Easing.cubic),
-      toValue: direction === "credit" ? 1 : 0,
+      toValue:
+        entryType === "expense" ? 0 : entryType === "income" ? 1 : 2,
       useNativeDriver: true,
     }).start();
-  }, [direction, transactionTypePosition]);
+  }, [entryType, transactionTypePosition]);
 
   function selectMerchant(nextMerchant: CachedMerchant) {
     setMerchant(nextMerchant.name);
@@ -198,6 +233,22 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
       return;
     }
 
+    // A transfer needs at least one tracked side, and moving money from
+    // an account to itself is meaningless.
+    if (isTransfer && !transferFromAccountId && !transferToAccountId) {
+      setError("Choose at least one account for this transfer.");
+      return;
+    }
+
+    if (
+      isTransfer &&
+      transferFromAccountId &&
+      transferFromAccountId === transferToAccountId
+    ) {
+      setError("Pick two different accounts.");
+      return;
+    }
+
     savingRef.current = true;
     setIsSaving(true);
 
@@ -206,8 +257,9 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
       // merchant entity first so the transaction links to it — a bare
       // merchant_name_raw would leave it unregistered (absent from the
       // Merchants screen, rules, and future picker suggestions).
-      let merchantId = selectedMerchantId;
-      const merchantName = merchant.trim();
+      // Transfers carry no merchant or category by definition.
+      let merchantId = isTransfer ? null : selectedMerchantId;
+      const merchantName = isTransfer ? "" : merchant.trim();
 
       if (!merchantId && merchantName) {
         merchantId = (
@@ -218,34 +270,59 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
         ).id;
       }
 
-      await createFinancialEvent(
-        {
-          amount: parsedAmount,
-          confidence: 1,
-          currency: "INR",
-          direction,
-          merchant_id: merchantId,
-          merchant_name_raw: merchant.trim() || null,
-          metadata: {
-            source: "manual",
-            account_id: selectedAccountId,
-            rule_category_id: selectedCategoryId,
-            category_override: categoryManuallySelected,
-            account_match: selectedAccountId
-              ? {
-                  account_id: selectedAccountId,
-                  matched_at: new Date().toISOString(),
-                  strategy: "manual_entry",
-                }
-              : null,
+      // A manual transfer is entered as source -> destination but stored
+      // as up to two single-account legs (debit out of the source,
+      // credit into the destination) — the same shape captures produce,
+      // so the engine needs no special case.
+      const entries: { accountId: string | null; legDirection: EventDirection }[] =
+        isTransfer
+          ? [
+              {
+                accountId: transferFromAccountId,
+                legDirection: "debit" as const,
+              },
+              {
+                accountId: transferToAccountId,
+                legDirection: "credit" as const,
+              },
+            ].filter((leg) => leg.accountId)
+          : [{ accountId: selectedAccountId, legDirection: direction }];
+
+      for (const entry of entries) {
+        await createFinancialEvent(
+          {
+            amount: parsedAmount,
+            confidence: 1,
+            currency: "INR",
+            direction: entry.legDirection,
+            merchant_id: merchantId,
+            merchant_name_raw: merchantName || null,
+            metadata: {
+              source: "manual",
+              account_id: entry.accountId,
+              rule_category_id: isTransfer ? null : selectedCategoryId,
+              category_override: categoryManuallySelected,
+              // Materialization (local mirror and server RPC) maps the
+              // confirmed event to this type instead of deriving it
+              // from the direction.
+              transaction_type_override: isTransfer ? "transfer" : null,
+              account_match: entry.accountId
+                ? {
+                    account_id: entry.accountId,
+                    matched_at: new Date().toISOString(),
+                    strategy: "manual_entry",
+                  }
+                : null,
+            },
+            notes: notes.trim() || null,
+            occurred_at: occurredAt.toISOString(),
+            status: "pending",
           },
-          notes: notes.trim() || null,
-          occurred_at: occurredAt.toISOString(),
-          status: "pending",
-        },
-        "manual",
-        { confirm: true }
-      );
+          "manual",
+          { confirm: true }
+        );
+      }
+
       await synchronize();
 
       setError(null);
@@ -290,29 +367,39 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
                   transform: [
                     {
                       translateX: transactionTypePosition.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, (transactionTypeWidth - 6) / 2],
+                        inputRange: [0, 2],
+                        outputRange: [
+                          0,
+                          ((transactionTypeWidth - 6) * 2) / 3,
+                        ],
                       }),
                     },
                   ],
-                  width: (transactionTypeWidth - 6) / 2,
+                  width: (transactionTypeWidth - 6) / 3,
                 },
               ]}
             />
           ) : null}
-          {[
-            {
-              Icon: TrendingDown,
-              label: "Expense",
-              value: "debit",
-            },
-            {
-              Icon: TrendingUp,
-              label: "Income",
-              value: "credit",
-            },
-          ].map((item) => {
-            const active = direction === item.value;
+          {(
+            [
+              {
+                Icon: TrendingDown,
+                label: "Expense",
+                value: "expense",
+              },
+              {
+                Icon: TrendingUp,
+                label: "Income",
+                value: "income",
+              },
+              {
+                Icon: ArrowLeftRight,
+                label: "Transfer",
+                value: "transfer",
+              },
+            ] as const
+          ).map((item) => {
+            const active = entryType === item.value;
             const TypeIcon = item.Icon;
 
             return (
@@ -320,7 +407,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
                 className="z-[1] min-h-[42px] flex-1 flex-row items-center justify-center gap-1.5 rounded-[11px]"
                 key={item.value}
                 onPress={() => {
-                  setDirection(item.value as EventDirection);
+                  setEntryType(item.value);
                 }}
               >
                 <TypeIcon
@@ -340,12 +427,17 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           })}
         </View>
 
+
         <View
           className="mt-4 rounded-section border border-border bg-white px-[18px] py-4"
           style={premiumTheme.shadow.soft}
         >
           <Text className="text-[10px] font-bold uppercase tracking-[1.1px] text-secondary">
-            {direction === "debit" ? "Amount spent" : "Amount received"}
+            {isTransfer
+              ? "Amount transferred"
+              : direction === "debit"
+                ? "Amount spent"
+                : "Amount received"}
           </Text>
           <View className="mt-1.5 flex-row items-center gap-2">
             <Text className="text-[21px] font-bold text-secondary">₹</Text>
@@ -363,34 +455,67 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           </View>
         </View>
 
+        {!isTransfer ? (
+          <>
+            <View
+              className="my-[18px] bg-divider"
+              style={hairlineHeightStyle}
+            />
+
+            <CategoryPickerField
+              categories={categories}
+              frequentCategoryIds={frequentCategoryIds}
+              onManageCategories={() => navigation.navigate("Categories")}
+              onSelect={(categoryId) => {
+                setSelectedCategoryId(categoryId);
+                setCategoryManuallySelected(true);
+              }}
+              selectedCategoryId={selectedCategoryId}
+            />
+          </>
+        ) : null}
+
         <View className="my-[18px] bg-divider" style={hairlineHeightStyle} />
 
-        <CategoryPickerField
-          categories={categories}
-          frequentCategoryIds={frequentCategoryIds}
-          onManageCategories={() => navigation.navigate("Categories")}
-          onSelect={(categoryId) => {
-            setSelectedCategoryId(categoryId);
-            setCategoryManuallySelected(true);
-          }}
-          selectedCategoryId={selectedCategoryId}
-        />
+        {isTransfer ? (
+          <>
+            <View className="flex-row gap-2.5">
+              <TransferAccountDropdown
+                accounts={accounts}
+                excludeAccountId={transferToAccountId}
+                label="From"
+                onSelect={setTransferFromAccountId}
+                selectedAccountId={transferFromAccountId}
+              />
+              <TransferAccountDropdown
+                accounts={accounts}
+                excludeAccountId={transferFromAccountId}
+                label="To"
+                onSelect={setTransferToAccountId}
+                selectedAccountId={transferToAccountId}
+              />
+            </View>
 
-        <View className="my-[18px] bg-divider" style={hairlineHeightStyle} />
-
-        <AccountPickerField
-          accounts={accounts}
-          onAddAccount={() =>
-            navigation.navigate("FinancialIntelligence", {
-              formIntentId: Date.now(),
-              initialResource: "account",
-            })
-          }
-          onSelect={(accountId) => {
-            setSelectedAccountId(accountId);
-          }}
-          selectedAccountId={selectedAccountId}
-        />
+            <Text className="mt-2 text-[12px] font-semibold text-secondary">
+              Leave a side as "Not tracked" when that account is outside
+              this app.
+            </Text>
+          </>
+        ) : (
+          <AccountPickerField
+            accounts={accounts}
+            onAddAccount={() =>
+              navigation.navigate("FinancialIntelligence", {
+                formIntentId: Date.now(),
+                initialResource: "account",
+              })
+            }
+            onSelect={(accountId) => {
+              setSelectedAccountId(accountId);
+            }}
+            selectedAccountId={selectedAccountId}
+          />
+        )}
 
         <View className="my-[18px] bg-divider" style={hairlineHeightStyle} />
 
@@ -398,6 +523,7 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           className="rounded-section border border-border bg-white px-3.5"
           style={premiumTheme.shadow.soft}
         >
+          {!isTransfer ? (
           <Pressable
             accessibilityHint="Opens merchant suggestions and search"
             accessibilityRole="button"
@@ -434,8 +560,11 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
             ) : null}
             <ChevronRight color="#94a3b8" size={18} strokeWidth={2.5} />
           </Pressable>
+          ) : null}
 
-          <View className="ml-11 bg-[#e9ebef]" style={hairlineHeightStyle} />
+          {!isTransfer ? (
+            <View className="ml-11 bg-[#e9ebef]" style={hairlineHeightStyle} />
+          ) : null}
 
           <TransactionDateField
             grouped
@@ -687,6 +816,165 @@ function MerchantOptionRow({
         <View className="h-[26px] w-[26px] items-center justify-center rounded-[13px] bg-success">
           <Check color="#ffffff" size={14} strokeWidth={3} />
         </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+
+// One side of a manual transfer: a compact select that opens a floating
+// dropdown anchored under the trigger — same pattern as the date-range
+// filter on the Transactions screen, no bottom sheet.
+function TransferAccountDropdown({
+  accounts,
+  excludeAccountId,
+  label,
+  onSelect,
+  selectedAccountId,
+}: {
+  accounts: CachedAccount[];
+  excludeAccountId: string | null;
+  label: string;
+  onSelect: (accountId: string | null) => void;
+  selectedAccountId: string | null;
+}) {
+  const [menuAnchor, setMenuAnchor] = useState<{
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
+  const triggerRef = useRef<View>(null);
+  const selectedAccount = accounts.find(
+    (account) => account.id === selectedAccountId
+  );
+  const options = accounts.filter(
+    (account) =>
+      (!account.archived || account.id === selectedAccountId) &&
+      account.id !== excludeAccountId
+  );
+
+  function openMenu() {
+    triggerRef.current?.measureInWindow((x, y, width, height) => {
+      setMenuAnchor({
+        left: x,
+        top: y + height + 6,
+        width,
+      });
+    });
+  }
+
+  function select(accountId: string | null) {
+    setMenuAnchor(null);
+    onSelect(accountId);
+  }
+
+  return (
+    <>
+      <Pressable
+        accessibilityHint={`Chooses the ${label.toLowerCase()} account`}
+        accessibilityRole="button"
+        className="min-h-[54px] flex-1 flex-row items-center gap-2 rounded-control bg-field px-3"
+        onPress={openMenu}
+        ref={triggerRef}
+      >
+        <View className="min-w-0 flex-1">
+          <Text className="text-[9.5px] font-bold uppercase tracking-[0.8px] text-secondary">
+            {label}
+          </Text>
+          <Text
+            className={`mt-[2px] text-[13.5px] font-bold ${
+              selectedAccount ? "text-ink" : "text-[#8b929d]"
+            }`}
+            numberOfLines={1}
+          >
+            {selectedAccount?.name ?? "Not tracked"}
+          </Text>
+        </View>
+        <ChevronDown
+          color={premiumTheme.colors.muted}
+          size={15}
+          strokeWidth={2.5}
+        />
+      </Pressable>
+
+      <Modal
+        animationType="none"
+        onRequestClose={() => setMenuAnchor(null)}
+        transparent
+        visible={menuAnchor !== null}
+      >
+        <Pressable className="flex-1" onPress={() => setMenuAnchor(null)}>
+          {menuAnchor ? (
+            <MotiView
+              animate={{ opacity: 1, scale: 1, translateY: 0 }}
+              from={{ opacity: 0, scale: 0.96, translateY: -6 }}
+              style={[
+                transferAccountMenuStyle,
+                {
+                  left: menuAnchor.left,
+                  top: menuAnchor.top,
+                  width: menuAnchor.width,
+                },
+              ]}
+              transition={{
+                damping: 20,
+                mass: 0.6,
+                stiffness: 260,
+                type: "spring",
+              }}
+            >
+              <Text className="mb-1 mt-1.5 px-2.5 text-[10.5px] font-extrabold uppercase tracking-[1px] text-muted">
+                {label} account
+              </Text>
+              <ScrollView className="max-h-[264px]">
+                <TransferAccountMenuRow
+                  name="Not tracked"
+                  onPress={() => select(null)}
+                  selected={!selectedAccountId}
+                />
+                {options.map((account) => (
+                  <TransferAccountMenuRow
+                    key={account.id}
+                    name={account.name}
+                    onPress={() => select(account.id)}
+                    selected={selectedAccountId === account.id}
+                  />
+                ))}
+              </ScrollView>
+            </MotiView>
+          ) : null}
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
+
+function TransferAccountMenuRow({
+  name,
+  onPress,
+  selected,
+}: {
+  name: string;
+  onPress: () => void;
+  selected: boolean;
+}) {
+  return (
+    <Pressable
+      className={`min-h-[42px] flex-row items-center justify-between gap-2.5 rounded-xl px-2.5 active:bg-field ${
+        selected ? "bg-field" : ""
+      }`}
+      onPress={onPress}
+    >
+      <Text
+        className={`flex-1 text-[13px] leading-[18px] text-ink ${
+          selected ? "font-bold" : "font-semibold"
+        }`}
+        numberOfLines={1}
+      >
+        {name}
+      </Text>
+      {selected ? (
+        <Check color={premiumTheme.colors.ink} size={15} strokeWidth={2.8} />
       ) : null}
     </Pressable>
   );

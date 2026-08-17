@@ -23,6 +23,7 @@ import { Surface } from "../../components/common/Surface";
 import { useReportStore } from "../../stores/reportStore";
 import { formatCurrency } from "../../utils/format";
 import { cn } from "../../utils/helpers";
+import { getTransactionPresentation } from "../../utils/transactionPresentation";
 
 import type { ReportPeriod } from "../../services/ReportService";
 
@@ -343,9 +344,10 @@ export function Reports() {
                                     (
                                         transaction
                                     ) => {
-                                        const isExpense =
-                                            transaction.transaction_type ===
-                                            "expense";
+                                        const presentation =
+                                            getTransactionPresentation(
+                                                transaction.transaction_type
+                                            );
 
                                         return (
                                             <ListItem
@@ -356,17 +358,18 @@ export function Reports() {
                                                     transaction
                                                         .merchant
                                                         ?.name ??
-                                                    "Unknown Merchant"
+                                                    (transaction.transaction_type ===
+                                                    "transfer"
+                                                        ? "Transfer"
+                                                        : "Unknown Merchant")
                                                 }
-                                                subtitle={`${transaction.category?.name ?? "Uncategorized"} • ${formatDate(transaction.occurred_at)}`}
+                                                subtitle={`${transaction.transaction_type === "transfer" ? "Between accounts" : transaction.category?.name ?? "Uncategorized"} • ${formatDate(transaction.occurred_at)}`}
                                                 right={
                                                     <div className="flex flex-col items-end gap-2">
                                                         <span
                                                             className={cn(
                                                                 "font-semibold",
-                                                                isExpense
-                                                                    ? "text-red-600"
-                                                                    : "text-green-600"
+                                                                presentation.amountClass
                                                             )}
                                                         >
                                                             {formatCurrency(
@@ -376,13 +379,11 @@ export function Reports() {
 
                                                         <Badge
                                                             variant={
-                                                                isExpense
-                                                                    ? "danger"
-                                                                    : "success"
+                                                                presentation.badgeVariant
                                                             }
                                                         >
                                                             {
-                                                                transaction.transaction_type
+                                                                presentation.label
                                                             }
                                                         </Badge>
                                                     </div>

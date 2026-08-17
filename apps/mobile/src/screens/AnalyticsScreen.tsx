@@ -41,6 +41,8 @@ import type {
   CachedTransaction,
 } from "@finance/shared-types";
 
+import { getTransactionEffect } from "@finance/finance-core";
+
 import { MobileDashboardService } from "../services/MobileDashboardService";
 import { useOfflineStore } from "../stores/offlineStore";
 import { financeStyles } from "../components/finance/financeStyles";
@@ -246,14 +248,10 @@ export function AnalyticsScreen() {
     }
 
     const previousExpenses = transactions.reduce((total, transaction) => {
-      if (transaction.transaction_type !== "expense") {
-        return total;
-      }
-
       const occurredAt = new Date(transaction.occurred_at);
 
       return occurredAt >= prevStart && occurredAt <= prevEnd
-        ? total + transaction.amount
+        ? total + getTransactionEffect(transaction).expense
         : total;
     }, 0);
 
@@ -393,21 +391,18 @@ export function AnalyticsScreen() {
       >();
 
       filteredTransactions.forEach((transaction) => {
-        if (
-          transaction.transaction_type !== "expense" &&
-          transaction.transaction_type !== "income"
-        ) {
+        // Engine-driven: refunds net against spend, transfers vanish.
+        const effect = getTransactionEffect(transaction);
+
+        if (effect.expense === 0 && effect.income === 0) {
           return;
         }
 
         const key = transaction.occurred_at.slice(0, 10);
         const entry = dayTotals.get(key) ?? { expense: 0, income: 0 };
 
-        if (transaction.transaction_type === "expense") {
-          entry.expense += transaction.amount;
-        } else {
-          entry.income += transaction.amount;
-        }
+        entry.expense += effect.expense;
+        entry.income += effect.income;
 
         dayTotals.set(key, entry);
       });
@@ -476,13 +471,15 @@ export function AnalyticsScreen() {
     const dayTotals = new Map<string, number>();
 
     filteredTransactions.forEach((transaction) => {
-      if (transaction.transaction_type !== "expense") {
+      const expense = getTransactionEffect(transaction).expense;
+
+      if (expense === 0) {
         return;
       }
 
       const key = transaction.occurred_at.slice(0, 10);
 
-      dayTotals.set(key, (dayTotals.get(key) ?? 0) + transaction.amount);
+      dayTotals.set(key, (dayTotals.get(key) ?? 0) + expense);
     });
 
     let highestKey: string | null = null;

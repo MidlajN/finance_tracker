@@ -1,5 +1,6 @@
 import {
     ArrowDownRight,
+    ArrowLeftRight,
     ArrowUpRight,
     Calendar,
     CircleDollarSign,
@@ -53,6 +54,10 @@ export function TransactionDetails({
         transaction.transaction_type ===
         "expense";
 
+    const isTransfer =
+        transaction.transaction_type ===
+        "transfer";
+
     return (
         <Surface className="flex h-full flex-col">
             <div className="border-b border-slate-200 p-6">
@@ -60,7 +65,9 @@ export function TransactionDetails({
                     <div>
                         <h2 className="text-2xl font-bold text-slate-900">
                             {transaction.merchant?.name ??
-                                "Unknown Merchant"}
+                                (isTransfer
+                                    ? "Transfer"
+                                    : "Unknown Merchant")}
                         </h2>
 
                         <p className="mt-2 text-sm text-slate-500">
@@ -71,9 +78,11 @@ export function TransactionDetails({
                     <div className="flex items-center gap-2">
                         <Badge
                             variant={
-                                isExpense
-                                    ? "danger"
-                                    : "success"
+                                isTransfer
+                                    ? "default"
+                                    : isExpense
+                                      ? "danger"
+                                      : "success"
                             }
                         >
                             {transaction.transaction_type}
@@ -102,7 +111,9 @@ export function TransactionDetails({
 
                 <section>
                     <div className="flex items-center gap-3">
-                        {isExpense ? (
+                        {isTransfer ? (
+                            <ArrowLeftRight className="text-slate-400" />
+                        ) : isExpense ? (
                             <ArrowUpRight className="text-red-500" />
                         ) : (
                             <ArrowDownRight className="text-green-500" />

@@ -4,6 +4,7 @@ import {
   buildFinancialIntelligenceOverview,
   buildFinancialAnalytics,
   buildFinancialReport,
+  getTransactionEffect,
 } from "@finance/finance-core";
 import { parseFinancialEventsCsv } from "@finance/parser";
 import { API_RESOURCES } from "@finance/shared-api";
@@ -79,10 +80,11 @@ export class MobileDashboardService {
     let previousIncomeTotal = 0;
 
     for (const transaction of transactions) {
-      const isExpense = transaction.transaction_type === "expense";
-      const isIncome = transaction.transaction_type === "income";
+      // Engine-driven: refunds net against spend, transfers contribute
+      // nothing — same semantics as every other report.
+      const effect = getTransactionEffect(transaction);
 
-      if (!isExpense && !isIncome) {
+      if (effect.expense === 0 && effect.income === 0) {
         continue;
       }
 
@@ -99,16 +101,17 @@ export class MobileDashboardService {
         occurredAt.getFullYear() === previousYear &&
         occurredAt.getMonth() === previousMonth;
 
-      if (isExpense && inCurrentMonth) {
-        const day = Math.min(occurredAt.getDate(), today);
+      if (inCurrentMonth) {
+        if (effect.expense !== 0) {
+          const day = Math.min(occurredAt.getDate(), today);
 
-        dailySpend[day - 1] += transaction.amount;
-      } else if (isExpense && inPreviousMonth) {
-        previousExpenseTotal += transaction.amount;
-      } else if (isIncome && inCurrentMonth) {
-        currentIncomeTotal += transaction.amount;
-      } else if (isIncome && inPreviousMonth) {
-        previousIncomeTotal += transaction.amount;
+          dailySpend[day - 1] += effect.expense;
+        }
+
+        currentIncomeTotal += effect.income;
+      } else if (inPreviousMonth) {
+        previousExpenseTotal += effect.expense;
+        previousIncomeTotal += effect.income;
       }
     }
 

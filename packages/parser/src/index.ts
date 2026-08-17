@@ -475,6 +475,18 @@ const BILL_REMINDER_PATTERN =
 const PROMO_HINT_PATTERN =
     /\b(?:congratulations?|offer|win|won)\b/i;
 
+// Intent signals — the parser only observes wording; the accounting
+// engine (deriveTransactionType) decides what an intent means.
+// Credit direction: refund/reversal wording marks returned spending.
+const REFUND_INTENT_PATTERN =
+    /\b(?:refund(?:ed)?|revers(?:al|ed))\b/i;
+
+// Debit direction: wording that marks the paying leg of a card bill.
+// Deliberately narrow — "paid using your credit card" must NOT match,
+// only "towards your card" / "card bill" phrasings do.
+const LIABILITY_PAYMENT_INTENT_PATTERN =
+    /\b(?:card\s+bill|towards?\s+(?:your\s+)?(?:\w+\s+){0,3}card\b|card\s+payment\s+received)/i;
+
 const URL_PATTERN = /(?:https?:\/\/|www\.)\S+/i;
 
 // Link shorteners hide the destination — a phishing signal no matter
@@ -1020,6 +1032,16 @@ export function explainNotificationParse(
     const accountHint = parseAccountHint(rawText);
     const parsedReference =
         parseTransactionReference(rawText);
+    const intent =
+        direction === "credit"
+            ? REFUND_INTENT_PATTERN.test(rawText)
+                ? ("refund" as const)
+                : null
+            : LIABILITY_PAYMENT_INTENT_PATTERN.test(
+                    rawText
+                )
+              ? ("liability_payment" as const)
+              : null;
 
     const event: ParsedFinancialEvent = {
         source: "android_notification",
@@ -1034,6 +1056,7 @@ export function explainNotificationParse(
             occurredAt.toISOString(),
         reference: parsedReference ?? payload.id,
         accountHint,
+        intent,
         confidence: scoreConfidence(
             rawText,
             accountHint,
@@ -1085,6 +1108,7 @@ export function parsedNotificationToEventInput(
             account_hint: toAccountHintMetadata(
                 event.accountHint
             ),
+            intent: event.intent ?? null,
             rawPayload: event.rawPayload,
         },
         notes: null,

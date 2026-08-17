@@ -28,13 +28,13 @@ import {
   PanResponder,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Text,
-  useWindowDimensions,
   View,
+  useWindowDimensions,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { LineChart } from "react-native-chart-kit";
 import Svg, { Path } from "react-native-svg";
 
@@ -46,6 +46,7 @@ import { useOfflineStore } from "../stores/offlineStore";
 import { useSyncStore } from "../stores/syncStore";
 import { premiumSurface, premiumTheme } from "../theme/premiumTheme";
 import type { RootStackParamList } from "../types/navigation";
+import { getAccountBalanceDisplay } from "../utils/financeFormat";
 
 type DashboardScreenProps = NativeStackScreenProps<
   RootStackParamList,
@@ -795,7 +796,6 @@ function SummaryCard({
       <Text
         adjustsFontSizeToFit
         className="mt-2.5 text-[19px] font-extrabold tracking-[-0.3px] text-ink tabular-nums"
-        minimumFontScale={0.72}
         numberOfLines={1}
       >
         {MobileDashboardService.getFormattedBalance(value)}
@@ -929,6 +929,7 @@ function AccountRow({
 }) {
   const icon = getAccountIcon(type);
   const Icon = icon.Icon;
+  const display = getAccountBalanceDisplay(type, balance);
 
   return (
     <Pressable
@@ -949,7 +950,9 @@ function AccountRow({
           {name}
         </Text>
         <Text className="mt-[3px] text-[12px] font-medium text-secondary">
-          {getAccountSubtitle(type)}
+          {display.owed || display.label !== "Current balance"
+            ? `${getAccountSubtitle(type)} · ${display.label}`
+            : getAccountSubtitle(type)}
         </Text>
       </View>
 
@@ -959,7 +962,7 @@ function AccountRow({
         minimumFontScale={0.76}
         numberOfLines={1}
       >
-        {MobileDashboardService.getFormattedBalance(balance)}
+        {MobileDashboardService.getFormattedBalance(display.amount)}
       </Text>
       <ChevronRight color="#a3a8b0" size={22} strokeWidth={2.2} />
     </Pressable>
@@ -998,12 +1001,12 @@ function getAccountSubtitle(type: string) {
     return "Wallet";
   }
 
-  if (type === "investment") {
-    return "Investments";
-  }
-
   if (type === "digital_wallet") {
     return "Digital wallet";
+  }
+
+  if (type === "investment") {
+    return "Investments";
   }
 
   return "Bank account";

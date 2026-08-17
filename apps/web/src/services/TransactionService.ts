@@ -19,6 +19,14 @@ interface UpdateTransactionInput {
     occurredAt: string;
 
     notes: string | null;
+
+    // Optional so existing callers keep their behavior; "transfer"
+    // legs are neither income nor expense per the accounting engine.
+    transactionType?:
+        | "expense"
+        | "income"
+        | "refund"
+        | "transfer";
 }
 
 export class TransactionService {
@@ -31,6 +39,7 @@ export class TransactionService {
         amount,
         occurredAt,
         notes,
+        transactionType,
     }: UpdateTransactionInput) {
         await TransactionRepository.update(
             transactionId,
@@ -50,6 +59,13 @@ export class TransactionService {
                     occurredAt,
 
                 notes,
+
+                ...(transactionType
+                    ? {
+                          transaction_type:
+                              transactionType,
+                      }
+                    : {}),
             }
         );
 

@@ -1,5 +1,6 @@
 import {
     ArrowDownRight,
+    ArrowLeftRight,
     ArrowUpRight,
     Calendar,
 } from "lucide-react";
@@ -26,6 +27,10 @@ export function TransactionCard({
     const isExpense =
         transaction.transaction_type ===
         "expense";
+
+    const isTransfer =
+        transaction.transaction_type ===
+        "transfer";
 
     return (
         <button
@@ -56,7 +61,9 @@ export function TransactionCard({
                 <div>
                     <h3 className="font-semibold text-slate-900">
                         {transaction.merchant?.name ??
-                            "Unknown Merchant"}
+                            (isTransfer
+                                ? "Transfer"
+                                : "Unknown Merchant")}
                     </h3>
 
                     <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
@@ -77,7 +84,12 @@ export function TransactionCard({
 
             <div className="mt-6 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    {isExpense ? (
+                    {isTransfer ? (
+                        <ArrowLeftRight
+                            size={18}
+                            className="text-slate-400"
+                        />
+                    ) : isExpense ? (
                         <ArrowUpRight
                             size={18}
                             className="text-red-500"
@@ -92,9 +104,11 @@ export function TransactionCard({
                     <span
                         className={cn(
                             "text-2xl font-bold",
-                            isExpense
-                                ? "text-red-600"
-                                : "text-green-600"
+                            isTransfer
+                                ? "text-slate-600"
+                                : isExpense
+                                  ? "text-red-600"
+                                  : "text-green-600"
                         )}
                     >
                         ₹

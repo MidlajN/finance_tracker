@@ -40,6 +40,7 @@ import {
 } from "../theme/premiumTheme";
 import type { RootStackParamList } from "../types/navigation";
 import {
+  formatNeutralTransactionAmount,
   formatSignedTransactionAmount,
   formatTransactionListTimestamp,
   getEventAccountId,
@@ -57,7 +58,7 @@ type TransactionsScreenProps = NativeStackScreenProps<
   "Transactions"
 >;
 
-type TransactionFilter = "all" | "income" | "expense";
+type TransactionFilter = "all" | "income" | "expense" | "transfer";
 
 type TransactionDateFilter =
   | "all"
@@ -285,7 +286,7 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
 
         <View className="flex-row items-stretch gap-2">
           <View className="flex-1 flex-row gap-1 rounded-control bg-field p-1">
-            {(["all", "income", "expense"] as const).map(
+            {(["all", "income", "expense", "transfer"] as const).map(
               (item) => (
                 <Pressable
                   className={`min-h-[34px] flex-1 items-center justify-center rounded-[10px] border ${
@@ -451,7 +452,11 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
                     }
                     key={transaction.id}
                     amount={transaction.amount}
-                    categoryName={transaction.category?.name ?? "Uncategorized"}
+                    categoryName={
+                      transaction.transaction_type === "transfer"
+                        ? "Transfer"
+                        : transaction.category?.name ?? "Uncategorized"
+                    }
                     occurredAt={transaction.occurred_at}
                     onPress={() => setEditingTransaction(transaction)}
                     showDivider={index < group.transactions.length - 1}
@@ -619,6 +624,7 @@ function TransactionListRow({
 }) {
   const icon = getTransactionIcon(categoryName, type);
   const Icon = icon.Icon;
+  const isTransfer = type === "transfer";
   const signedAmount = getSignedTransactionAmount(amount, type);
   const merchantDisplay = getTransactionMerchantDisplay(
     transaction,
@@ -666,10 +672,16 @@ function TransactionListRow({
       <View className="ml-1 items-end">
         <Text
           className={`text-[14.5px] font-extrabold tracking-[-0.2px] tabular-nums ${
-            signedAmount > 0 ? "text-success" : "text-ink"
+            isTransfer
+              ? "text-secondary"
+              : signedAmount > 0
+                ? "text-success"
+                : "text-ink"
           }`}
         >
-          {formatSignedTransactionAmount(signedAmount)}
+          {isTransfer
+            ? formatNeutralTransactionAmount(amount)
+            : formatSignedTransactionAmount(signedAmount)}
         </Text>
         <Text className="mt-[3px] text-[11px] font-semibold text-muted">
           {formatTransactionListTimestamp(occurredAt)}

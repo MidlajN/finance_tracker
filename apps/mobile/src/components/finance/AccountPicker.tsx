@@ -30,12 +30,14 @@ export function AccountPickerField({
   onSelect,
   selectedAccountId,
   showHeader = true,
+  title = "Account",
 }: {
   accounts: CachedAccount[];
   onAddAccount: () => void;
   onSelect: (accountId: string | null) => void;
   selectedAccountId: string | null;
   showHeader?: boolean;
+  title?: string;
 }) {
   const [visible, setVisible] = useState(false);
   const selectedAccount = accounts.find(
@@ -71,7 +73,7 @@ export function AccountPickerField({
       <View style={styles.quickAccountSection}>
         {showHeader ? (
           <View style={styles.transactionSectionHeader}>
-            <Text style={styles.transactionSectionTitle}>Account</Text>
+            <Text style={styles.transactionSectionTitle}>{title}</Text>
             <Text
               numberOfLines={1}
               style={styles.transactionSectionSelection}

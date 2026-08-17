@@ -481,6 +481,44 @@ test("plural card wording alone carries no direction", () => {
     assert.equal(parsed, null);
 });
 
+test("intent: refund wording on a credit", () => {
+    const parsed = parseNotificationPayload({
+        id: "refund-intent-key",
+        packageName: "com.google.android.apps.messaging",
+        applicationName: "Messages",
+        title: "VM-HDFCBK",
+        text: "Rs.499.00 refund credited to your HDFC Bank Credit Card ending 4523 on 07-08-26. Ref No 991234567.",
+        subText: null,
+        postedAt: "2026-08-08T10:00:00.000Z",
+    });
+
+    assert.equal(parsed?.intent, "refund");
+});
+
+test("intent: card-bill wording on a debit, but not card usage", () => {
+    const billLeg = parseNotificationPayload({
+        id: "bill-leg-key",
+        packageName: "com.google.android.apps.messaging",
+        applicationName: "Messages",
+        title: "AX-ICICIB",
+        text: "Rs.5,000.00 debited from A/c XX5678 on 08-08-26 towards your ICICI Credit Card XX0345. Ref 812345678901.",
+        subText: null,
+        postedAt: "2026-08-08T10:00:00.000Z",
+    });
+    const cardUsage = parseNotificationPayload({
+        id: "card-usage-key",
+        packageName: "com.google.android.apps.messaging",
+        applicationName: "Messages",
+        title: "VM-SBICRD-S",
+        text: "Rs.799.00 spent on your SBI Credit Card ending with 0345 at BIGBASKET on 08-08-26. Ref No. 658317029508.",
+        subText: null,
+        postedAt: "2026-08-08T10:00:00.000Z",
+    });
+
+    assert.equal(billLeg?.intent, "liability_payment");
+    assert.equal(cardUsage?.intent, null);
+});
+
 test("keeps genuine credited alerts that mention a credit card", () => {
     // "credited" + "Credit Card" together is the refund/cashback shape —
     // the plural guard must not break it.

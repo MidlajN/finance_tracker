@@ -1,4 +1,7 @@
-import { calculateAccountBalance } from "@finance/finance-core";
+import {
+  calculateAccountBalance,
+  getTransactionEffect,
+} from "@finance/finance-core";
 import type {
   CachedAccount,
   CachedTransaction,
@@ -28,21 +31,16 @@ function formatAmount(value: number) {
   return value.toFixed(2);
 }
 
-// Expenses read as negative and money in as positive so a spreadsheet
-// SUM over the Amount column reproduces the net figure.
+// The signed Amount column is the accounting engine's balance delta,
+// so a spreadsheet SUM over it reproduces the net movement: expenses
+// negative, income and refunds positive, transfer legs signed by their
+// direction (the two legs of one transfer cancel).
 function formatSignedAmount(transaction: CachedTransaction) {
-  if (transaction.transaction_type === "expense") {
-    return "-" + formatAmount(transaction.amount);
-  }
+  const delta = getTransactionEffect(transaction).balanceDelta;
 
-  if (
-    transaction.transaction_type === "income" ||
-    transaction.transaction_type === "refund"
-  ) {
-    return formatAmount(transaction.amount);
-  }
-
-  return formatAmount(transaction.amount);
+  return delta < 0
+    ? "-" + formatAmount(-delta)
+    : formatAmount(delta);
 }
 
 function formatNet(value: number) {
@@ -75,15 +73,15 @@ function titleCaseFallback(value: string) {
     .replace(/^\w/, (letter) => letter.toUpperCase());
 }
 
-function isMoneyIn(transaction: CachedTransaction) {
-  return (
-    transaction.transaction_type === "income" ||
-    transaction.transaction_type === "refund"
-  );
+// Engine-driven money flow: income feeds "money in", expenses feed
+// "money out", refunds reduce money out (they undo spending), and
+// transfers touch neither — matching every dashboard total.
+function getMoneyIn(transaction: CachedTransaction) {
+  return getTransactionEffect(transaction).income;
 }
 
-function isMoneyOut(transaction: CachedTransaction) {
-  return transaction.transaction_type === "expense";
+function getMoneyOut(transaction: CachedTransaction) {
+  return getTransactionEffect(transaction).expense;
 }
 
 export function createFinancialReportCsv(
@@ -104,12 +102,14 @@ export function createFinancialReportCsv(
     accounts.map((account) => [account.id, account])
   );
 
-  const totalIn = sorted
-    .filter(isMoneyIn)
-    .reduce((total, transaction) => total + transaction.amount, 0);
-  const totalOut = sorted
-    .filter(isMoneyOut)
-    .reduce((total, transaction) => total + transaction.amount, 0);
+  const totalIn = sorted.reduce(
+    (total, transaction) => total + getMoneyIn(transaction),
+    0
+  );
+  const totalOut = sorted.reduce(
+    (total, transaction) => total + getMoneyOut(transaction),
+    0
+  );
   const transferCount = sorted.filter(
     (transaction) => transaction.transaction_type === "transfer"
   ).length;
@@ -168,12 +168,14 @@ export function createFinancialReportCsv(
     const accountTransactions = sorted.filter(
       (transaction) => transaction.account_id === account.id
     );
-    const moneyIn = accountTransactions
-      .filter(isMoneyIn)
-      .reduce((total, transaction) => total + transaction.amount, 0);
-    const moneyOut = accountTransactions
-      .filter(isMoneyOut)
-      .reduce((total, transaction) => total + transaction.amount, 0);
+    const moneyIn = accountTransactions.reduce(
+      (total, transaction) => total + getMoneyIn(transaction),
+      0
+    );
+    const moneyOut = accountTransactions.reduce(
+      (total, transaction) => total + getMoneyOut(transaction),
+      0
+    );
 
     lines.push([
       account.name,
@@ -208,11 +210,8 @@ export function createFinancialReportCsv(
       moneyOut: 0,
     };
 
-    if (isMoneyIn(transaction)) {
-      bucket.moneyIn += transaction.amount;
-    } else if (isMoneyOut(transaction)) {
-      bucket.moneyOut += transaction.amount;
-    }
+    bucket.moneyIn += getMoneyIn(transaction);
+    bucket.moneyOut += getMoneyOut(transaction);
 
     monthly.set(key, bucket);
   });
@@ -233,11 +232,17 @@ export function createFinancialReportCsv(
   // ---- Spending by category ----
   const byCategory = new Map<string, { count: number; total: number }>();
 
-  sorted.filter(isMoneyOut).forEach((transaction) => {
+  sorted.forEach((transaction) => {
+    const expense = getMoneyOut(transaction);
+
+    if (expense === 0) {
+      return;
+    }
+
     const name = transaction.category?.name ?? "Uncategorized";
     const bucket = byCategory.get(name) ?? { count: 0, total: 0 };
     bucket.count += 1;
-    bucket.total += transaction.amount;
+    bucket.total += expense;
     byCategory.set(name, bucket);
   });
 

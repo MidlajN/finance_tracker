@@ -372,6 +372,13 @@ export async function initializeLocalDatabase() {
     "account_id text"
   );
 
+  await ensureColumn(
+    database,
+    "cached_accounts",
+    "credit_limit",
+    "credit_limit real"
+  );
+
   await database.runAsync(
     `
       insert into app_metadata (key, value, updated_at)
@@ -1144,10 +1151,11 @@ export class LocalAccountRepository {
           opening_balance,
           institution,
           archived,
+          credit_limit,
           created_at,
           updated_at
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         on conflict(id) do update set
           name = excluded.name,
           account_type = excluded.account_type,
@@ -1155,6 +1163,7 @@ export class LocalAccountRepository {
           opening_balance = excluded.opening_balance,
           institution = excluded.institution,
           archived = excluded.archived,
+          credit_limit = excluded.credit_limit,
           updated_at = excluded.updated_at;
       `,
       [
@@ -1165,6 +1174,7 @@ export class LocalAccountRepository {
         account.opening_balance,
         account.institution ?? null,
         account.archived ? 1 : 0,
+        account.credit_limit ?? null,
         account.created_at,
         account.updated_at,
       ]
@@ -1783,6 +1793,7 @@ interface CachedAccountRow {
   opening_balance: number;
   institution: string | null;
   archived: number;
+  credit_limit: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -1957,6 +1968,7 @@ function toCachedAccount(row: CachedAccountRow): CachedAccount {
     opening_balance: row.opening_balance,
     institution: row.institution,
     archived: Boolean(row.archived),
+    credit_limit: row.credit_limit,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
