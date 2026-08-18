@@ -272,11 +272,11 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         <View className="min-h-12 flex-row items-center gap-2.5 rounded-control bg-field px-3.5">
           <Search
             color={premiumTheme.colors.secondary}
-            size={20}
+            size={14}
             strokeWidth={2.2}
           />
           <TextInput
-            className="min-h-12 flex-1 py-0 text-[15px] font-medium text-ink"
+            className="min-h-12 flex-1 py-0 text-[12px] font-medium text-ink"
             onChangeText={setSearchQuery}
             placeholder="Search transactions"
             placeholderTextColor={premiumTheme.colors.muted}
@@ -301,7 +301,7 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
                   }
                 >
                   <Text
-                    className={`text-[12.5px] font-bold ${
+                    className={`text-[11px] font-bold ${
                       filter === item ? "text-ink" : "text-secondary"
                     }`}
                   >
@@ -432,14 +432,14 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         ) : null}
 
         {groupedTransactions.map((group) => (
-          <View className="gap-2.5" key={group.label || "filtered"}>
+          <View className="gap-2" key={group.label || "filtered"}>
             {group.label ? (
-              <Text className="pl-0.5 text-[12px] font-extrabold uppercase tracking-[0.9px] text-secondary">
+              <Text className="pl-0.5 pt-2 text-[10px] font-bold uppercase tracking-[0.9px] text-secondary">
                 {group.label}
               </Text>
             ) : null}
             <View
-              className="rounded-section border border-border bg-white"
+              className="rounded-section bg-white"
               style={premiumTheme.shadow.soft}
             >
               <View className="overflow-hidden rounded-section">
@@ -635,20 +635,20 @@ function TransactionListRow({
     <Pressable
       accessibilityHint="Opens this transaction for editing"
       accessibilityRole="button"
-      className="min-h-[66px] flex-row items-center gap-3 px-3.5 active:bg-field"
+      className="py-1.5 flex-row items-center gap-3 active:bg-field"
       onPress={onPress}
     >
       <View
-        className="h-[42px] w-[42px] items-center justify-center rounded-[15px]"
+        className="h-[36px] w-[36px] items-center justify-center rounded-[11px]"
         style={{ backgroundColor: icon.background }}
       >
-        <Icon color={icon.color} size={19} strokeWidth={2.3} />
+        <Icon color={icon.color} size={14} strokeWidth={1.5} />
       </View>
 
       <View className="min-w-0 flex-1">
         <View className="flex-row items-center gap-[5px]">
           <Text
-            className="shrink text-[14.5px] font-bold tracking-[-0.2px] text-ink"
+            className="shrink text-[12px] font-bold tracking-[-0.2px] text-ink"
             numberOfLines={1}
           >
             {merchantDisplay.name}
@@ -656,13 +656,13 @@ function TransactionListRow({
           {merchantDisplay.registered && (
             <BadgeCheck
               color={premiumTheme.colors.success}
-              size={14}
+              size={12}
               strokeWidth={2.4}
             />
           )}
         </View>
         <Text
-          className="mt-[3px] text-[12px] font-semibold text-secondary"
+          className="text-[10px] font-semibold text-secondary"
           numberOfLines={1}
         >
           {accountName ? `${categoryName} · ${accountName}` : categoryName}
@@ -671,7 +671,7 @@ function TransactionListRow({
 
       <View className="ml-1 items-end">
         <Text
-          className={`text-[14.5px] font-extrabold tracking-[-0.2px] tabular-nums ${
+          className={`text-[12px] font-extrabold tracking-[-0.2px] tabular-nums ${
             isTransfer
               ? "text-secondary"
               : signedAmount > 0
@@ -683,7 +683,7 @@ function TransactionListRow({
             ? formatNeutralTransactionAmount(amount)
             : formatSignedTransactionAmount(signedAmount)}
         </Text>
-        <Text className="mt-[3px] text-[11px] font-semibold text-muted">
+        <Text className="mt-[3px] text-[10px] font-semibold text-muted">
           {formatTransactionListTimestamp(occurredAt)}
         </Text>
       </View>
@@ -722,24 +722,24 @@ function PendingEventRow({
     <Pressable
       accessibilityHint="Opens this captured transaction for review"
       accessibilityRole="button"
-      className="min-h-[68px] flex-row items-center gap-3 px-3.5 active:bg-field"
+      className="py-1.5 flex-row items-center gap-3 px-3.5 active:bg-field"
       onPress={onPress}
     >
-      <View className="h-[42px] w-[42px] items-center justify-center rounded-[15px] bg-field">
-        <Store color={premiumTheme.colors.ink} size={19} strokeWidth={2.3} />
+      <View className="h-[36px] w-[36px] items-center justify-center rounded-[15px] bg-field">
+        <Store color={premiumTheme.colors.ink} size={14} strokeWidth={1.5} />
       </View>
 
       <View className="min-w-0 flex-1">
         <View className="flex-row items-center gap-1.5">
           <Text
-            className="shrink text-[14.5px] font-bold tracking-[-0.2px] text-ink"
+            className="shrink text-[12px] font-bold tracking-[-0.2px] text-ink"
             numberOfLines={1}
           >
             {event.merchant_name_raw ?? "Unknown merchant"}
           </Text>
           {isLowConfidence ? (
             <View className="rounded-full bg-[#fef3c7] px-[7px] py-0.5">
-              <Text className="text-[10px] font-bold text-[#b45309]">
+              <Text className="text-[9px] font-bold text-[#b45309]">
                 Low confidence
               </Text>
             </View>
@@ -757,7 +757,7 @@ function PendingEventRow({
       <View className="ml-1 items-end">
         <View className="flex-row items-center gap-0.5">
           <Text
-            className={`text-[14px] font-extrabold tabular-nums ${
+            className={`text-[12px] font-extrabold tabular-nums ${
               isCredit ? "text-success" : "text-ink"
             }`}
           >

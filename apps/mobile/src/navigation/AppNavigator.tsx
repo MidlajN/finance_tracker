@@ -42,7 +42,8 @@ export function AppNavigator() {
           <Stack.Screen
             name="Dashboard"
             component={DashboardScreen}
-            options={{ headerShown: false }}
+            // Light status icons: the dashboard wash is dark at the top.
+            options={{ headerShown: false, statusBarStyle: "light" }}
           />
           <Stack.Screen
             name="Settings"

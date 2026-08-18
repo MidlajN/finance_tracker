@@ -29,9 +29,19 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { LineChart } from "react-native-chart-kit";
-import Svg, { Circle, Path } from "react-native-svg";
+import Svg, {
+  Circle,
+  Defs,
+  LinearGradient as SvgLinearGradient,
+  Path,
+  Rect,
+  Stop,
+} from "react-native-svg";
 
 import { getAccountClass } from "@finance/finance-core";
 import type { CachedTransaction } from "@finance/shared-types";
@@ -72,10 +82,67 @@ type DashboardIcon = ComponentType<{
 }>;
 
 const pressedControl = "active:opacity-[0.82] active:scale-[0.98]";
-// Dashboard sits on a lavender wash so the white cards and the balances
-// sheet read as elevated layers. Screen-local by design — other screens
-// keep the plain canvas.
-const dashboardWash = "#f2f1f9";
+// Dashboard wash: fixed vertical gradient from dark slate-teal through
+// misty sage to pale green (reference palette). The dark top inverts the
+// header/hero to light text; the pale bottom lets the white sheet read
+// as an elevated layer. Screen-local by design; other screens keep the
+// plain canvas.
+// Stops anchor to the logo's own background navy (#16212e sampled from
+// icon.png) fading through steel blue to a pale blue-grey under the
+// white sheet.
+const WASH_STOPS = [
+  { color: "#16212e", offset: 0 },
+  { color: "#6d7f92", offset: 0.55 },
+  { color: "#e2e8ef", offset: 1 },
+] as const;
+
+// Linear mix of two #rrggbb colors. Used to sample the wash gradient at
+// an arbitrary height so the hero backdrop and corner wedges match the
+// fixed background exactly.
+function mixHexColors(from: string, to: string, ratio: number) {
+  const f = parseInt(from.slice(1), 16);
+  const t = parseInt(to.slice(1), 16);
+  const clamped = Math.min(Math.max(ratio, 0), 1);
+  const channel = (shift: number) =>
+    Math.round(
+      ((f >> shift) & 255) * (1 - clamped) +
+        ((t >> shift) & 255) * clamped
+    );
+
+  return `#${((channel(16) << 16) | (channel(8) << 8) | channel(0))
+    .toString(16)
+    .padStart(6, "0")}`;
+}
+
+// Piecewise-linear sample of the wash gradient at a 0..1 position.
+function sampleWashColor(position: number) {
+  const t = Math.min(Math.max(position, 0), 1);
+
+  for (let index = 1; index < WASH_STOPS.length; index += 1) {
+    const previous = WASH_STOPS[index - 1];
+    const next = WASH_STOPS[index];
+
+    if (t <= next.offset) {
+      const span = next.offset - previous.offset;
+
+      return mixHexColors(
+        previous.color,
+        next.color,
+        span > 0 ? (t - previous.offset) / span : 0
+      );
+    }
+  }
+
+  return WASH_STOPS[WASH_STOPS.length - 1].color;
+}
+
+const washLayerStyle = {
+  bottom: 0,
+  left: 0,
+  position: "absolute",
+  right: 0,
+  top: 0,
+} as const;
 
 // Animated views are not NativeWind-interop'd; plain styles for the
 // scroll content and the pinned hero.
@@ -85,9 +152,10 @@ const scrollContentStyle = { flexGrow: 1 } as const;
 // component, so a zIndex on the child never competes with later siblings
 // and the chart card paints over the pinned hero on Android. Translating
 // the hero by the scroll offset ourselves keeps it a plain sibling whose
-// zIndex works, so content genuinely slides beneath it.
+// zIndex works, so content genuinely slides beneath it. No background
+// here — the pinned backdrop is a gradient slice that fades in on scroll
+// (a static bg would band against the fixed wash gradient at rest).
 const heroPinBaseStyle = {
-  backgroundColor: dashboardWash,
   zIndex: 20,
 } as const;
 
@@ -128,7 +196,8 @@ const heroCornerWedgePath = `M0 0H${HERO_CORNER_RADIUS}A${HERO_CORNER_RADIUS} ${
 
 export function DashboardScreen({ navigation }: DashboardScreenProps) {
   const [quickAddVisible, setQuickAddVisible] = useState(false);
-  const { width } = useWindowDimensions();
+  const { height: screenHeight, width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const scrollY = useMemo(() => new Animated.Value(0), []);
   // Content-space geometry measured via onLayout so the pin point and the
   // card-fade trigger survive the error banner appearing above the hero.
@@ -185,6 +254,17 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
       }),
     }),
     [scrollY, underHeroStart]
+  );
+  // The pinned hero sits BELOW the status-bar inset, so its backdrop
+  // slice must continue the fixed wash from that screen position — not
+  // restart at the gradient's top color, which banded visibly against
+  // the status-bar strip above it. Sample both edges of the slice in
+  // screen space; the corner wedges pick up the bottom edge.
+  const heroTopColor = sampleWashColor(
+    screenHeight > 0 ? insets.top / screenHeight : 0
+  );
+  const heroEdgeColor = sampleWashColor(
+    screenHeight > 0 ? (insets.top + heroHeight) / screenHeight : 0
   );
   const accounts = useOfflineStore((state) => state.accounts);
   const assets = useOfflineStore((state) => state.assets);
@@ -314,7 +394,6 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
         .slice(0, 4),
     [transactions]
   );
-  const chartWidth = Math.max(260, width - 72);
 
   useEffect(() => {
     void refreshOfflineData();
@@ -341,8 +420,26 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
   return (
     <SafeAreaView
       className="flex-1"
-      style={{ backgroundColor: dashboardWash }}
+      style={{ backgroundColor: WASH_STOPS[WASH_STOPS.length - 1].color }}
     >
+      {/* Fixed wash gradient behind everything; content scrolls over it. */}
+      <View pointerEvents="none" style={washLayerStyle}>
+        <Svg height="100%" width="100%">
+          <Defs>
+            <SvgLinearGradient id="dashWash" x1="0" x2="0" y1="0" y2="1">
+              {WASH_STOPS.map((stop) => (
+                <Stop
+                  key={stop.offset}
+                  offset={String(stop.offset)}
+                  stopColor={stop.color}
+                />
+              ))}
+            </SvgLinearGradient>
+          </Defs>
+          <Rect fill="url(#dashWash)" height="100%" width="100%" />
+        </Svg>
+      </View>
+
       <Animated.ScrollView
         contentContainerStyle={scrollContentStyle}
         onScroll={Animated.event(
@@ -359,33 +456,30 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
                 className="h-[38px] w-[38px] rounded-[11px]"
                 source={appMark}
               />
-              <Text className="text-[20px] font-extrabold tracking-[-0.5px] text-ink">
+              <Text className="text-[20px] font-extrabold tracking-[-0.5px] text-white">
                 FinAce
               </Text>
             </View>
 
             <View className="flex-row gap-2.5">
               <Pressable
-                className={`min-h-[38px] flex-row items-center justify-center gap-1.5 rounded-full border border-border bg-white px-[15px] ${pressedControl}`}
+                className={`min-h-[38px] flex-row items-center justify-center gap-1.5 rounded-full border border-border/20 bg-white/30 px-[15px] shadow ${pressedControl}`}
                 onPress={() => setQuickAddVisible(true)}
                 style={premiumTheme.shadow.soft}
               >
                 <Plus
-                  color={premiumTheme.colors.transfer}
+                  color={premiumTheme.colors.canvas}
                   size={17}
                   strokeWidth={2.6}
                 />
-                <Text className="text-[13px] font-bold text-transfer">
-                  Add
-                </Text>
               </Pressable>
 
               <Pressable
-                className={`h-[38px] w-[38px] items-center justify-center rounded-full border border-border bg-white ${pressedControl}`}
+                className={`h-[38px] w-[38px] items-center justify-center rounded-full border border-border/20 bg-white/30 ${pressedControl}`}
                 onPress={() => navigation.navigate("Settings")}
               >
                 <Settings
-                  color={premiumTheme.colors.ink}
+                  color={premiumTheme.colors.canvas}
                   size={19}
                   strokeWidth={2.2}
                 />
@@ -410,14 +504,37 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
             }}
             style={[heroPinBaseStyle, heroPinStyle]}
           >
+          {/* Pinned backdrop: gradient slice matching the fixed wash at
+              the top of the screen. Fades in with the pin so it never
+              bands against the background at rest. */}
+          <Animated.View
+            pointerEvents="none"
+            style={[washLayerStyle, heroCornerFadeStyle]}
+          >
+            <Svg height="100%" width="100%">
+              <Defs>
+                <SvgLinearGradient
+                  id="heroWash"
+                  x1="0"
+                  x2="0"
+                  y1="0"
+                  y2="1"
+                >
+                  <Stop offset="0" stopColor={heroTopColor} />
+                  <Stop offset="1" stopColor={heroEdgeColor} />
+                </SvgLinearGradient>
+              </Defs>
+              <Rect fill="url(#heroWash)" height="100%" width="100%" />
+            </Svg>
+          </Animated.View>
           <View className="px-5 pb-3">
-            <Text className="text-[16px] font-extrabold tracking-[-0.5px] text-ink">
+            <Text className="text-[12px] font-bold uppercase tracking-[1.6px] text-white/80">
               Spending
             </Text>
 
             <Text
               adjustsFontSizeToFit
-              className="text-[30px] font-extrabold tracking-[-1px] text-ink tabular-nums"
+              className="text-[28px] font-bold text-white tabular-nums"
               minimumFontScale={0.7}
               numberOfLines={1}
             >
@@ -428,29 +545,36 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
 
             <View className="flex-row items-center gap-2.5">
               <FlowStat
-                color={premiumTheme.colors.success}
+                color="#4ade80"
                 label="in"
                 value={monthlySpend.currentIncomeTotal}
               />
               <View
-                className="h-6 bg-divider"
+                className="h-6 bg-white/25"
                 style={{ width: premiumHairline }}
               />
               <FlowStat
-                color={premiumTheme.colors.danger}
+                color="#f87171"
                 label="out"
                 value={monthlySpend.currentExpenseTotal}
               />
             </View>
 
-            <DeltaChip
-              goodWhenUp={false}
-              isNew={
-                monthlySpend.previousExpenseTotal === 0 &&
-                monthlySpend.currentExpenseTotal > 0
-              }
-              percent={spendDeltaPercent}
-            />
+            <View className="z-20 mt-2 flex-row items-center justify-between">
+              <DeltaChip
+                goodWhenUp={false}
+                isNew={
+                  monthlySpend.previousExpenseTotal === 0 &&
+                  monthlySpend.currentExpenseTotal > 0
+                }
+                percent={spendDeltaPercent}
+              />
+              <MonthSelect
+                onSelect={setMonthOffset}
+                options={monthOptions}
+                selectedOffset={monthOffset}
+              />
+            </View>
           </View>
 
           <Animated.View
@@ -462,7 +586,7 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
               viewBox={`0 0 ${HERO_CORNER_RADIUS} ${HERO_CORNER_RADIUS}`}
               width={HERO_CORNER_RADIUS}
             >
-              <Path d={heroCornerWedgePath} fill={dashboardWash} />
+              <Path d={heroCornerWedgePath} fill={heroEdgeColor} />
             </Svg>
             <Svg
               height={HERO_CORNER_RADIUS}
@@ -470,7 +594,7 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
               viewBox={`0 0 ${HERO_CORNER_RADIUS} ${HERO_CORNER_RADIUS}`}
               width={HERO_CORNER_RADIUS}
             >
-              <Path d={heroCornerWedgePath} fill={dashboardWash} />
+              <Path d={heroCornerWedgePath} fill={heroEdgeColor} />
             </Svg>
           </Animated.View>
           </Animated.View>
@@ -484,27 +608,12 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
             }}
             style={chartCardFadeStyle}
           >
-          <View className="px-5">
-              <View
-                className="mt-1 rounded-surface border border-border bg-white px-[18px] pb-1.5 pt-4"
-                style={premiumTheme.shadow.soft}
-              >
-                <View className="z-20 flex-row items-center justify-between">
-                  <Text className="text-[15px] font-extrabold tracking-[-0.3px] text-ink">
-                    Spending trend
-                  </Text>
-                  <MonthSelect
-                    onSelect={setMonthOffset}
-                    options={monthOptions}
-                    selectedOffset={monthOffset}
-                  />
-                </View>
-                <MonthlySpendChart
-                  points={monthlySpend.points}
-                  width={chartWidth}
-                />
-              </View>
-          </View>
+            {/* Chart draws directly on the wash — no card (reference
+                design): white line, under-fill, x labels only. */}
+            <MonthlySpendChart
+              points={monthlySpend.points}
+              width={width}
+            />
           </Animated.View>
         )}
 
@@ -513,7 +622,7 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
             className="mt-6 flex-1 rounded-t-modal bg-white px-5 pb-9 pt-2.5"
             style={premiumTheme.shadow.floating}
           >
-            <View className="mb-3.5 h-1 w-9 self-center rounded-full bg-divider" />
+            {/* <View className="mb-3.5 h-1 w-9 self-center rounded-full bg-divider" /> */}
 
             <View
               className="mt-3.5 flex-row items-center overflow-hidden rounded-section border border-border bg-white"
@@ -548,7 +657,7 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
                     />
                   </View>
                 </View>
-                <View className="flex flex-row gap-6 mt-2 px-4 rounded-2xl  py-3 bg-slate-50">
+                <View className="flex flex-row justify-between gap-6 mt-2 px-4 rounded-2xl py-3 bg-slate-50">
                   <View className="flex">
                     <View className="flex flex-row items-center">
                       <View className="h-[6px] w-[6px] mr-1 rounded-full bg-danger" />
@@ -625,20 +734,20 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
               style={premiumTheme.shadow.soft}
             >
               {accountPreview.length === 0 ? (
-                <View className="p-4">
-                  <Text className="text-[15px] font-bold text-ink">
+                <View className="p-4 text-center">
+                  <Text className="text-[15px] text-center font-bold text-ink">
                     No accounts yet
                   </Text>
-                  <Text className="mt-1.5 text-[13px] leading-[18px] text-secondary">
+                  <Text className="mt-1.5 text-[13px] text-center leading-[18px] text-secondary">
                     Add cash, bank accounts, cards, or wallets to see
                     balances here.
                   </Text>
                   <Pressable
-                    className="mt-3.5 min-h-[42px] flex-row items-center gap-2 self-start rounded-full bg-ink px-4"
+                    className="mt-3.5 flex-row items-center mx-auto gap-1 self-start rounded-full bg-ink px-4 py-2"
                     onPress={openAddAccount}
                   >
-                    <Plus color="#ffffff" size={18} strokeWidth={2.5} />
-                    <Text className="text-[14px] font-bold text-white">
+                    <Plus color="#ffffff" size={15} strokeWidth={2} />
+                    <Text className="text-[12px] font-bold text-white">
                       Add account
                     </Text>
                   </Pressable>
@@ -731,15 +840,15 @@ function FlowStat({
   value: number;
 }) {
   return (
-    <View className="flex-row items-center gap-1.5">
+    <View className="flex flex-row items-center">
       <View
-        className="h-[6px] w-[6px] rounded-full"
+        className="h-[6px] w-[6px] mr-1.5 rounded-full"
         style={{ backgroundColor: color }}
       />
-      <Text className="text-[13px] font-bold text-ink tabular-nums">
+      <Text className="text-[13px] font-medium text-white tabular-nums">
         {MobileDashboardService.getFormattedBalance(value)}
       </Text>
-      <Text className="text-[13px] font-medium text-secondary">{label}</Text>
+      <Text className="text-[11px] pl-[2px] text-white/60">{label}</Text>
     </View>
   );
 }
@@ -829,10 +938,10 @@ function MonthSelect({
         />
       )}
       <Pressable
-        className={`flex-row items-center gap-1 rounded-full border border-border bg-white px-3 py-[7px] ${pressedControl}`}
+        className={`flex-row items-center gap-1 rounded-full border border-white/30 bg-white/20 shadow px-3 py-[4px] ${pressedControl}`}
         onPress={() => (open ? closeMenu() : openMenu())}
       >
-        <Text className="text-[12px] font-bold text-ink">
+        <Text className="text-[10px] font-bold text-white">
           {selected.label}
         </Text>
         <Animated.View
@@ -845,8 +954,8 @@ function MonthSelect({
           }}
         >
           <ChevronDown
-            color={premiumTheme.colors.ink}
-            size={14}
+            color={premiumTheme.colors.canvas}
+            size={11}
             strokeWidth={2.4}
           />
         </Animated.View>
@@ -914,10 +1023,11 @@ function DeltaChip({
 }) {
   // No previous month to compare against — a percentage would read as
   // real growth, so say what it actually is.
+  // Frosted pill on the dark wash; colors brightened for contrast.
   if (isNew) {
     return (
-      <View className=" self-start rounded-full border border-border bg-white px-[11px] py-[4px]">
-        <Text className="text-[10px] font-semibold text-secondary">
+      <View className="self-start rounded-full bg-white/15 px-[11px] py-[4px]">
+        <Text className="text-[10px] font-semibold text-white/70">
           New this month
         </Text>
       </View>
@@ -929,62 +1039,41 @@ function DeltaChip({
   // good, rising spend is not.
   const favourable = percent > 0 ? goodWhenUp : !goodWhenUp;
   const color =
-    percent === 0
-      ? premiumTheme.colors.ink
-      : favourable
-        ? premiumTheme.colors.success
-        : premiumTheme.colors.danger;
+    percent === 0 ? "#ffffff" : favourable ? "#4ade80" : "#f87171";
   // Tiny previous months explode the ratio; beyond 999% the exact figure
   // carries no meaning.
   const display =
     Math.abs(percent) > 999 ? "999%+" : `${Math.abs(percent)}%`;
 
   return (
-    <View className="mt-3 flex-row items-center gap-1 self-start rounded-full border border-border bg-white/70 px-[11px] py-[4px]">
+    <View className="flex-row items-center gap-1 self-start rounded-full bg-white/15 px-[11px] py-[4px]">
       <Icon color={color} size={12} strokeWidth={2.6} />
       <Text className="text-[10px] font-bold tabular-nums" style={{ color }}>
         {display}
       </Text>
-      <Text className="text-[10px] font-medium text-secondary">
+      <Text className="text-[10px] font-medium text-white/90">
         vs last month
       </Text>
     </View>
   );
 }
 
-// Horizontal inset chart-kit reserves for y-axis labels. The lib defaults
-// style.paddingRight to 64 but destructures it from the style prop, so the
-// canvas style below overrides it — labels only need ~40px at 10pt. Dot x
-// positions follow paddingRight + i * (width - paddingRight) / count, which
-// the scrub gesture inverts to find the nearest day; keep this constant in
-// lockstep with chartCanvasStyle.paddingRight.
-const CHART_PLOT_LEFT = 44;
+// Left inset of the plot. The chart has no y-axis labels (reference
+// design) so this is purely the breathing room before the first point —
+// chart-kit consumes it via style.paddingRight, which it destructures
+// from the style prop. Dot x positions follow paddingRight + i * (width -
+// paddingRight) / count, which the scrub gesture inverts to find the
+// nearest day; keep in lockstep with chartCanvasStyle.paddingRight.
+const CHART_PLOT_LEFT = 20;
 // Svg height of the chart. chart-kit draws the plot in the top 3/4 of the
 // svg (bottom quarter is the x-label band), offset by its paddingTop, so
 // the zero baseline — where the scrub drop-line ends — is derived rather
 // than eyeballed. The 10 matches chartCanvasStyle.paddingTop.
 const CHART_HEIGHT = 200;
 const CHART_PLOT_BOTTOM = (CHART_HEIGHT * 3) / 4 + 10;
-// Grid rows between 0 and the axis max.
-const CHART_Y_SEGMENTS = 3;
-
-// Smallest "nice" axis max ≥ the data max whose thirds are round numbers
-// (steps of 1/2/2.5/5 × 10^n). Keeps y labels at values like 25k/50k/75k
-// instead of ugly thirds of the raw maximum.
-function getNiceAxisMax(maxValue: number) {
-  if (maxValue <= 0) {
-    return 0;
-  }
-
-  const rawStep = maxValue / CHART_Y_SEGMENTS;
-  const power = 10 ** Math.floor(Math.log10(rawStep));
-  const step =
-    ([1, 2, 2.5, 5, 10].find(
-      (candidate) => candidate * power >= rawStep
-    ) ?? 10) * power;
-
-  return step * CHART_Y_SEGMENTS;
-}
+// Scale ceiling multiplier: the axis max is pinned this far above the
+// data max so the peak-day marker's tooltip always has headroom.
+const CHART_HEADROOM_FACTOR = 1.7;
 // Offset from the touch wrapper's left edge to the svg's left edge: the
 // canvas shifts the svg left by 10 (marginLeft below), so touch x + 10 is
 // svg x.
@@ -1010,30 +1099,83 @@ function MonthlySpendChart({
   points: SpendPoint[];
   width: number;
 }) {
-  const values = points.map((point) => point.value);
+  // The reference plots DAILY spend (a wavy line), while the service
+  // series is cumulative so its endpoint equals the hero total — diff
+  // consecutive points to recover each day's amount.
+  const values = points.map((point, index) =>
+    index === 0 ? point.value : point.value - points[index - 1].value
+  );
   const lastIndex = values.length - 1;
   const hasSpend = values.some((value) => value > 0);
-  const niceMax = getNiceAxisMax(Math.max(...values, 0));
+  // Pin the scale above the real max so the peak sits well below the svg
+  // top — the resting marker lives on the peak and its tooltip (value +
+  // date, ~64px) needs that headroom. Rendered as an invisible one-point
+  // dataset; chart-kit scales to the max across datasets.
+  const scaleCeiling = hasSpend
+    ? Math.max(...values) * CHART_HEADROOM_FACTOR
+    : 0;
   // chart-kit places point i at gutter + (i / count) * (svgWidth - gutter),
-  // so the last point stops one label-step short of the svg's right edge.
-  // Oversize the svg so the last point lands at the card's right EDGE
-  // (content width - 4, plus the 18px card padding the plot bleeds
-  // through); the wrapper's -mr/overflow-hidden clips the gridline
-  // overhang at the card border.
+  // so the last point stops one step short of the svg's right edge.
+  // Oversize the svg so the last point lands CHART_PLOT_LEFT in from the
+  // screen's right edge (mirroring the left inset); the wrapper's
+  // overflow-hidden clips the overhang.
   const pointCount = Math.max(values.length, 2);
   const svgWidth =
     CHART_PLOT_LEFT +
-    ((width + CHART_CANVAS_SHIFT + 14 - CHART_PLOT_LEFT) * pointCount) /
+    ((width + CHART_CANVAS_SHIFT - 2 * CHART_PLOT_LEFT) * pointCount) /
       (pointCount - 1);
   const monthName =
     points
       .find((point) => point.label !== "")
       ?.label.split(" ")[1] ?? "";
-  // Marker and tooltip exist only while a finger is on the chart — the
-  // resting chart stays clean since the hero already carries the total.
+  // Region ABOVE the line, closed against the svg top — drawn via the
+  // decorator with a gradient that strengthens toward the line. The path
+  // replicates chart-kit's bezier exactly (same floored x/y and control
+  // points, source-verified) so the fill hugs the stroke.
+  const aboveLinePath = useMemo(() => {
+    if (!hasSpend) {
+      return "";
+    }
+
+    const count = Math.max(values.length, 1);
+    const maxScale =
+      scaleCeiling > 0 ? scaleCeiling : Math.max(...values, 1);
+    const plotX = (index: number) =>
+      Math.floor(
+        CHART_PLOT_LEFT +
+          (index * (svgWidth - CHART_PLOT_LEFT)) / count
+      );
+    const plotY = (value: number) =>
+      Math.floor(CHART_HEIGHT * 0.75 * (1 - value / maxScale) + 10);
+
+    let path = `M${plotX(0)},${plotY(values[0])}`;
+
+    for (let index = 0; index < values.length - 1; index += 1) {
+      const x0 = plotX(index);
+      const x1 = plotX(index + 1);
+      const y0 = plotY(values[index]);
+      const y1 = plotY(values[index + 1]);
+      const xMid = (x0 + x1) / 2;
+      const yMid = (y0 + y1) / 2;
+      const control1 = (xMid + x0) / 2;
+      const control2 = (xMid + x1) / 2;
+
+      path += ` Q ${control1}, ${y0}, ${xMid}, ${yMid} Q ${control2}, ${y1}, ${x1}, ${y1}`;
+    }
+
+    path += ` L${plotX(values.length - 1)},0 L${plotX(0)},0 Z`;
+
+    return path;
+  }, [hasSpend, scaleCeiling, svgWidth, values]);
+  // At rest the marker sits on the month's peak spend day — the most
+  // informative single point. Scrubbing moves it; releasing returns it
+  // to the peak.
+  const peakIndex = hasSpend
+    ? values.indexOf(Math.max(...values))
+    : null;
   const [scrubIndex, setScrubIndex] = useState<number | null>(null);
   const selectedIndex =
-    scrubIndex === null ? null : Math.min(scrubIndex, lastIndex);
+    scrubIndex === null ? peakIndex : Math.min(scrubIndex, lastIndex);
 
   const panResponder = useMemo(() => {
     const count = Math.max(values.length, 1);
@@ -1068,26 +1210,24 @@ function MonthlySpendChart({
 
   return (
     <View
-      className="-mr-[18px] overflow-hidden"
+      className="overflow-hidden"
       {...panResponder.panHandlers}
     >
       <LineChart
+        bezier
         data={{
           labels: points.map((point) => point.label),
           datasets: [
             {
-              color: () => premiumTheme.colors.ink,
+              color: () => "#ffffff",
               data: values,
-              strokeWidth: 2,
+              strokeWidth: 2.5,
             },
-            // Invisible one-point dataset that pins the axis max to a
-            // round number — chart-kit scales to the max across all
-            // datasets and has no direct axis-max prop.
-            ...(niceMax > 0
+            ...(scaleCeiling > 0
               ? [
                   {
                     color: () => "rgba(0, 0, 0, 0)",
-                    data: [niceMax],
+                    data: [scaleCeiling],
                     strokeWidth: 0,
                     withDots: false,
                   },
@@ -1095,91 +1235,130 @@ function MonthlySpendChart({
               : []),
           ],
         }}
-        formatYLabel={(value) => formatCompact(Number(value))}
+        decorator={() =>
+          hasSpend ? (
+            <>
+              <Defs>
+                <SvgLinearGradient
+                  gradientUnits="userSpaceOnUse"
+                  id="aboveLineFill"
+                  x1="0"
+                  x2="0"
+                  y1="0"
+                  y2={String(CHART_PLOT_BOTTOM)}
+                >
+                  <Stop offset="0" stopColor="#ffffff" stopOpacity="0" />
+                  <Stop
+                    offset="5"
+                    stopColor="#ffffff"
+                    stopOpacity="0.2"
+                  />
+                </SvgLinearGradient>
+              </Defs>
+              <Path d={aboveLinePath} fill="url(#aboveLineFill)" />
+            </>
+          ) : null
+        }
         fromZero
         height={CHART_HEIGHT}
-        xLabelsOffset={-4}
+        xLabelsOffset={-6}
         renderDotContent={({ x, y, index }) => {
-          if (
-            selectedIndex === null ||
-            index !== selectedIndex ||
-            !hasSpend
-          ) {
+          if (!hasSpend) {
+            return null;
+          }
+
+          const isEndpoint = index === lastIndex;
+          const isScrubbed =
+            selectedIndex !== null && index === selectedIndex;
+
+          if (!isEndpoint && !isScrubbed) {
             return null;
           }
 
           const point = points[index];
-          const tooltipText =
-            point && point.day > 0
-              ? `${point.day} ${monthName} · ${MobileDashboardService.getFormattedBalance(point.value)}`
-              : MobileDashboardService.getFormattedBalance(
-                  values[index] ?? 0
-                );
-          const clampedLeft = Math.min(
-            Math.max(6, x - 56),
-            width - 132
+          const textTop = Math.max(4, y - 64);
+          const textLeft = Math.min(
+            Math.max(4, x - 60),
+            width - 124
           );
 
           return (
             <View key={`marker-${index}`} pointerEvents="none">
-              <View
-                className="absolute w-px bg-divider"
-                style={{
-                  height: Math.max(0, CHART_PLOT_BOTTOM - y),
-                  left: x,
-                  top: y + 6,
-                }}
-              />
-              <View
-                className="absolute h-[11px] w-[11px] rounded-md border-2 border-white bg-ink"
-                style={{
-                  left: x - 5.5,
-                  top: y - 5.5,
-                }}
-              />
-              <View
-                className="absolute rounded-full bg-ink px-[9px] py-[5px]"
-                style={{
-                  left: clampedLeft,
-                  top: Math.max(2, y - 36),
-                }}
-              >
-                <Text className="text-[11px] font-bold text-white tabular-nums">
-                  {tooltipText}
-                </Text>
-              </View>
+              {isScrubbed && (
+                <>
+                  {/* Drop-line runs from under the tooltip, through the
+                      dot, to the zero baseline. */}
+                  <View
+                    className="absolute w-[1.5px] rounded-full bg-white/70"
+                    style={{
+                      height: Math.max(
+                        0,
+                        CHART_PLOT_BOTTOM - textTop - 34
+                      ),
+                      left: x,
+                      top: textTop + 34,
+                    }}
+                  />
+                  <View
+                    className="absolute h-[9px] w-[9px] rounded-full bg-white"
+                    style={{
+                      left: x - 4.5,
+                      top: y - 4.5,
+                    }}
+                  />
+                  <View
+                    className="absolute w-[120px]  items-center"
+                    style={{
+                      left: textLeft,
+                      top: textTop,
+                    }}
+                  >
+                    <Text className="text-[11px] font-bold text-white tabular-nums">
+                      {MobileDashboardService.getFormattedBalance(
+                        values[index] ?? 0
+                      )}
+                    </Text>
+                    <Text className="mt-[1px] text-[8px] font-semibold uppercase tracking-[1px] text-white/65">
+                      {point && point.day > 0
+                        ? `${point.day} ${monthName}`
+                        : ""}
+                    </Text>
+                  </View>
+                </>
+              )}
+              {isEndpoint && !isScrubbed && (
+                <View
+                  className="absolute h-[12px] w-[12px] rounded-full border-2 border-white"
+                  style={{
+                    left: x - 6,
+                    top: y - 6,
+                  }}
+                />
+              )}
             </View>
           );
         }}
-        segments={3}
         style={chartCanvasStyle}
         width={svgWidth}
         withDots
-        withInnerLines
+        withHorizontalLabels={false}
+        withInnerLines={false}
         withOuterLines={false}
-        withShadow
+        withShadow={false}
         withVerticalLines={false}
         chartConfig={{
           backgroundGradientFrom: "#ffffff",
           backgroundGradientFromOpacity: 0,
           backgroundGradientTo: "#ffffff",
           backgroundGradientToOpacity: 0,
-          color: (opacity = 1) => `rgba(15, 23, 42, ${opacity})`,
+          color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
           decimalPlaces: 0,
-          fillShadowGradientFrom: premiumTheme.colors.ink,
-          fillShadowGradientFromOpacity: 0.07,
-          fillShadowGradientTo: premiumTheme.colors.ink,
-          fillShadowGradientToOpacity: 0,
-          labelColor: () => premiumTheme.colors.muted,
-          propsForBackgroundLines: {
-            stroke: premiumTheme.colors.divider,
-            strokeDasharray: "3 6",
-          },
+          labelColor: () => "rgba(255, 255, 255, 0.6)",
           propsForDots: {
             r: "0",
           },
           propsForLabels: {
-            fontSize: 10,
+            fontSize: 11,
           },
         }}
       />
@@ -1187,13 +1366,6 @@ function MonthlySpendChart({
   );
 }
 
-function formatCompact(value: number) {
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
-  }
-
-  return value.toFixed(0);
-}
 
 const DONUT_SIZE = 50;
 const DONUT_STROKE = 4;
@@ -1325,7 +1497,7 @@ function RecentTransactionRow({
     <Pressable
       accessibilityHint="Opens the transactions list"
       accessibilityRole="button"
-      className="-mx-2 min-h-[64px] flex-row items-center gap-3 rounded-[14px] px-2 active:bg-field"
+      className="-mx-2  flex-row items-center gap-3 rounded-[14px] px-2 py-2 active:bg-field"
       onPress={onPress}
     >
       <View
@@ -1337,13 +1509,13 @@ function RecentTransactionRow({
 
       <View className="min-w-0 flex-1">
         <Text
-          className="text-[14.5px] font-bold tracking-[-0.2px] text-ink"
+          className="text-[12px] font-bold tracking-[-0.2px] text-ink"
           numberOfLines={1}
         >
           {merchantDisplay.name}
         </Text>
         <Text
-          className="mt-[3px] text-[12px] font-semibold text-secondary"
+          className="text-[10px] font-medium text-secondary"
           numberOfLines={1}
         >
           {categoryName}
