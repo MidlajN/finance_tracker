@@ -516,31 +516,41 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
             <View className="mb-3.5 h-1 w-9 self-center rounded-full bg-divider" />
 
             <View
-              className="mt-3.5 flex-row items-center rounded-section border border-border bg-white p-4"
+              className="mt-3.5 flex-row items-center overflow-hidden rounded-section border border-border bg-white"
               style={premiumTheme.shadow.soft}
             >
-              <View className="min-w-0 flex-1 pr-3">
-                <Text className="text-[12px] font-semibold text-secondary">
-                  Net balance
-                </Text>
-                <Text
-                  adjustsFontSizeToFit
-                  className="mt-1 text-[22px] font-extrabold tracking-[-0.6px] tabular-nums"
-                  numberOfLines={1}
-                  style={{
-                    color:
-                      balanceSplit.yourMoney - balanceSplit.owed < 0
-                        ? premiumTheme.colors.ink
-                        : premiumTheme.colors.ink,
-                  }}
-                >
-                  {MobileDashboardService.getFormattedBalance(
-                    balanceSplit.yourMoney - balanceSplit.owed
-                  )}
-                </Text>
-                <View className="flex flex-row gap-6 mt-2 px-3 rounded-xl py-2 bg-slate-50">
+              <View className="min-w-0 flex-1 overflow-hidden">
+                <View className="flex flex-row items-center justify-between p-4 pb-2">
+                  <View>
+                    <Text className="text-[12px] font-semibold text-secondary">
+                      Net balance
+                    </Text>
+                    <Text
+                      adjustsFontSizeToFit
+                      className=" text-[20px] font-extrabold tracking-[-0.6px] tabular-nums"
+                      numberOfLines={1}
+                      style={{
+                        color:
+                          balanceSplit.yourMoney - balanceSplit.owed < 0
+                            ? premiumTheme.colors.ink
+                            : premiumTheme.colors.ink,
+                      }}
+                    >
+                      {MobileDashboardService.getFormattedBalance(
+                        balanceSplit.yourMoney - balanceSplit.owed
+                      )}
+                    </Text>
+                  </View>
+                  <View className="">
+                    <BalanceDonut
+                      owed={balanceSplit.owed}
+                      yours={balanceSplit.yourMoney}
+                    />
+                  </View>
+                </View>
+                <View className="flex flex-row gap-6 mt-2 px-4 rounded-2xl  py-3 bg-slate-50">
                   <View className="flex">
-                    <View className="flex-row items-center">
+                    <View className="flex flex-row items-center">
                       <View className="h-[6px] w-[6px] mr-1 rounded-full bg-danger" />
                       <Text
                         adjustsFontSizeToFit
@@ -551,7 +561,7 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
                           balanceSplit.owed
                         )}
                       </Text>
-                      <Text className="text-[10px] pl-1 leading-4 mt-auto font-semibold text-secondary">
+                      <Text className="text-[10px] pl-[1px] leading-4 mt-auto font-semibold text-secondary">
                         Owed
                       </Text>
                     </View>
@@ -562,7 +572,7 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
                   </View>
 
                   <View>
-                    <View className="flex-row items-center">
+                    <View className="flex flex-row items-center">
                       <View className="h-[6px] w-[6px] mr-1 rounded-full bg-transfer" />
                       <Text
                         adjustsFontSizeToFit
@@ -573,7 +583,7 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
                           balanceSplit.yourMoney
                         )}
                       </Text>
-                      <Text className="text-[10px] pl-1 leading-4 mt-auto font-semibold text-secondary">
+                      <Text className="text-[10px] pl-[1px] leading-4 mt-auto font-semibold text-secondary">
                         Yours
                       </Text>
                     </View>
@@ -589,16 +599,9 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
                 className="h-[72px] bg-border"
                 style={{ width: premiumHairline }}
               />
-
-              <View className="px-2.5">
-                <BalanceDonut
-                  owed={balanceSplit.owed}
-                  yours={balanceSplit.yourMoney}
-                />
-              </View>
             </View>
 
-            <View className="flex flex-row items-center justify-between mt-5">
+            <View className="flex flex-row items-center justify-between mt-8">
               <Text className="text-[13px] font-semibold text-secondary">
                 Accounts
               </Text>
@@ -618,7 +621,7 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
             </View>
 
             <View
-              className="mt-2 overflow-hidden rounded-section border border-border bg-white"
+              className="mt-2 overflow-hidden rounded-section "
               style={premiumTheme.shadow.soft}
             >
               {accountPreview.length === 0 ? (
@@ -658,9 +661,9 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
               )}
             </View>
 
-            <View className="mt-5 flex-row items-center justify-between">
-              <Text className="text-[17px] font-extrabold tracking-[-0.3px] text-ink">
-                Recent transactions
+            <View className="mt-8 flex-row items-center justify-between">
+              <Text className="text-[13px] font-semibold text-secondary">
+                Recent Transaction
               </Text>
               <Pressable
                 className={`flex-row items-center gap-0.5 ${pressedControl}`}
@@ -1193,11 +1196,11 @@ function formatCompact(value: number) {
 }
 
 const DONUT_SIZE = 50;
-const DONUT_STROKE = 5;
+const DONUT_STROKE = 4;
 const DONUT_RADIUS = (DONUT_SIZE - DONUT_STROKE) / 2;
 const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
 // Fraction of the circle left blank at each segment junction.
-const DONUT_GAP_FRACTION = 0.025;
+const DONUT_GAP_FRACTION = 0;
 
 // Yours-vs-owed ring with a wallet badge in the middle. Segments are two
 // stroked circles with dash arrays sized to each share, rotated so the
@@ -1267,8 +1270,8 @@ function BalanceDonut({
           </>
         )}
       </Svg>
-      <View className="absolute h-[24px] w-[24px] items-center justify-center rounded-full bg-field">
-        <Wallet color={premiumTheme.colors.secondary} size={22} strokeWidth={2.2} />
+      <View className="absolute h-[34px] w-[34px] items-center justify-center rounded-full bg-field">
+        <Wallet color={premiumTheme.colors.secondary} size={17} strokeWidth={1.7} />
       </View>
     </View>
   );
@@ -1326,10 +1329,10 @@ function RecentTransactionRow({
       onPress={onPress}
     >
       <View
-        className="h-[42px] w-[42px] items-center justify-center rounded-full"
+        className="h-[36px] w-[36px] items-center justify-center rounded-2xl"
         style={{ backgroundColor: icon.background }}
       >
-        <Icon color={icon.color} size={19} strokeWidth={2.3} />
+        <Icon color={icon.color} size={13} strokeWidth={2} />
       </View>
 
       <View className="min-w-0 flex-1">
@@ -1348,19 +1351,19 @@ function RecentTransactionRow({
       </View>
 
       <View className="ml-1 items-end">
-        <Text className="text-[14.5px] font-extrabold tracking-[-0.2px] text-ink tabular-nums">
+        <Text className="text-[12px] font-extrabold tracking-[-0.2px] text-ink tabular-nums">
           {formatNeutralTransactionAmount(transaction.amount)}
         </Text>
-        <Text className="mt-[3px] text-[11px] font-semibold text-muted">
+        <Text className="mt-[3px] text-[10px] font-semibold text-muted">
           {formatTransactionListTimestamp(transaction.occurred_at)}
         </Text>
       </View>
 
       <View
-        className="ml-1 h-8 w-8 items-center justify-center rounded-full"
-        style={{ backgroundColor: chip.background }}
+        className="ml-1 items-center justify-center rounded-full"
+        // style={{ backgroundColor: chip.background }}
       >
-        <ChipIcon color={chip.color} size={15} strokeWidth={2.6} />
+        <ChipIcon color={chip.color} size={13} strokeWidth={2.6} />
       </View>
 
       {showDivider ? (
@@ -1506,28 +1509,28 @@ function AccountRow({
 
   return (
     <Pressable
-      className="min-h-[68px] flex-row items-center gap-3 px-3.5 active:bg-field"
+      className="min-h-[58px]  flex flex-row items-center gap-3  active:bg-field"
       onPress={onPress}
     >
       <View
-        className="h-[42px] w-[42px] items-center justify-center rounded-[13px]"
+        className="h-[36px] w-[36px] items-center justify-center rounded-[13px]"
         style={{ backgroundColor: icon.background }}
       >
-        <Icon color={icon.color} size={19} strokeWidth={2.3} />
+        <Icon color={icon.color} size={15} strokeWidth={2} />
       </View>
 
       <View className="min-w-0 flex-1">
-        <Text className="text-[14.5px] font-bold text-ink" numberOfLines={1}>
+        <Text className="text-[13px] font-bold text-ink" numberOfLines={1}>
           {name}
         </Text>
-        <Text className="mt-[3px] text-[12px] font-medium text-secondary">
+        <Text className="text-[12px] font-medium text-secondary">
           {subtitle}
         </Text>
       </View>
 
       <Text
         adjustsFontSizeToFit
-        className="ml-2 text-[14.5px] font-extrabold tabular-nums"
+        className="ml-2 text-[12px] font-extrabold tabular-nums"
         minimumFontScale={0.76}
         numberOfLines={1}
         style={{
