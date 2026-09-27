@@ -149,7 +149,7 @@ export function SlideToSaveButton({
           {loading
             ? "Saving transaction..."
             : disabled
-              ? "Add amount and merchant"
+              ? "Enter an amount to save"
               : "Slide to save"}
         </Text>
         {!disabled && !loading ? (

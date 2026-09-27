@@ -6,6 +6,7 @@ import type {
 } from "@finance/shared-types";
 import type { TransactionUpdates } from "@finance/shared-api";
 
+import { fetchAllRows } from "../lib/fetchAllRows";
 import { supabase } from "../lib/supabase";
 
 interface RemoteTransactionRow {
@@ -50,25 +51,25 @@ function toCachedTransaction(
 
 export class RemoteTransactionRepository {
   static async list() {
-    const { data, error } = await supabase
-      .from("transactions")
-      .select(`
-        *,
-        event:financial_events(*),
-        merchant:merchants(*),
-        category:categories(*)
-      `)
-      .order("occurred_at", {
-        ascending: false,
-      });
-
-    if (error) {
-      throw error;
-    }
-
-    return ((data ?? []) as RemoteTransactionRow[]).map(
-      toCachedTransaction
+    const rows = await fetchAllRows<RemoteTransactionRow>((from, to) =>
+      supabase
+        .from("transactions")
+        .select(`
+          *,
+          event:financial_events(*),
+          merchant:merchants(*),
+          category:categories(*)
+        `)
+        .order("occurred_at", {
+          ascending: false,
+        })
+        .order("id", {
+          ascending: true,
+        })
+        .range(from, to)
     );
+
+    return rows.map(toCachedTransaction);
   }
 
   static async update(

@@ -20,6 +20,7 @@ import {
 import type {
   AccountType,
   CachedCategory,
+  CategoryReference,
   TransactionType,
 } from "@finance/shared-types";
 
@@ -158,7 +159,9 @@ export function getTransactionIcon(
   };
 }
 
-export function getCategoryVisual(category: CachedCategory) {
+export function getCategoryVisual(
+  category: Pick<CachedCategory, "color" | "icon" | "name">
+) {
   const normalizedIcon = category.icon?.toLowerCase();
   const normalizedName = category.name.toLowerCase();
   const configured = categoryIconOptions.find(
@@ -181,6 +184,32 @@ export function getCategoryVisual(category: CachedCategory) {
     color: category.color ?? transactionVisual.color,
     Icon: transactionVisual.Icon,
   };
+}
+
+// A transaction's icon is its category's own configured icon and colour,
+// so a row reads exactly like the category chip that was picked for it.
+// Only rows without a category fall back to fixed neutral visuals.
+export function getTransactionVisual(
+  type: TransactionType,
+  category: CategoryReference | null | undefined
+): { color: string; Icon: FinanceScreenIcon } {
+  if (type === "transfer") {
+    return { color: "#2f6bde", Icon: ArrowLeftRight };
+  }
+
+  if (category?.name) {
+    return getCategoryVisual({
+      color: category.color ?? null,
+      icon: category.icon ?? null,
+      name: category.name,
+    });
+  }
+
+  if (type === "income") {
+    return { color: "#16a34a", Icon: Wallet };
+  }
+
+  return { color: "#94a3b8", Icon: CircleDashed };
 }
 
 export function getAccountTypeVisual(accountType: AccountType) {

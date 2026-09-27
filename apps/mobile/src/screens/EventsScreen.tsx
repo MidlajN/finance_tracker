@@ -25,6 +25,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type {
   CachedAccount,
@@ -99,6 +100,7 @@ const transferAccountMenuStyle = {
 } as const;
 
 export function EventsScreen({ navigation }: EventsScreenProps) {
+  const insets = useSafeAreaInsets();
   const accounts = useOfflineStore((state) => state.accounts);
   const categories = useOfflineStore((state) => state.categories);
   const merchants = useOfflineStore((state) => state.merchants);
@@ -323,7 +325,10 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
         );
       }
 
-      await synchronize();
+      // The row is already in the local cache (and on the list). Push in
+      // the background instead of holding the screen on a network round
+      // trip plus full pull — offline, that wait never ended.
+      void synchronize();
 
       setError(null);
       savingRef.current = false;
@@ -440,7 +445,13 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
                 : "Amount received"}
           </Text>
           <View className="mt-1.5 flex-row items-center gap-2">
-            <Text className="text-[21px] font-bold text-secondary">₹</Text>
+            <Text
+              className={`text-[21px] font-bold ${
+                amount ? "text-ink" : "text-secondary"
+              }`}
+            >
+              ₹
+            </Text>
             <TextInput
               autoFocus
               className="min-h-[52px] flex-1 py-0 text-[34px] font-extrabold tracking-[-0.9px] text-ink tabular-nums"
@@ -454,6 +465,52 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
             />
           </View>
         </View>
+
+        {/* What and where: the merchant sits with the amount because
+            picking one pre-fills the category below it. */}
+        {!isTransfer ? (
+          <View
+            className="mt-3 rounded-section border border-border bg-white px-3.5"
+            style={premiumTheme.shadow.soft}
+          >
+            <Pressable
+              accessibilityHint="Opens merchant suggestions and search"
+              accessibilityRole="button"
+              className="min-h-[56px] flex-row items-center gap-2.5 py-2"
+              onPress={() => {
+                setMerchantSearch("");
+                setMerchantPickerOpen(true);
+              }}
+            >
+              <View className="h-9 w-9 items-center justify-center rounded-xl bg-field">
+                <Store
+                  color={premiumTheme.colors.ink}
+                  size={17}
+                  strokeWidth={2.4}
+                />
+              </View>
+              <View className="min-w-0 flex-1">
+                <Text className="text-[10px] font-bold uppercase tracking-[0.8px] text-secondary">
+                  Merchant
+                </Text>
+                <Text
+                  className={`mt-[3px] text-[14px] font-bold ${
+                    merchant ? "text-ink" : "text-[#8b929d]"
+                  }`}
+                  numberOfLines={1}
+                >
+                  {merchant || "Choose or add merchant"}
+                </Text>
+              </View>
+              {selectedMerchantId ? (
+                <View className="h-6 w-6 items-center justify-center rounded-xl bg-[#dcfce7]">
+                  <Check color="#16a34a" size={14} strokeWidth={3} />
+                </View>
+              ) : null}
+              <ChevronRight color="#94a3b8" size={18} strokeWidth={2.5} />
+            </Pressable>
+          </View>
+        ) : null}
 
         {!isTransfer ? (
           <>
@@ -519,53 +576,11 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
 
         <View className="my-[18px] bg-divider" style={hairlineHeightStyle} />
 
+        {/* When: date and note, the least-edited fields, close the form. */}
         <View
           className="rounded-section border border-border bg-white px-3.5"
           style={premiumTheme.shadow.soft}
         >
-          {!isTransfer ? (
-          <Pressable
-            accessibilityHint="Opens merchant suggestions and search"
-            accessibilityRole="button"
-            className="min-h-[56px] flex-row items-center gap-2.5 py-2"
-            onPress={() => {
-              setMerchantSearch("");
-              setMerchantPickerOpen(true);
-            }}
-          >
-            <View className="h-9 w-9 items-center justify-center rounded-xl bg-field">
-              <Store
-                color={premiumTheme.colors.ink}
-                size={17}
-                strokeWidth={2.4}
-              />
-            </View>
-            <View className="min-w-0 flex-1">
-              <Text className="text-[10px] font-bold uppercase tracking-[0.8px] text-secondary">
-                Merchant
-              </Text>
-              <Text
-                className={`mt-[3px] text-[14px] font-bold ${
-                  merchant ? "text-ink" : "text-[#8b929d]"
-                }`}
-                numberOfLines={1}
-              >
-                {merchant || "Choose or add merchant"}
-              </Text>
-            </View>
-            {selectedMerchantId ? (
-              <View className="h-6 w-6 items-center justify-center rounded-xl bg-[#dcfce7]">
-                <Check color="#16a34a" size={14} strokeWidth={3} />
-              </View>
-            ) : null}
-            <ChevronRight color="#94a3b8" size={18} strokeWidth={2.5} />
-          </Pressable>
-          ) : null}
-
-          {!isTransfer ? (
-            <View className="ml-11 bg-[#e9ebef]" style={hairlineHeightStyle} />
-          ) : null}
-
           <TransactionDateField
             grouped
             onSelect={(date) => {
@@ -579,27 +594,32 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
           <Pressable
             accessibilityHint="Shows or hides the note editor"
             accessibilityRole="button"
-            className="min-h-11 flex-row items-center gap-2 py-1"
+            className="min-h-[56px] flex-row items-center gap-2.5 py-2"
             onPress={() => setNotesExpanded((current) => !current)}
           >
-            <ReceiptText
-              color={notes.trim() ? premiumTheme.colors.ink : "#94a3b8"}
-              size={15}
-              strokeWidth={2.4}
-            />
-            <Text
-              className={`flex-1 text-[13px] ${
-                notes.trim()
-                  ? "font-bold text-ink"
-                  : "font-semibold text-[#8b929d]"
-              }`}
-              numberOfLines={1}
-            >
-              {notes.trim() ? notes.trim().split("\n")[0] : "Add a note"}
-            </Text>
+            <View className="h-9 w-9 items-center justify-center rounded-xl bg-field">
+              <ReceiptText
+                color={premiumTheme.colors.ink}
+                size={17}
+                strokeWidth={2.4}
+              />
+            </View>
+            <View className="min-w-0 flex-1">
+              <Text className="text-[10px] font-bold uppercase tracking-[0.8px] text-secondary">
+                Note
+              </Text>
+              <Text
+                className={`mt-[3px] text-[14px] font-bold ${
+                  notes.trim() ? "text-ink" : "text-[#8b929d]"
+                }`}
+                numberOfLines={1}
+              >
+                {notes.trim() ? notes.trim().split("\n")[0] : "Add a note"}
+              </Text>
+            </View>
             <ChevronRight
               color="#94a3b8"
-              size={16}
+              size={18}
               strokeWidth={2.5}
               style={{
                 transform: [{ rotate: notesExpanded ? "90deg" : "0deg" }],
@@ -648,8 +668,10 @@ export function EventsScreen({ navigation }: EventsScreenProps) {
       </ScrollView>
 
       <View
-        className="border-t-hairline border-t-[#f0f1f3] bg-white px-4 pb-3 pt-2.5"
-        style={saveDockShadowStyle}
+        className="border-t-hairline border-t-[#f0f1f3] bg-white px-4 pt-2.5"
+        // The tab bar is hidden on this flow, so the dock clears the
+        // gesture bar itself.
+        style={[saveDockShadowStyle, { paddingBottom: 12 + insets.bottom }]}
       >
         <SlideToSaveButton
           disabled={!canSave}

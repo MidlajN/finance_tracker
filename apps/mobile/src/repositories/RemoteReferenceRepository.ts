@@ -12,6 +12,7 @@ import type {
 } from "@finance/shared-types";
 import { getCurrentMonthStart } from "@finance/shared-utils";
 
+import { fetchAllRows } from "../lib/fetchAllRows";
 import { supabase } from "../lib/supabase";
 
 interface CategoryRow {
@@ -179,24 +180,26 @@ export class RemoteCategoryRepository {
 
 export class RemoteMerchantRepository {
   static async list() {
-    const { data, error } = await supabase
-      .from("merchants")
-      .select(`
-        *,
-        category:categories(*)
-      `)
-      .order("usage_count", {
-        ascending: false,
-      })
-      .order("name", {
-        ascending: true,
-      });
+    const rows = await fetchAllRows<MerchantRow>((from, to) =>
+      supabase
+        .from("merchants")
+        .select(`
+          *,
+          category:categories(*)
+        `)
+        .order("usage_count", {
+          ascending: false,
+        })
+        .order("name", {
+          ascending: true,
+        })
+        .order("id", {
+          ascending: true,
+        })
+        .range(from, to)
+    );
 
-    if (error) {
-      throw error;
-    }
-
-    return ((data ?? []) as MerchantRow[]).map(toCachedMerchant);
+    return rows.map(toCachedMerchant);
   }
 
   static async create(localId: string, merchant: MerchantLike) {
@@ -259,18 +262,20 @@ interface MerchantAliasRow {
 
 export class RemoteMerchantAliasRepository {
   static async list(): Promise<CachedMerchantAlias[]> {
-    const { data, error } = await supabase
-      .from("merchant_aliases")
-      .select("*")
-      .order("alias", {
-        ascending: true,
-      });
+    const rows = await fetchAllRows<MerchantAliasRow>((from, to) =>
+      supabase
+        .from("merchant_aliases")
+        .select("*")
+        .order("alias", {
+          ascending: true,
+        })
+        .order("id", {
+          ascending: true,
+        })
+        .range(from, to)
+    );
 
-    if (error) {
-      throw error;
-    }
-
-    return ((data ?? []) as MerchantAliasRow[]).map((row) => ({
+    return rows.map((row) => ({
       id: row.id,
       merchant_id: row.merchant_id,
       alias: row.alias,

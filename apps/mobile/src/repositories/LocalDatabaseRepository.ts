@@ -391,6 +391,57 @@ export async function initializeLocalDatabase() {
   );
 }
 
+// Server-mirrored cache tables and their key column. Pruning is limited to
+// these so a caller can never target local-only tables (the sync queue,
+// app metadata, notification misses).
+const CACHED_TABLE_KEYS = {
+  cached_accounts: "id",
+  cached_assets: "id",
+  cached_budgets: "id",
+  cached_categories: "id",
+  cached_currencies: "code",
+  cached_exchange_rates: "id",
+  cached_goals: "id",
+  cached_investments: "id",
+  cached_liabilities: "id",
+  cached_loans: "id",
+  cached_merchant_aliases: "id",
+  cached_merchants: "id",
+  cached_rules: "id",
+  cached_transactions: "id",
+} as const;
+
+export type CachedTableName = keyof typeof CACHED_TABLE_KEYS;
+
+// Runs every write in `task` as one SQLite transaction: a single commit
+// instead of one per row, and a failure rolls the whole batch back rather
+// than leaving the cache half-written. Reads on the shared connection see
+// the in-progress state, so callers must never write an empty
+// intermediate state (upsert first, prune after — never clear-and-refill).
+export async function runInLocalTransaction(task: () => Promise<void>) {
+  const database = await getLocalDatabase();
+
+  await database.withTransactionAsync(task);
+}
+
+// Deletes every row whose key is not in `keepKeys`: the second half of an
+// upsert-then-prune refresh.
+export async function pruneCachedRows(
+  table: CachedTableName,
+  keepKeys: Iterable<string>
+) {
+  const database = await getLocalDatabase();
+  const keyColumn = CACHED_TABLE_KEYS[table];
+
+  await database.runAsync(
+    `
+      delete from ${table}
+      where ${keyColumn} not in (select value from json_each(?));
+    `,
+    [JSON.stringify(Array.from(keepKeys))]
+  );
+}
+
 export class AppMetadataRepository {
   static async get(key: string) {
     const database = await getLocalDatabase();

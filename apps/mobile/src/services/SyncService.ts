@@ -45,6 +45,8 @@ import {
   LocalRuleRepository,
   LocalTransactionRepository,
   SyncQueueRepository,
+  pruneCachedRows,
+  runInLocalTransaction,
 } from "../repositories/LocalDatabaseRepository";
 import { RemoteEventRepository } from "../repositories/RemoteEventRepository";
 import { RemoteFinancialIntelligenceRepository } from "../repositories/RemoteFinancialIntelligenceRepository";
@@ -155,6 +157,37 @@ function isDeleteResourceSyncPayload(
   payload: unknown
 ): payload is DeleteResourceSyncPayload {
   return isObject(payload) && typeof payload.id === "string";
+}
+
+// Every row key a still-unpushed queue item refers to: ids of resources
+// created offline (localId / localEventId), provisional transactions
+// minted at confirm time (transactionId / confirmedTransactionId), and
+// edited or deleted rows (id / eventId).
+function collectPendingQueueKeys(queueItems: SyncQueueItem[]) {
+  const keys = new Set<string>();
+
+  queueItems.forEach((item) => {
+    if (!isObject(item.payload)) return;
+
+    [
+      "confirmedTransactionId",
+      "eventId",
+      "id",
+      "localEventId",
+      "localId",
+      "transactionId",
+    ].forEach(
+      (field) => {
+        const value = (item.payload as Record<string, unknown>)[field];
+
+        if (typeof value === "string") {
+          keys.add(value);
+        }
+      }
+    );
+  });
+
+  return keys;
 }
 
 function getErrorMessage(error: unknown) {
@@ -282,7 +315,32 @@ export class SyncService {
     };
   }
 
+  // One sync at a time per JS runtime. The OS background task and the
+  // foreground store can fire together; two overlapping runs would push
+  // the same queue items twice and interleave their cache writes.
+  // synchronize() queues behind a run in flight so everything enqueued
+  // before the call is pushed; synchronizeIfIdle() joins the run instead.
+  private static running: Promise<SyncResult> | null = null;
+
   static async synchronize(): Promise<SyncResult> {
+    while (this.running) {
+      await this.running.catch(() => undefined);
+    }
+
+    this.running = this.runSynchronize();
+
+    try {
+      return await this.running;
+    } finally {
+      this.running = null;
+    }
+  }
+
+  static synchronizeIfIdle(): Promise<SyncResult> {
+    return this.running ?? this.synchronize();
+  }
+
+  private static async runSynchronize(): Promise<SyncResult> {
     await OfflineStorageService.initialize();
 
     const queueItems = await SyncQueueRepository.listPending();
@@ -434,62 +492,101 @@ export class SyncService {
 
     const pendingLocalMerchants = Array.from(pendingMerchantsById.values());
 
-    await Promise.all([
-      LocalTransactionRepository.clear(),
-      LocalCategoryRepository.clear(),
-      LocalMerchantRepository.clear(),
-      LocalMerchantAliasRepository.clear(),
-      LocalBudgetRepository.clear(),
-      LocalRuleRepository.clear(),
-      LocalCurrencyRepository.clear(),
-      LocalExchangeRateRepository.clear(),
-      LocalAccountRepository.clear(),
-      LocalAssetRepository.clear(),
-      LocalLiabilityRepository.clear(),
-      LocalLoanRepository.clear(),
-      LocalInvestmentRepository.clear(),
-      LocalGoalRepository.clear(),
-    ]);
+    // Rows created or edited offline whose queue item has not reached the
+    // server yet are absent from (or stale in) the remote lists. Keep them,
+    // otherwise a single failed push makes a just-added transaction or
+    // account vanish until the retry lands.
+    const pendingKeys = collectPendingQueueKeys(pendingQueueItems);
+    const keep = (rows: { id: string }[]) => [
+      ...rows.map((row) => row.id),
+      ...pendingKeys,
+    ];
+    // Likewise a pulled row must not overwrite a local edit or delete that
+    // is still waiting to be pushed (a confirmed event would flip back to
+    // pending, a deleted transaction would reappear).
+    const unchanged = <TRow extends { id: string }>(rows: TRow[]) =>
+      rows.filter((row) => !pendingKeys.has(row.id));
 
-    await Promise.all([
-      ...events.map((event) => LocalEventRepository.upsert(event)),
-      ...transactions.map((transaction) =>
-        LocalTransactionRepository.upsert(transaction)
-      ),
-      ...categories.map((category) =>
-        LocalCategoryRepository.upsert(category)
-      ),
-      ...merchants.map((merchant) =>
-        LocalMerchantRepository.upsert(merchant)
-      ),
-      ...budgets.map((budget) => LocalBudgetRepository.upsert(budget)),
-      ...rules.map((rule) => LocalRuleRepository.upsert(rule)),
-      ...currencies.map((currency) =>
-        LocalCurrencyRepository.upsert(currency)
-      ),
-      ...exchangeRates.map((rate) =>
-        LocalExchangeRateRepository.upsert(rate)
-      ),
-      ...accounts.map((account) => LocalAccountRepository.upsert(account)),
-      ...assets.map((asset) => LocalAssetRepository.upsert(asset)),
-      ...liabilities.map((liability) =>
-        LocalLiabilityRepository.upsert(liability)
-      ),
-      ...loans.map((loan) => LocalLoanRepository.upsert(loan)),
-      ...investments.map((investment) =>
-        LocalInvestmentRepository.upsert(investment)
-      ),
-      ...goals.map((goal) => LocalGoalRepository.upsert(goal)),
-      ...merchantAliases.map((alias) =>
-        LocalMerchantAliasRepository.upsert(alias)
-      ),
-    ]);
+    // Upsert-then-prune inside one transaction: one commit instead of one
+    // per row, never an empty intermediate cache for concurrent readers,
+    // and a failed write rolls back instead of leaving tables wiped.
+    await runInLocalTransaction(async () => {
+      await Promise.all([
+        ...unchanged(events).map((event) =>
+          LocalEventRepository.upsert(event)
+        ),
+        ...unchanged(transactions).map((transaction) =>
+          LocalTransactionRepository.upsert(transaction)
+        ),
+        ...unchanged(categories).map((category) =>
+          LocalCategoryRepository.upsert(category)
+        ),
+        ...unchanged(merchants).map((merchant) =>
+          LocalMerchantRepository.upsert(merchant)
+        ),
+        ...unchanged(budgets).map((budget) =>
+          LocalBudgetRepository.upsert(budget)
+        ),
+        ...unchanged(rules).map((rule) => LocalRuleRepository.upsert(rule)),
+        ...currencies.map((currency) =>
+          LocalCurrencyRepository.upsert(currency)
+        ),
+        ...exchangeRates.map((rate) =>
+          LocalExchangeRateRepository.upsert(rate)
+        ),
+        ...unchanged(accounts).map((account) =>
+          LocalAccountRepository.upsert(account)
+        ),
+        ...unchanged(assets).map((asset) =>
+          LocalAssetRepository.upsert(asset)
+        ),
+        ...unchanged(liabilities).map((liability) =>
+          LocalLiabilityRepository.upsert(liability)
+        ),
+        ...unchanged(loans).map((loan) => LocalLoanRepository.upsert(loan)),
+        ...unchanged(investments).map((investment) =>
+          LocalInvestmentRepository.upsert(investment)
+        ),
+        ...unchanged(goals).map((goal) => LocalGoalRepository.upsert(goal)),
+        ...unchanged(merchantAliases).map((alias) =>
+          LocalMerchantAliasRepository.upsert(alias)
+        ),
+      ]);
 
-    await Promise.all(
-      pendingLocalMerchants.map((merchant) =>
-        LocalMerchantRepository.upsert(merchant)
-      )
-    );
+      // Pending merchant edits win over the pulled copy until pushed.
+      await Promise.all(
+        pendingLocalMerchants.map((merchant) =>
+          LocalMerchantRepository.upsert(merchant)
+        )
+      );
+
+      await Promise.all([
+        pruneCachedRows("cached_transactions", keep(transactions)),
+        pruneCachedRows("cached_categories", keep(categories)),
+        pruneCachedRows("cached_merchants", [
+          ...keep(merchants),
+          ...pendingLocalMerchants.map((merchant) => merchant.id),
+        ]),
+        pruneCachedRows("cached_merchant_aliases", keep(merchantAliases)),
+        pruneCachedRows("cached_budgets", keep(budgets)),
+        pruneCachedRows("cached_rules", keep(rules)),
+        // Server-only reference data: no queued writes to protect.
+        pruneCachedRows(
+          "cached_currencies",
+          currencies.map((currency) => currency.code)
+        ),
+        pruneCachedRows(
+          "cached_exchange_rates",
+          exchangeRates.flatMap((rate) => (rate.id ? [rate.id] : []))
+        ),
+        pruneCachedRows("cached_accounts", keep(accounts)),
+        pruneCachedRows("cached_assets", keep(assets)),
+        pruneCachedRows("cached_liabilities", keep(liabilities)),
+        pruneCachedRows("cached_loans", keep(loans)),
+        pruneCachedRows("cached_investments", keep(investments)),
+        pruneCachedRows("cached_goals", keep(goals)),
+      ]);
+    });
 
     return {
       accounts: accounts.length,

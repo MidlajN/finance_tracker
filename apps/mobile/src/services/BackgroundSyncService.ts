@@ -8,9 +8,14 @@ const BACKGROUND_SYNC_TASK = "finance-background-sync";
 if (!TaskManager.isTaskDefined(BACKGROUND_SYNC_TASK)) {
   TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
     try {
-      await SyncService.synchronize();
+      // Joins a foreground run already in flight instead of racing it.
+      const result = await SyncService.synchronizeIfIdle();
 
-      return BackgroundTask.BackgroundTaskResult.Success;
+      // Report items still unpushed (offline, server error) as a failed
+      // run. The periodic schedule retries them on its next window.
+      return result.failed > 0
+        ? BackgroundTask.BackgroundTaskResult.Failed
+        : BackgroundTask.BackgroundTaskResult.Success;
     } catch {
       return BackgroundTask.BackgroundTaskResult.Failed;
     }

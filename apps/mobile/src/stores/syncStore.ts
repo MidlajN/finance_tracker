@@ -11,6 +11,7 @@ interface SyncState {
   lastSyncedAt: string | null;
   realtimeUnsubscribe: (() => void) | null;
   syncing: boolean;
+  requestSync: (options?: { minimumAgeMs?: number }) => void;
   startBackgroundSync: () => Promise<void>;
   startRealtime: () => void;
   stopBackgroundSync: () => Promise<void>;
@@ -22,10 +23,17 @@ interface SyncState {
 // writes enqueued after it started. Callers arriving mid-run share one
 // queued follow-up run instead of returning early — awaiting synchronize()
 // must always mean "everything enqueued before the call is pushed and the
-// results pulled". Confirm/save flows rely on this to land back on the
-// list with the new row already present.
+// results pulled". Headless capture relies on this before the OS may kill
+// the process. Screens never need to await it: local writes land in the
+// cache (and the UI) before any network work starts.
 let activeRun: Promise<void> | null = null;
 let queuedRun: Promise<void> | null = null;
+
+// Every push echoes back through realtime (one event per written row), and
+// a burst of remote edits arrives as a burst of events. Coalesce triggers
+// into one trailing run instead of a full sync per row change.
+const REQUEST_DEBOUNCE_MS = 1500;
+let requestTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useSyncStore = create<SyncState>((set, get) => ({
   backgroundRegistered: false,
@@ -64,7 +72,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
     const realtimeUnsubscribe = SyncService.subscribeToRemoteChanges(
       () => {
-        void get().synchronize();
+        get().requestSync();
       }
     );
 
@@ -94,7 +102,35 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     }
   },
 
+  requestSync(options) {
+    const minimumAgeMs = options?.minimumAgeMs ?? 0;
+    const { lastSyncedAt } = get();
+
+    // Periodic/foreground callers skip the run while the cache is fresh.
+    if (
+      minimumAgeMs > 0 &&
+      lastSyncedAt &&
+      Date.now() - new Date(lastSyncedAt).getTime() < minimumAgeMs
+    ) {
+      return;
+    }
+
+    if (requestTimer) {
+      clearTimeout(requestTimer);
+    }
+
+    requestTimer = setTimeout(() => {
+      requestTimer = null;
+      void get().synchronize();
+    }, REQUEST_DEBOUNCE_MS);
+  },
+
   stopRealtime() {
+    if (requestTimer) {
+      clearTimeout(requestTimer);
+      requestTimer = null;
+    }
+
     get().realtimeUnsubscribe?.();
 
     set({

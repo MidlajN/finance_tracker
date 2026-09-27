@@ -173,6 +173,35 @@ android {
     }
 }
 
+// Android Studio's Run button installs the debug APK itself and skips the
+// `adb reverse` that `expo run:android` performs, so a USB-connected phone
+// cannot reach Metro on localhost:8081. Forward the port to every connected
+// device before each debug build. Best effort: never fails the build.
+def reverseMetroPort = tasks.register("reverseMetroPort") {
+    def adb = android.adbExecutable
+    def metroPort = findProperty("reactNativeDevServerPort") ?: "8081"
+    doLast {
+        if (!adb.exists()) {
+            return
+        }
+        try {
+            def serials = ["$adb", "devices"].execute().text.readLines()
+                .drop(1)
+                .findAll { it.trim().endsWith("device") }
+                .collect { it.split(/\s+/)[0] }
+            serials.each { serial ->
+                ["$adb", "-s", serial, "reverse", "tcp:$metroPort", "tcp:$metroPort"]
+                    .execute().waitFor()
+            }
+        } catch (Exception ignored) {
+            // No adb server or device: emulators reach Metro via 10.0.2.2 anyway.
+        }
+    }
+}
+tasks.matching { it.name == "preDebugBuild" }.configureEach {
+    dependsOn reverseMetroPort
+}
+
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")

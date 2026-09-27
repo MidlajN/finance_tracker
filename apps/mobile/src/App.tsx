@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, AppState, StyleSheet, View } from "react-native";
 import {
   CommonActions,
   NavigationContainer,
@@ -22,12 +22,27 @@ import type { RootStackParamList } from "./types/navigation";
 
 const APP_CANVAS_COLOR = "#ffffff";
 
+// Single-task entry flows own the whole screen: the tab bar would compete
+// with their slide-to-save dock and invite leaving mid-entry.
+const FOCUSED_ROUTES: ReadonlySet<keyof RootStackParamList> = new Set([
+  "EventReview",
+  "Events",
+]);
+
+// Realtime delivers remote changes live; the timer is only a fallback for
+// missed events and for retrying pushes that failed (offline, server
+// error). A fresh cache skips the run entirely.
+const SYNC_TICK_MS = 60_000;
+const FALLBACK_PULL_AGE_MS = 5 * 60_000;
+const FOREGROUND_PULL_AGE_MS = 30_000;
+
 void SystemUI.setBackgroundColorAsync(APP_CANVAS_COLOR);
 
 export default function App() {
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const [activeRoute, setActiveRoute] =
     useState<AppBottomNavigationRoute>("Dashboard");
+  const [focusedRouteActive, setFocusedRouteActive] = useState(false);
   const [navigationReady, setNavigationReady] = useState(false);
   const initializeAuth = useAuthStore((state) => state.initialize);
   const initialized = useAuthStore((state) => state.initialized);
@@ -50,6 +65,7 @@ export default function App() {
     (state) => state.stopBackgroundSync
   );
   const synchronize = useSyncStore((state) => state.synchronize);
+  const requestSync = useSyncStore((state) => state.requestSync);
 
   useEffect(() => {
     void initializeOfflineStorage();
@@ -94,14 +110,51 @@ export default function App() {
       return undefined;
     }
 
-    const interval = setInterval(() => {
-      void synchronize();
-    }, 60_000);
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    function tick() {
+      // Unpushed local changes retry every tick; otherwise pull only when
+      // the cache has gone stale.
+      const hasPendingWrites = useOfflineStore.getState().queue.length > 0;
+
+      requestSync(
+        hasPendingWrites ? undefined : { minimumAgeMs: FALLBACK_PULL_AGE_MS }
+      );
+    }
+
+    function startTicking() {
+      if (!interval) {
+        interval = setInterval(tick, SYNC_TICK_MS);
+      }
+    }
+
+    function stopTicking() {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    }
+
+    // No foreground polling while backgrounded: the OS background task
+    // owns that. Returning to the app catches up if the cache is stale.
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        requestSync({ minimumAgeMs: FOREGROUND_PULL_AGE_MS });
+        startTicking();
+      } else {
+        stopTicking();
+      }
+    });
+
+    if (AppState.currentState === "active") {
+      startTicking();
+    }
 
     return () => {
-      clearInterval(interval);
+      subscription.remove();
+      stopTicking();
     };
-  }, [session, synchronize]);
+  }, [requestSync, session]);
 
   useEffect(() => {
     if (!session || !navigationReady || !reviewEventId) {
@@ -134,6 +187,7 @@ export default function App() {
 
     if (routeName) {
       setActiveRoute(getBottomNavigationRoute(routeName));
+      setFocusedRouteActive(FOCUSED_ROUTES.has(routeName));
     }
   }
 
@@ -178,7 +232,7 @@ export default function App() {
         <View style={styles.navigator}>
           <AppNavigator />
         </View>
-        {session && (
+        {session && !focusedRouteActive && (
           <AppBottomNavigation
             activeRoute={activeRoute}
             onNavigate={navigateFromBottomBar}

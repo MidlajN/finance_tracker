@@ -21,6 +21,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { matchesRule } from "@finance/finance-core";
 import { normalizeMerchantName } from "@finance/shared-utils";
@@ -74,6 +75,7 @@ export function EventReviewScreen({
   navigation,
   route,
 }: EventReviewScreenProps) {
+  const insets = useSafeAreaInsets();
   const events = useOfflineStore((state) => state.events);
   const accounts = useOfflineStore((state) => state.accounts);
   const categories = useOfflineStore((state) => state.categories);
@@ -331,7 +333,8 @@ export function EventReviewScreen({
       }
 
       await confirmFinancialEvent(event.id);
-      await synchronize();
+      // Confirmed locally (transaction materialized); push in background.
+      void synchronize();
       // Close the overlay Modal BEFORE navigating: unmounting a screen
       // that still hosts an open Modal intermittently crashes the app on
       // Android during the stack transition.
@@ -360,7 +363,7 @@ export function EventReviewScreen({
 
     try {
       await ignoreFinancialEvent(event.id);
-      await synchronize();
+      void synchronize();
       setIsSaving(false);
       setSavingAction(null);
       setTimeout(() => navigation.popTo("Transactions"), 80);
@@ -934,6 +937,9 @@ export function EventReviewScreen({
         }
         visible={isSaving && savingAction !== null}
       />
+      {/* The tab bar is hidden on this flow, so the last actions must
+          clear the gesture bar themselves. */}
+      <View style={{ height: insets.bottom }} />
     </ScrollView>
   );
 }

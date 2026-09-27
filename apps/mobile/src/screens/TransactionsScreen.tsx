@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MotiView } from "moti";
 import {
@@ -13,10 +13,11 @@ import {
   X,
 } from "lucide-react-native";
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
-  ScrollView,
+  RefreshControl,
+  SectionList,
+  type SectionListRenderItem,
   Text,
   TextInput,
   useWindowDimensions,
@@ -26,10 +27,10 @@ import {
 import type {
   CachedFinancialEvent,
   CachedTransaction,
-  TransactionType,
 } from "@finance/shared-types";
 
 import { TransactionEditModal } from "../components/finance/TransactionEditModal";
+import { TransactionIcon } from "../components/finance/TransactionIcon";
 import { MobileDashboardService } from "../services/MobileDashboardService";
 import { useOfflineStore } from "../stores/offlineStore";
 import { useSyncStore } from "../stores/syncStore";
@@ -51,7 +52,6 @@ import {
   startOfDay,
   titleCase,
 } from "../utils/financeFormat";
-import { getTransactionIcon } from "../utils/financeVisuals";
 
 type TransactionsScreenProps = NativeStackScreenProps<
   RootStackParamList,
@@ -59,6 +59,16 @@ type TransactionsScreenProps = NativeStackScreenProps<
 >;
 
 type TransactionFilter = "all" | "income" | "expense" | "transfer";
+
+// Captured events pile up between reviews; a long queue would push the
+// actual history screens down, so the list previews only the newest few.
+const PENDING_PREVIEW_COUNT = 3;
+
+type TransactionSection = {
+  data: CachedTransaction[];
+  key: string;
+  label: string;
+};
 
 type TransactionDateFilter =
   | "all"
@@ -104,6 +114,20 @@ const fabShadowStyle = {
   },
   shadowOpacity: 0.28,
   shadowRadius: 16,
+} as const;
+
+// SectionList is not NativeWind-interop'd (its inner VirtualizedList skips
+// the wrapped export), so the list keeps plain style objects.
+const transactionListStyle = {
+  backgroundColor: premiumTheme.colors.canvas,
+  flex: 1,
+} as const;
+
+const transactionListContentStyle = {
+  backgroundColor: premiumTheme.colors.canvas,
+  paddingBottom: 96,
+  paddingHorizontal: 20,
+  paddingTop: 20,
 } as const;
 
 function getDateFilterBounds(
@@ -159,7 +183,8 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
   const deleteTransaction = useOfflineStore(
     (state) => state.deleteTransaction
   );
-  const syncing = useSyncStore((state) => state.syncing);
+  const synchronize = useSyncStore((state) => state.synchronize);
+  const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<TransactionFilter>("all");
   const [dateFilter, setDateFilter] = useState<TransactionDateFilter>("all");
   const [dateFilterMenuAnchor, setDateFilterMenuAnchor] = useState<{
@@ -178,6 +203,7 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
     });
   }
   const [searchQuery, setSearchQuery] = useState("");
+  const [pendingExpanded, setPendingExpanded] = useState(false);
   const [editingTransaction, setEditingTransaction] =
     useState<CachedTransaction | null>(null);
   const frequentCategoryIds = useMemo(
@@ -200,27 +226,21 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         ),
     [events]
   );
-  const filteredTransactions = useMemo(() => {
-    const dateBounds = getDateFilterBounds(dateFilter);
+  const visiblePendingEvents = pendingExpanded
+    ? pendingEvents
+    : pendingEvents.slice(0, PENDING_PREVIEW_COUNT);
+  const hiddenPendingCount = pendingEvents.length - visiblePendingEvents.length;
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const searching = normalizedQuery.length > 0;
+  // Built once per data change (only while searching), not per keystroke:
+  // locale date formatting across the whole history is the costly part.
+  const searchIndex = useMemo(() => {
+    if (!searching) return null;
 
-    return transactions.filter((transaction) => {
-        const normalizedQuery = searchQuery.trim().toLowerCase();
-        const matchesFilter =
-          filter === "all" || transaction.transaction_type === filter;
-
-        if (!matchesFilter) return false;
-
-        if (dateBounds) {
-          const occurredAt = new Date(transaction.occurred_at);
-
-          if (occurredAt < dateBounds.start || occurredAt >= dateBounds.end) {
-            return false;
-          }
-        }
-
-        if (!normalizedQuery) return true;
-
-        const searchableText = [
+    return new Map(
+      transactions.map((transaction) => [
+        transaction.id,
+        [
           transaction.merchant?.name,
           transaction.event?.merchant_name_raw,
           transaction.category?.name,
@@ -233,11 +253,34 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
         ]
           .filter(Boolean)
           .join(" ")
-          .toLowerCase();
+          .toLowerCase(),
+      ])
+    );
+  }, [accountNamesById, searching, transactions]);
+  const filteredTransactions = useMemo(() => {
+    const dateBounds = getDateFilterBounds(dateFilter);
 
-        return searchableText.includes(normalizedQuery);
-      });
-  }, [accountNamesById, dateFilter, filter, searchQuery, transactions]);
+    return transactions.filter((transaction) => {
+      const matchesFilter =
+        filter === "all" || transaction.transaction_type === filter;
+
+      if (!matchesFilter) return false;
+
+      if (dateBounds) {
+        const occurredAt = new Date(transaction.occurred_at);
+
+        if (occurredAt < dateBounds.start || occurredAt >= dateBounds.end) {
+          return false;
+        }
+      }
+
+      if (!searchIndex) return true;
+
+      return (
+        searchIndex.get(transaction.id)?.includes(normalizedQuery) ?? false
+      );
+    });
+  }, [dateFilter, filter, normalizedQuery, searchIndex, transactions]);
   // Recency headings ("Today", "Earlier This Week") only make sense against
   // the full history. With a date range applied they turn redundant or
   // misleading, so the range shows one flat list instead.
@@ -261,238 +304,281 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
       },
     ];
   }, [dateFilter, filteredTransactions]);
+  const sections = useMemo<TransactionSection[]>(
+    () =>
+      groupedTransactions.map((group) => ({
+        data: group.transactions,
+        key: group.label || "filtered",
+        label: group.label,
+      })),
+    [groupedTransactions]
+  );
+  const hasFilters = searching || dateFilter !== "all" || filter !== "all";
+
+  const renderTransaction = useCallback<
+    SectionListRenderItem<CachedTransaction, TransactionSection>
+  >(
+    ({ index, item, section }) => (
+      <TransactionListRow
+        accountName={
+          item.account_id
+            ? accountNamesById.get(item.account_id) ?? null
+            : null
+        }
+        isFirst={index === 0}
+        isLast={index === section.data.length - 1}
+        onPress={setEditingTransaction}
+        transaction={item}
+      />
+    ),
+    [accountNamesById]
+  );
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await synchronize();
+    setRefreshing(false);
+  }
 
   return (
     <View className="flex-1 bg-canvas">
-      <ScrollView
-        className="flex-1 bg-canvas"
-        contentContainerClassName="gap-[18px] bg-canvas p-5 pb-24"
+      <SectionList<CachedTransaction, TransactionSection>
+        contentContainerStyle={transactionListContentStyle}
+        initialNumToRender={14}
+        keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
-      >
-        <View className="min-h-12 flex-row items-center gap-2.5 rounded-control bg-field px-3.5">
-          <Search
-            color={premiumTheme.colors.secondary}
-            size={14}
-            strokeWidth={2.2}
-          />
-          <TextInput
-            className="min-h-12 flex-1 py-0 text-[12px] font-medium text-ink"
-            onChangeText={setSearchQuery}
-            placeholder="Search transactions"
-            placeholderTextColor={premiumTheme.colors.muted}
-            value={searchQuery}
-          />
-        </View>
+        keyExtractor={(transaction) => transaction.id}
+        ListFooterComponent={
+          sections.length === 0 && pendingEvents.length === 0 ? (
+            <View
+              className="mt-[18px] items-center rounded-section border border-border bg-white p-6"
+              style={premiumTheme.shadow.soft}
+            >
+              <Text className="text-[16px] font-extrabold tracking-[-0.3px] text-ink">
+                {hasFilters
+                  ? "No matching transactions"
+                  : "No transactions yet"}
+              </Text>
+              <Text className="mt-1.5 text-center text-[13.5px] leading-[19px] text-secondary">
+                {hasFilters
+                  ? "Try widening the filters or a different search."
+                  : "Add your first transaction to see it here."}
+              </Text>
+            </View>
+          ) : sections.length > 0 ? (
+            <Text className="mt-[18px] text-center text-[12px] font-semibold text-muted">
+              End of transactions
+            </Text>
+          ) : null
+        }
+        ListHeaderComponent={
+          <View className="gap-[18px]">
+            <View className="min-h-12 flex-row items-center gap-2.5 rounded-control bg-field px-3.5">
+              <Search
+                color={premiumTheme.colors.secondary}
+                size={14}
+                strokeWidth={2.2}
+              />
+              <TextInput
+                className="min-h-12 flex-1 py-0 text-[12px] font-medium text-ink"
+                onChangeText={setSearchQuery}
+                placeholder="Search transactions"
+                placeholderTextColor={premiumTheme.colors.muted}
+                value={searchQuery}
+              />
+            </View>
 
-        <View className="flex-row items-stretch gap-2">
-          <View className="flex-1 flex-row gap-1 rounded-control bg-field p-1">
-            {(["all", "income", "expense", "transfer"] as const).map(
-              (item) => (
-                <Pressable
-                  className={`min-h-[34px] flex-1 items-center justify-center rounded-[10px] border ${
-                    filter === item
-                      ? "border-border bg-white"
-                      : "border-transparent"
-                  }`}
-                  key={item}
-                  onPress={() => setFilter(item)}
-                  style={
-                    filter === item ? premiumTheme.shadow.soft : undefined
+            <View className="flex-row items-stretch gap-2">
+              <View className="flex-1 flex-row gap-1 rounded-control bg-field p-1">
+                {(["all", "income", "expense", "transfer"] as const).map(
+                  (item) => (
+                    <Pressable
+                      className={`min-h-[34px] flex-1 items-center justify-center rounded-[10px] border ${
+                        filter === item
+                          ? "border-border bg-white"
+                          : "border-transparent"
+                      }`}
+                      key={item}
+                      onPress={() => setFilter(item)}
+                      style={
+                        filter === item ? premiumTheme.shadow.soft : undefined
+                      }
+                    >
+                      <Text
+                        className={`text-[11px] font-bold ${
+                          filter === item ? "text-ink" : "text-secondary"
+                        }`}
+                      >
+                        {titleCase(item)}
+                      </Text>
+                    </Pressable>
+                  )
+                )}
+              </View>
+
+              <Pressable
+                accessibilityHint="Filters transactions by date range"
+                accessibilityRole="button"
+                className={`min-h-[42px] flex-row items-center justify-center gap-[3px] rounded-control px-[13px] active:opacity-85 ${
+                  dateFilter !== "all" ? "bg-ink" : "bg-field"
+                }`}
+                onPress={openDateFilterMenu}
+                ref={dateFilterButtonRef}
+              >
+                <CalendarDays
+                  color={
+                    dateFilter !== "all"
+                      ? "#ffffff"
+                      : premiumTheme.colors.secondary
                   }
-                >
-                  <Text
-                    className={`text-[11px] font-bold ${
-                      filter === item ? "text-ink" : "text-secondary"
-                    }`}
-                  >
-                    {titleCase(item)}
-                  </Text>
-                </Pressable>
-              )
-            )}
-          </View>
-
-          <Pressable
-            accessibilityHint="Filters transactions by date range"
-            accessibilityRole="button"
-            className={`min-h-[42px] flex-row items-center justify-center gap-[3px] rounded-control px-[13px] active:opacity-85 ${
-              dateFilter !== "all" ? "bg-ink" : "bg-field"
-            }`}
-            onPress={openDateFilterMenu}
-            ref={dateFilterButtonRef}
-          >
-            <CalendarDays
-              color={
-                dateFilter !== "all"
-                  ? "#ffffff"
-                  : premiumTheme.colors.secondary
-              }
-              size={16}
-              strokeWidth={2.3}
-            />
-            <ChevronDown
-              color={
-                dateFilter !== "all"
-                  ? "#ffffff"
-                  : premiumTheme.colors.secondary
-              }
-              size={14}
-              strokeWidth={2.5}
-            />
-          </Pressable>
-        </View>
-
-        {dateFilter !== "all" ? (
-          <View className="-mt-1.5 flex-row items-center">
-            <Pressable
-              accessibilityHint="Removes the date filter"
-              accessibilityRole="button"
-              className="min-h-8 flex-row items-center gap-[7px] rounded-full border border-border bg-white pl-[13px] pr-1.5 active:bg-field"
-              hitSlop={6}
-              onPress={() => setDateFilter("all")}
-              style={premiumTheme.shadow.soft}
-            >
-              <Text className="text-[12.5px] font-bold text-ink">
-                {
-                  DATE_FILTER_OPTIONS.find(
-                    (option) => option.value === dateFilter
-                  )?.label
-                }
-              </Text>
-              <View className="h-5 w-5 items-center justify-center rounded-full bg-field">
-                <X
-                  color={premiumTheme.colors.secondary}
-                  size={11}
-                  strokeWidth={2.8}
+                  size={16}
+                  strokeWidth={2.3}
                 />
-              </View>
-            </Pressable>
-          </View>
-        ) : null}
-
-        {syncing ? (
-          <View className="-my-1 flex-row items-center justify-center gap-2">
-            <ActivityIndicator
-              color={premiumTheme.colors.secondary}
-              size="small"
-            />
-            <Text className="text-xs font-semibold text-secondary">
-              Syncing…
-            </Text>
-          </View>
-        ) : null}
-
-        {pendingEvents.length > 0 ? (
-          <View className="gap-2.5">
-            <View className="flex-row items-start justify-between gap-3">
-              <View>
-                <Text className="text-[17px] font-extrabold tracking-[-0.3px] text-ink">
-                  Pending reviews
-                </Text>
-                <Text className="mt-[3px] text-[12.5px] text-secondary">
-                  Confirm, correct, or ignore captured transactions.
-                </Text>
-              </View>
-              <View className="min-h-[26px] min-w-[26px] items-center justify-center rounded-full bg-ink px-2">
-                <Text className="text-[12px] font-extrabold text-white">
-                  {pendingEvents.length}
-                </Text>
-              </View>
+                <ChevronDown
+                  color={
+                    dateFilter !== "all"
+                      ? "#ffffff"
+                      : premiumTheme.colors.secondary
+                  }
+                  size={14}
+                  strokeWidth={2.5}
+                />
+              </Pressable>
             </View>
 
-            <View
-              className="rounded-section border border-border bg-white"
-              style={premiumTheme.shadow.soft}
-            >
-              <View className="overflow-hidden rounded-section">
-                {pendingEvents.map((event, index) => {
-                  const accountId = getEventAccountId(event.metadata);
-
-                  return (
-                    <PendingEventRow
-                      accountName={
-                        accountId
-                          ? accountNamesById.get(accountId) ?? null
-                          : null
-                      }
-                      event={event}
-                      key={event.id}
-                      onPress={() =>
-                        navigation.navigate("EventReview", {
-                          eventId: event.id,
-                        })
-                      }
-                      showDivider={index < pendingEvents.length - 1}
+            {dateFilter !== "all" ? (
+              <View className="-mt-1.5 flex-row items-center">
+                <Pressable
+                  accessibilityHint="Removes the date filter"
+                  accessibilityRole="button"
+                  className="min-h-8 flex-row items-center gap-[7px] rounded-full border border-border bg-white pl-[13px] pr-1.5 active:bg-field"
+                  hitSlop={6}
+                  onPress={() => setDateFilter("all")}
+                  style={premiumTheme.shadow.soft}
+                >
+                  <Text className="text-[12.5px] font-bold text-ink">
+                    {
+                      DATE_FILTER_OPTIONS.find(
+                        (option) => option.value === dateFilter
+                      )?.label
+                    }
+                  </Text>
+                  <View className="h-5 w-5 items-center justify-center rounded-full bg-field">
+                    <X
+                      color={premiumTheme.colors.secondary}
+                      size={11}
+                      strokeWidth={2.8}
                     />
-                  );
-                })}
+                  </View>
+                </Pressable>
               </View>
-            </View>
-          </View>
-        ) : null}
-
-        {groupedTransactions.map((group) => (
-          <View className="gap-2" key={group.label || "filtered"}>
-            {group.label ? (
-              <Text className="pl-0.5 pt-2 text-[10px] font-bold uppercase tracking-[0.9px] text-secondary">
-                {group.label}
-              </Text>
             ) : null}
-            <View
-              className="rounded-section bg-white"
-              style={premiumTheme.shadow.soft}
-            >
-              <View className="overflow-hidden rounded-section">
-                {group.transactions.map((transaction, index) => (
-                  <TransactionListRow
-                    accountName={
-                      transaction.account_id
-                        ? accountNamesById.get(transaction.account_id) ?? null
-                        : null
-                    }
-                    key={transaction.id}
-                    amount={transaction.amount}
-                    categoryName={
-                      transaction.transaction_type === "transfer"
-                        ? "Transfer"
-                        : transaction.category?.name ?? "Uncategorized"
-                    }
-                    occurredAt={transaction.occurred_at}
-                    onPress={() => setEditingTransaction(transaction)}
-                    showDivider={index < group.transactions.length - 1}
-                    transaction={transaction}
-                    type={transaction.transaction_type}
-                  />
-                ))}
+
+            {pendingEvents.length > 0 ? (
+              <View className="gap-2.5">
+                <View className="flex-row items-start justify-between gap-3">
+                  <View>
+                    <Text className="text-[17px] font-extrabold tracking-[-0.3px] text-ink">
+                      Pending reviews
+                    </Text>
+                    <Text className="mt-[3px] text-[12.5px] text-secondary">
+                      Confirm, correct, or ignore captured transactions.
+                    </Text>
+                  </View>
+                  <View className="min-h-[26px] min-w-[26px] items-center justify-center rounded-full bg-ink px-2">
+                    <Text className="text-[12px] font-extrabold text-white">
+                      {pendingEvents.length}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Same flush list as the transaction groups below, so
+                    both sections share one icon column. */}
+                <View className="overflow-hidden rounded-section bg-white">
+                  <View>
+                    {visiblePendingEvents.map((event, index) => {
+                      const accountId = getEventAccountId(event.metadata);
+
+                      return (
+                        <PendingEventRow
+                          accountName={
+                            accountId
+                              ? accountNamesById.get(accountId) ?? null
+                              : null
+                          }
+                          event={event}
+                          key={event.id}
+                          onPress={() =>
+                            navigation.navigate("EventReview", {
+                              eventId: event.id,
+                            })
+                          }
+                          showDivider={
+                            index < visiblePendingEvents.length - 1 ||
+                            hiddenPendingCount > 0 ||
+                            pendingExpanded
+                          }
+                        />
+                      );
+                    })}
+                    {hiddenPendingCount > 0 || pendingExpanded ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        className="min-h-11 flex-row items-center gap-3 active:bg-field"
+                        onPress={() =>
+                          setPendingExpanded((current) => !current)
+                        }
+                      >
+                        <View className="h-9 w-9 items-center justify-center">
+                          <ChevronDown
+                            color={premiumTheme.colors.secondary}
+                            size={16}
+                            strokeWidth={2.4}
+                            style={{
+                              transform: [
+                                {
+                                  rotate: pendingExpanded ? "180deg" : "0deg",
+                                },
+                              ],
+                            }}
+                          />
+                        </View>
+                        <Text className="text-[12px] font-bold text-ink">
+                          {pendingExpanded
+                            ? "Show fewer"
+                            : `Show ${hiddenPendingCount} more to review`}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                </View>
               </View>
-            </View>
+            ) : null}
           </View>
-        ))}
-
-        {groupedTransactions.length === 0 && pendingEvents.length === 0 && (
-          <View
-            className="items-center rounded-section border border-border bg-white p-6"
-            style={premiumTheme.shadow.soft}
-          >
-            <Text className="text-[16px] font-extrabold tracking-[-0.3px] text-ink">
-              {searchQuery.trim() || dateFilter !== "all" || filter !== "all"
-                ? "No matching transactions"
-                : "No transactions yet"}
+        }
+        maxToRenderPerBatch={12}
+        refreshControl={
+          <RefreshControl
+            colors={[premiumTheme.colors.ink]}
+            onRefresh={() => void handleRefresh()}
+            refreshing={refreshing}
+          />
+        }
+        renderItem={renderTransaction}
+        renderSectionHeader={({ section }) =>
+          section.label ? (
+            <Text className="pb-2 pl-0.5 pt-[26px] text-[10px] font-bold uppercase tracking-[0.9px] text-secondary">
+              {section.label}
             </Text>
-            <Text className="mt-1.5 text-center text-[13.5px] leading-[19px] text-secondary">
-              {searchQuery.trim() || dateFilter !== "all" || filter !== "all"
-                ? "Try widening the filters or a different search."
-                : "Add your first transaction to see it here."}
-            </Text>
-          </View>
-        )}
-
-        {groupedTransactions.length > 0 ? (
-          <Text className="text-center text-[12px] font-semibold text-muted">
-            End of transactions
-          </Text>
-        ) : null}
-      </ScrollView>
+          ) : (
+            <View className="h-[18px]" />
+          )
+        }
+        sections={sections}
+        stickySectionHeadersEnabled={false}
+        style={transactionListStyle}
+        windowSize={7}
+      />
 
       <Pressable
         className="absolute bottom-5 right-5 h-[54px] w-[54px] shadow-xl items-center justify-center rounded-[27px] bg-ink"
@@ -603,27 +689,29 @@ export function TransactionsScreen({ navigation }: TransactionsScreenProps) {
   );
 }
 
-function TransactionListRow({
+// Virtualized rows render one at a time, so each row paints its own slice
+// of the section card: rounded top on the first, rounded bottom and no
+// divider on the last. Memoized so a background sync re-renders only rows
+// whose data changed.
+const TransactionListRow = memo(function TransactionListRow({
   accountName,
-  amount,
-  categoryName,
-  occurredAt,
+  isFirst,
+  isLast,
   onPress,
-  showDivider,
   transaction,
-  type,
 }: {
   accountName: string | null;
-  amount: number;
-  categoryName: string;
-  occurredAt: string;
-  onPress: () => void;
-  showDivider: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+  onPress: (transaction: CachedTransaction) => void;
   transaction: CachedTransaction;
-  type: TransactionType;
 }) {
-  const icon = getTransactionIcon(categoryName, type);
-  const Icon = icon.Icon;
+  const { amount, occurred_at: occurredAt, transaction_type: type } =
+    transaction;
+  const categoryName =
+    type === "transfer"
+      ? "Transfer"
+      : transaction.category?.name ?? "Uncategorized";
   const isTransfer = type === "transfer";
   const signedAmount = getSignedTransactionAmount(amount, type);
   const merchantDisplay = getTransactionMerchantDisplay(
@@ -632,71 +720,72 @@ function TransactionListRow({
   );
 
   return (
-    <Pressable
-      accessibilityHint="Opens this transaction for editing"
-      accessibilityRole="button"
-      className="py-1.5 flex-row items-center gap-3 active:bg-field"
-      onPress={onPress}
+    <View
+      className={`overflow-hidden bg-white ${
+        isFirst ? "rounded-t-section" : ""
+      } ${isLast ? "rounded-b-section" : ""}`}
     >
-      <View
-        className="h-[36px] w-[36px] items-center justify-center rounded-[11px]"
-        style={{ backgroundColor: icon.background }}
+      <Pressable
+        accessibilityHint="Opens this transaction for editing"
+        accessibilityRole="button"
+        className="py-1.5 flex-row items-center gap-3 active:bg-field"
+        onPress={() => onPress(transaction)}
       >
-        <Icon color={icon.color} size={14} strokeWidth={1.5} />
-      </View>
+        <TransactionIcon category={transaction.category} type={type} />
 
-      <View className="min-w-0 flex-1">
-        <View className="flex-row items-center gap-[5px]">
+        <View className="min-w-0 flex-1">
+          <View className="flex-row items-center gap-[5px]">
+            <Text
+              className="shrink text-[12px] font-bold tracking-[-0.2px] text-ink"
+              numberOfLines={1}
+            >
+              {merchantDisplay.name}
+            </Text>
+            {merchantDisplay.registered && (
+              <BadgeCheck
+                color={premiumTheme.colors.success}
+                size={10}
+                strokeWidth={2.4}
+              />
+            )}
+          </View>
           <Text
-            className="shrink text-[12px] font-bold tracking-[-0.2px] text-ink"
+            className="text-[10px] font-semibold text-secondary"
             numberOfLines={1}
           >
-            {merchantDisplay.name}
+            {accountName ? `${categoryName} · ${accountName}` : categoryName}
           </Text>
-          {merchantDisplay.registered && (
-            <BadgeCheck
-              color={premiumTheme.colors.success}
-              size={12}
-              strokeWidth={2.4}
-            />
-          )}
         </View>
-        <Text
-          className="text-[10px] font-semibold text-secondary"
-          numberOfLines={1}
-        >
-          {accountName ? `${categoryName} · ${accountName}` : categoryName}
-        </Text>
-      </View>
 
-      <View className="ml-1 items-end">
-        <Text
-          className={`text-[12px] font-extrabold tracking-[-0.2px] tabular-nums ${
-            isTransfer
-              ? "text-secondary"
-              : signedAmount > 0
-                ? "text-success"
-                : "text-ink"
-          }`}
-        >
-          {isTransfer
-            ? formatNeutralTransactionAmount(amount)
-            : formatSignedTransactionAmount(signedAmount)}
-        </Text>
-        <Text className="mt-[3px] text-[10px] font-semibold text-muted">
-          {formatTransactionListTimestamp(occurredAt)}
-        </Text>
-      </View>
+        <View className="ml-1 items-end">
+          <Text
+            className={`text-[12px] font-extrabold tracking-[-0.2px] tabular-nums ${
+              isTransfer
+                ? "text-secondary"
+                : signedAmount > 0
+                  ? "text-success"
+                  : "text-ink"
+            }`}
+          >
+            {isTransfer
+              ? formatNeutralTransactionAmount(amount)
+              : formatSignedTransactionAmount(signedAmount)}
+          </Text>
+          <Text className="mt-[3px] text-[10px] font-semibold text-muted">
+            {formatTransactionListTimestamp(occurredAt)}
+          </Text>
+        </View>
 
-      {showDivider ? <RowDivider /> : null}
-    </Pressable>
+        {isLast ? null : <RowDivider />}
+      </Pressable>
+    </View>
   );
-}
+});
 
 function RowDivider() {
   return (
     <View
-      className="absolute bottom-0 left-[68px] right-0 bg-divider"
+      className="absolute bottom-0 left-12 right-0 bg-divider"
       // hairlineWidth is a runtime value with no height class, so it stays
       // inline.
       style={{ height: premiumHairline }}
@@ -722,11 +811,17 @@ function PendingEventRow({
     <Pressable
       accessibilityHint="Opens this captured transaction for review"
       accessibilityRole="button"
-      className="py-1.5 flex-row items-center gap-3 px-3.5 active:bg-field"
+      className="py-1.5 flex-row items-center gap-3 active:bg-field"
       onPress={onPress}
     >
-      <View className="h-[36px] w-[36px] items-center justify-center rounded-[15px] bg-field">
-        <Store color={premiumTheme.colors.ink} size={14} strokeWidth={1.5} />
+      {/* Not categorised until reviewed: a neutral tile in the shared
+          TransactionIcon geometry. */}
+      <View className="h-9 w-9 items-center justify-center rounded-xl bg-field">
+        <Store
+          color={premiumTheme.colors.secondary}
+          size={16}
+          strokeWidth={2.2}
+        />
       </View>
 
       <View className="min-w-0 flex-1">
@@ -746,7 +841,7 @@ function PendingEventRow({
           ) : null}
         </View>
         <Text
-          className="mt-[3px] text-[12px] font-semibold text-secondary"
+          className="text-[10px] font-semibold text-secondary"
           numberOfLines={1}
         >
           {isCredit ? "Income" : "Expense"}
@@ -769,7 +864,7 @@ function PendingEventRow({
             strokeWidth={2.4}
           />
         </View>
-        <Text className="mt-[3px] text-[11px] font-semibold text-muted">
+        <Text className="mt-[3px] text-[10px] font-semibold text-muted">
           {formatTransactionListTimestamp(event.occurred_at)}
         </Text>
       </View>

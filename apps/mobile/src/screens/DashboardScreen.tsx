@@ -49,6 +49,7 @@ import type { CachedTransaction } from "@finance/shared-types";
 import appMark from "../../assets/icon.png";
 
 import { SavingOverlay } from "../components/finance/SavingOverlay";
+import { TransactionIcon } from "../components/finance/TransactionIcon";
 import { MobileDashboardService } from "../services/MobileDashboardService";
 import { useOfflineStore } from "../stores/offlineStore";
 import { useSyncStore } from "../stores/syncStore";
@@ -62,7 +63,6 @@ import {
   getTransactionMerchantDisplay,
   titleCase,
 } from "../utils/financeFormat";
-import { getTransactionIcon } from "../utils/financeVisuals";
 
 type DashboardScreenProps = NativeStackScreenProps<
   RootStackParamList,
@@ -550,17 +550,9 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
                 value={monthlySpend.currentIncomeTotal}
               />
               <View
-                className="h-6 bg-white/25"
+                className="h-4 bg-white/25"
                 style={{ width: premiumHairline }}
               />
-              <FlowStat
-                color="#f87171"
-                label="out"
-                value={monthlySpend.currentExpenseTotal}
-              />
-            </View>
-
-            <View className="z-20 mt-2 flex-row items-center justify-between">
               <DeltaChip
                 goodWhenUp={false}
                 isNew={
@@ -569,6 +561,10 @@ export function DashboardScreen({ navigation }: DashboardScreenProps) {
                 }
                 percent={spendDeltaPercent}
               />
+            </View>
+
+            <View className="z-20 mt-2 flex-row items-center justify-end">
+              
               <MonthSelect
                 onSelect={setMonthOffset}
                 options={monthOptions}
@@ -1026,7 +1022,7 @@ function DeltaChip({
   // Frosted pill on the dark wash; colors brightened for contrast.
   if (isNew) {
     return (
-      <View className="self-start rounded-full bg-white/15 px-[11px] py-[4px]">
+      <View className="self-start rounded-full py-[4px]">
         <Text className="text-[10px] font-semibold text-white/70">
           New this month
         </Text>
@@ -1046,7 +1042,7 @@ function DeltaChip({
     Math.abs(percent) > 999 ? "999%+" : `${Math.abs(percent)}%`;
 
   return (
-    <View className="flex-row items-center gap-1 self-start rounded-full bg-white/15 px-[11px] py-[4px]">
+    <View className="flex-row items-center gap-1 self-start rounded-full  py-[4px]">
       <Icon color={color} size={12} strokeWidth={2.6} />
       <Text className="text-[10px] font-bold tabular-nums" style={{ color }}>
         {display}
@@ -1461,8 +1457,6 @@ function RecentTransactionRow({
   const type = transaction.transaction_type;
   const categoryName =
     transaction.category?.name ?? titleCase(type);
-  const icon = getTransactionIcon(categoryName, type);
-  const Icon = icon.Icon;
   const merchantDisplay = getTransactionMerchantDisplay(
     transaction,
     categoryName
@@ -1500,12 +1494,7 @@ function RecentTransactionRow({
       className="-mx-2  flex-row items-center gap-3 rounded-[14px] px-2 py-2 active:bg-field"
       onPress={onPress}
     >
-      <View
-        className="h-[36px] w-[36px] items-center justify-center rounded-2xl"
-        style={{ backgroundColor: icon.background }}
-      >
-        <Icon color={icon.color} size={13} strokeWidth={2} />
-      </View>
+      <TransactionIcon category={transaction.category} type={type} />
 
       <View className="min-w-0 flex-1">
         <Text

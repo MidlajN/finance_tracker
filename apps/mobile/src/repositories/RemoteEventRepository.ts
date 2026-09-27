@@ -8,6 +8,7 @@ import type {
   Json,
 } from "@finance/shared-types";
 
+import { fetchAllRows } from "../lib/fetchAllRows";
 import { supabase } from "../lib/supabase";
 import { MobileRuleEngineService } from "../services/MobileRuleEngineService";
 
@@ -99,20 +100,20 @@ function toCachedFinancialEvent(
 
 export class RemoteEventRepository {
   static async list() {
-    const { data, error } = await supabase
-      .from("financial_events")
-      .select("*")
-      .order("occurred_at", {
-        ascending: false,
-      });
-
-    if (error) {
-      throw error;
-    }
-
-    return ((data ?? []) as RemoteFinancialEventRow[]).map(
-      toCachedFinancialEvent
+    const rows = await fetchAllRows<RemoteFinancialEventRow>((from, to) =>
+      supabase
+        .from("financial_events")
+        .select("*")
+        .order("occurred_at", {
+          ascending: false,
+        })
+        .order("id", {
+          ascending: true,
+        })
+        .range(from, to)
     );
+
+    return rows.map(toCachedFinancialEvent);
   }
 
   static async findByClientRequestId(requestId: string) {
